@@ -170,6 +170,10 @@ const config: Config = {
         md: "var(--shadow-md)",
         lg: "var(--shadow-lg)",
         xl: "var(--shadow-xl)",
+        // Glow ciano/laranja do guia da Nexo IA — para botão primário e métrica
+        // de alerta. Atenuado no tema claro (ver app/globals.css).
+        glow: "var(--shadow-glow)",
+        "glow-warning": "var(--shadow-glow-warning)",
         none: "none",
       },
       transitionTimingFunction: {

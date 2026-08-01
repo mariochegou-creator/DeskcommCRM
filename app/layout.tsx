@@ -54,14 +54,27 @@ export function generateMetadata(): Metadata {
 
 export const viewport: Viewport = {
   themeColor: [
-    { media: "(prefers-color-scheme: light)", color: "#faf9f6" },
-    { media: "(prefers-color-scheme: dark)", color: "#161510" },
+    { media: "(prefers-color-scheme: light)", color: "#eef3f8" },
+    { media: "(prefers-color-scheme: dark)", color: "#050e1f" },
   ],
 };
 
-// Inline FOUC-prevention. Conteúdo é string literal estática (zero input do usuário),
-// portanto seguro. Lê localStorage + prefers-color-scheme antes do primeiro paint.
-const THEME_INIT_SCRIPT = `(function(){try{var s=localStorage.getItem('deskcomm-theme');var d=window.matchMedia('(prefers-color-scheme: dark)').matches;var r=(s==='dark'||s==='light')?s:((s==='system'||!s)&&d?'dark':'light');document.documentElement.setAttribute('data-theme',r);}catch(e){document.documentElement.setAttribute('data-theme','light');}})();`;
+/**
+ * Inline FOUC-prevention. Conteúdo é string literal estática (zero input do
+ * usuário), portanto seguro. Lê localStorage + prefers-color-scheme antes do
+ * primeiro paint.
+ *
+ * O ESCURO É O PADRÃO — é o tema da identidade da Nexo IA. A regra tem três
+ * ramos e ela precisa ser LETRA POR LETRA a de `readStoredTheme`/`getSystemTheme`
+ * em `lib/theme.tsx` e a do `data-theme` do <html> abaixo: divergir entre os
+ * três produz um flash do tema errado, que é justamente o que este script
+ * existe para impedir.
+ *   1. NADA salvo          → escuro (a marca decide, não o SO);
+ *   2. 'light' ou 'dark'   → o que a pessoa escolheu, sempre;
+ *   3. 'system' explícito  → o SO, porque aí a escolha FOI seguir o SO.
+ * No `catch` (localStorage bloqueado) o fallback é escuro, não claro.
+ */
+const THEME_INIT_SCRIPT = `(function(){try{var s=localStorage.getItem('deskcomm-theme');var d=window.matchMedia('(prefers-color-scheme: dark)').matches;var r=(s==='light'||s==='dark')?s:(s==='system'?(d?'dark':'light'):'dark');document.documentElement.setAttribute('data-theme',r);}catch(e){document.documentElement.setAttribute('data-theme','dark');}})();`;
 
 export default function RootLayout({
   children,
@@ -69,7 +82,7 @@ export default function RootLayout({
   return (
     <html
       lang="pt-BR"
-      data-theme="light"
+      data-theme="dark"
       suppressHydrationWarning
       className={`${atkinson.variable} ${plexMono.variable}`}
     >

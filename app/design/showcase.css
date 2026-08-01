@@ -630,8 +630,10 @@
   border-radius: 12px;
   padding: 20px;
 }
-.ds-preview-light { background: #faf9f6; color: #1c1a16; }
-.ds-preview-dark  { background: #161510; color: #f5f4ef; }
+/* Superfícies da paleta nexo (produção). Fixas de propósito: este par existe
+   para mostrar claro E escuro lado a lado, então não pode seguir o tema ativo. */
+.ds-preview-light { background: #eef3f8; color: #141c28; }
+.ds-preview-dark  { background: #050e1f; color: #e2e8f0; }
 .ds-preview-label {
   font-family: var(--ds-font-mono);
   font-size: 10px;

@@ -1,8 +1,10 @@
 // Design tokens for DeskcommCRM showcase.
-// "Soft-tech / calmo" — neutros desaturados (greige/warm-gray), accent não-saturado.
+// A paleta EM PRODUÇÃO é `nexo` (identidade da Nexo IA) — é ela que o
+// app/globals.css materializa. As outras cinco ficam como alternativas
+// exploráveis no showcase /design; mexer nelas não muda o produto.
 // 5-Constraint Rule applied: Shape, Color (exact hex), Typography, Motion, Layout.
 
-export type PaletteId = "sage" | "clay" | "mist" | "plum" | "olive";
+export type PaletteId = "nexo" | "sage" | "clay" | "mist" | "plum" | "olive";
 export type TypoId = "bricolage-jakarta" | "fraunces-manrope" | "atkinson" | "source-plex";
 export type DensityId = "aerada" | "equilibrada" | "compacta";
 export type ThemeId = "light" | "dark";
@@ -38,6 +40,56 @@ export type PaletteDef = {
 // ─── Palettes ──────────────────────────────────────────────────────────────
 
 export const PALETTES: Record<PaletteId, PaletteDef> = {
+  // ── Nexo IA (paleta da marca — padrão do produto) ────────────────────────
+  // Fonte: identidade/design-guide.md do NexoIAos. Âncoras que NÃO se negociam,
+  // porque são as que a marca usa em site, proposta e peça de conteúdo:
+  //   #050e1f navy fundo · #081422 card · #00c8e8 ciano CTA
+  //   #f97316 laranja alerta · #e2e8f0 texto · #64748b muted
+  //
+  // Duas notas de contraste, porque o guia foi escrito para peça de marketing
+  // (texto grande) e aqui é CRM (texto de 13px lido 8h por dia):
+  //
+  //   1. `#64748b` sobre o navy dá 4,05:1 — passa AA para texto grande, falha
+  //      para corpo. Ele fica em `textMuted` da ESCALA (neutralDark 300) mas o
+  //      token semântico de texto secundário sobe para #94a3b8 (7,5:1). O guia
+  //      não perde: o valor dele continua no sistema, só não carrega o corpo.
+  //   2. O tema claro existe por decisão de produto (ambiente iluminado) e o
+  //      guia proíbe fundo BRANCO PURO — então `surface` é #f9fbfd, não #fff,
+  //      e o accent claro desce para o stop 600 (#0a7d95), que dá 4,79:1 com
+  //      texto branco. O ciano #00c8e8 com branco em cima dá 1,9:1: seria
+  //      ilegível como botão no claro.
+  nexo: {
+    id: "nexo",
+    name: "Nexo IA",
+    description: "Navy profundo + ciano elétrico. Dark tech, centro de comando.",
+    accent: {
+      50: "#ecfdff", 100: "#cff7fe", 200: "#a2eefb", 300: "#67e0f5",
+      400: "#00c8e8", 500: "#04a5c4", 600: "#0a7d95", 700: "#0e6577",
+      800: "#135160", 900: "#144351", 950: "#072b36",
+    },
+    neutralLight: {
+      50: "#f4f7fa", 100: "#e8eef4", 200: "#d5dfe9", 300: "#b6c4d3",
+      400: "#8798ab", 500: "#64748b", 600: "#4a5769", 700: "#37424f",
+      800: "#232c38", 900: "#141c28", 950: "#0a121c",
+    },
+    // 950/900/800 são exatamente bg/surface/elevated do guia — a escala e as
+    // superfícies não são duas decisões, são a mesma.
+    neutralDark: {
+      50: "#e2e8f0", 100: "#cbd5e1", 200: "#94a3b8", 300: "#64748b",
+      400: "#4a5a71", 500: "#34455c", 600: "#22334a", 700: "#16263a",
+      800: "#0d1c2e", 900: "#081422", 950: "#050e1f",
+    },
+    states: {
+      // Laranja do guia = alerta. No claro ele desce para #b45309 (5,0:1 com
+      // branco); #f97316 com branco em cima dá 2,9:1.
+      light: { success: "#157f52", warning: "#b45309", error: "#b42318", info: "#0a7d95" },
+      dark:  { success: "#34d399", warning: "#f97316", error: "#f87171", info: "#00c8e8" },
+    },
+    surfaces: {
+      light: { bg: "#eef3f8", surface: "#f9fbfd", surfaceElevated: "#e8eef4", text: "#141c28", textMuted: "#4a5769", border: "#d5dfe9" },
+      dark:  { bg: "#050e1f", surface: "#081422", surfaceElevated: "#0d1c2e", text: "#e2e8f0", textMuted: "#94a3b8", border: "rgba(0, 200, 232, 0.14)" },
+    },
+  },
   sage: {
     id: "sage",
     name: "Sage",

@@ -2,7 +2,7 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useTransition } from "react";
-import { Kanban, Users, UsersThree, Gear, CaretDoubleLeft, CaretDoubleRight, Inbox, ScalesSimple, Robot, Brain, PlugsConnected, ChartBar, ChartLineUp, WebhooksLogo, FlowArrow, FileText, ClockCountdown, PuzzlePiece, Signpost } from "@/lib/ui/icons";
+import { Kanban, Users, UsersThree, Gear, CaretDoubleLeft, CaretDoubleRight, Inbox, ScalesSimple, Robot, Brain, PlugsConnected, ChartBar, ChartLineUp, WebhooksLogo, FlowArrow, FileText, ClockCountdown, PuzzlePiece, Signpost, Sparkle } from "@/lib/ui/icons";
 import type { Icon as PhosphorIcon } from "@phosphor-icons/react";
 import { cn } from "@/lib/utils";
 import { toggleSidebar } from "@/app/actions/shell/toggleSidebar";
@@ -19,6 +19,10 @@ interface NavItem {
 }
 
 const NAV_ITEMS: NavItem[] = [
+  // NEXO IA — preenche o CRM com dados fictícios para avaliar o produto cheio.
+  // No topo de propósito, pra ficar visível durante a avaliação. Remover junto
+  // com app/app/demo-nexo/ e lib/nexo-demo/ quando não precisar mais.
+  { href: "/app/demo-nexo", label: "Demonstração", icon: Sparkle },
   { href: "/app/inbox", label: "Inbox", icon: Inbox },
   { href: "/app/radar", label: "Radar", icon: ClockCountdown },
   { href: "/app/connections", label: "Conexões", icon: PlugsConnected, healthDot: true },
@@ -82,7 +86,12 @@ export function Sidebar({ collapsed }: { collapsed: boolean }) {
           </span>
         )}
       </div>
-      <nav className="flex-1 space-y-1 p-2" aria-label="Navegação principal">
+      {/* NEXO IA: `min-h-0` + `overflow-y-auto` porque o <aside> tem a altura da
+          janela e a lista tem 18 itens. Sem isso, em tela de notebook os últimos
+          itens são cortados e ficam inalcançáveis — sem rolagem e sem aviso.
+          (`min-h-0` é obrigatório: item de flex-column não encolhe abaixo do
+          conteúdo por padrão, então só `overflow-y-auto` não rolaria.) */}
+      <nav className="min-h-0 flex-1 space-y-1 overflow-y-auto p-2" aria-label="Navegação principal">
         {NAV_ITEMS.filter((item) => {
           if (item.permission === "lgpd.execute_redact") return canLgpd;
           if (item.permission === "ai.agents.view") return canAiAgents;

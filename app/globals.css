@@ -3,70 +3,78 @@
 @tailwind utilities;
 
 /* ─────────────────────────────────────────────────────────────────────────
-   DeskcommCRM — Design System tokens (Sage palette · density Aerada)
-   Source of truth: /app/design/lib/tokens.ts (PALETTES.sage)
-   Light + dark drawn separately (NOT inverted).
+   DeskcommCRM — Design System tokens (paleta Nexo IA · density Aerada)
+   Source of truth: /app/design/lib/tokens.ts (PALETTES.nexo)
+   Identidade: NexoIAos/identidade/design-guide.md
+
+   O ESCURO É O TEMA DA MARCA e é o padrão (app/layout.tsx). O claro existe
+   para ambiente muito iluminado e é DESENHADO À PARTE, não invertido — as
+   razões de contraste de cada desvio do guia estão no cabeçalho de PALETTES.nexo.
    ───────────────────────────────────────────────────────────────────────── */
 
 :root {
-  /* Surfaces (light) */
-  --color-bg: #faf9f6;
-  --color-surface: #ffffff;
-  --color-surface-elevated: #f5f3ee;
-  --color-overlay: rgba(28, 26, 22, 0.42);
+  /* Surfaces (light) — `surface` é #f9fbfd, não #ffffff: o guia proíbe branco
+     puro como fundo, e a proibição vale nos dois temas. */
+  --color-bg: #eef3f8;
+  --color-surface: #f9fbfd;
+  --color-surface-elevated: #e8eef4;
+  --color-overlay: rgba(10, 18, 28, 0.45);
 
   /* Text (light) */
-  --color-text: #1c1a16;
-  --color-text-muted: #5d594f;
-  --color-text-subtle: #7d786c;
+  --color-text: #141c28;
+  --color-text-muted: #4a5769;
+  --color-text-subtle: #64748b;
 
   /* Borders (light) */
-  --color-border: #e7e3da;
-  --color-border-strong: #d2cdbf;
+  --color-border: #d5dfe9;
+  --color-border-strong: #b6c4d3;
 
-  /* Accent — Sage (11 stops) */
-  --color-accent-50:  #f3f6f1;
-  --color-accent-100: #e4ebe0;
-  --color-accent-200: #c8d6c1;
-  --color-accent-300: #a4ba9a;
-  --color-accent-400: #82a077;
-  --color-accent-500: #67885d;
-  --color-accent-600: #506d48;
-  --color-accent-700: #41573b;
-  --color-accent-800: #374731;
-  --color-accent-900: #2f3c2b;
-  --color-accent-950: #171f15;
+  /* Accent — ciano Nexo (11 stops, âncora #00c8e8 no stop 400) */
+  --color-accent-50:  #ecfdff;
+  --color-accent-100: #cff7fe;
+  --color-accent-200: #a2eefb;
+  --color-accent-300: #67e0f5;
+  --color-accent-400: #00c8e8;
+  --color-accent-500: #04a5c4;
+  --color-accent-600: #0a7d95;
+  --color-accent-700: #0e6577;
+  --color-accent-800: #135160;
+  --color-accent-900: #144351;
+  --color-accent-950: #072b36;
+  /* No claro o default é o 600: #00c8e8 com texto branco dá 1,9:1 e seria um
+     botão ilegível. O 600 dá 4,79:1. */
   --color-accent: var(--color-accent-600);
   --color-accent-fg: #ffffff;
   --color-accent-soft: var(--color-accent-100);
   --color-accent-hover: var(--color-accent-700);
 
-  /* Neutrals — greige (11 stops, light) */
-  --color-neutral-50:  #faf9f6;
-  --color-neutral-100: #f3f1ec;
-  --color-neutral-200: #e7e3da;
-  --color-neutral-300: #d2cdbf;
-  --color-neutral-400: #a9a395;
-  --color-neutral-500: #7d786c;
-  --color-neutral-600: #5d594f;
-  --color-neutral-700: #46433b;
-  --color-neutral-800: #2e2c26;
-  --color-neutral-900: #1c1a16;
-  --color-neutral-950: #0e0d0a;
+  /* Neutrals — slate frio (11 stops, light) */
+  --color-neutral-50:  #f4f7fa;
+  --color-neutral-100: #e8eef4;
+  --color-neutral-200: #d5dfe9;
+  --color-neutral-300: #b6c4d3;
+  --color-neutral-400: #8798ab;
+  --color-neutral-500: #64748b;
+  --color-neutral-600: #4a5769;
+  --color-neutral-700: #37424f;
+  --color-neutral-800: #232c38;
+  --color-neutral-900: #141c28;
+  --color-neutral-950: #0a121c;
 
-  /* States (light) */
-  --color-success: #5a8a5f;
-  --color-success-bg: rgba(90, 138, 95, 0.12);
-  --color-success-fg: #41673f;
-  --color-warning: #b07a2b;
-  --color-warning-bg: rgba(176, 122, 43, 0.12);
-  --color-warning-fg: #875a1a;
-  --color-error: #a94a3c;
-  --color-error-bg: rgba(169, 74, 60, 0.12);
-  --color-error-fg: #8a3a2e;
-  --color-info: #4a7a93;
-  --color-info-bg: rgba(74, 122, 147, 0.12);
-  --color-info-fg: #355d72;
+  /* States (light) — o laranja da marca desce para #b45309 aqui (5,0:1 com
+     branco); #f97316 daria 2,9:1. O `-bg` guarda o laranja original. */
+  --color-success: #157f52;
+  --color-success-bg: rgba(21, 127, 82, 0.12);
+  --color-success-fg: #0f6642;
+  --color-warning: #b45309;
+  --color-warning-bg: rgba(249, 115, 22, 0.12);
+  --color-warning-fg: #9a3412;
+  --color-error: #b42318;
+  --color-error-bg: rgba(180, 35, 24, 0.12);
+  --color-error-fg: #912018;
+  --color-info: #0a7d95;
+  --color-info-bg: rgba(0, 200, 232, 0.12);
+  --color-info-fg: #0e6577;
 
   /* Spacing (4-base) */
   --space-0: 0px;
@@ -92,12 +100,19 @@
   --radius-xl: 16px;
   --radius-full: 9999px;
 
-  /* Shadows — desaturated, neutral-based */
-  --shadow-xs: 0 1px 2px 0 rgba(20, 18, 14, 0.04);
-  --shadow-sm: 0 1px 2px 0 rgba(20, 18, 14, 0.05), 0 1px 1px 0 rgba(20, 18, 14, 0.03);
-  --shadow-md: 0 4px 12px -2px rgba(20, 18, 14, 0.06), 0 2px 4px -1px rgba(20, 18, 14, 0.04);
-  --shadow-lg: 0 12px 32px -6px rgba(20, 18, 14, 0.10), 0 4px 12px -2px rgba(20, 18, 14, 0.06);
-  --shadow-xl: 0 24px 48px -12px rgba(20, 18, 14, 0.16), 0 8px 16px -4px rgba(20, 18, 14, 0.08);
+  /* Shadows — base navy fria (era greige quente) */
+  --shadow-xs: 0 1px 2px 0 rgba(10, 18, 28, 0.05);
+  --shadow-sm: 0 1px 2px 0 rgba(10, 18, 28, 0.06), 0 1px 1px 0 rgba(10, 18, 28, 0.04);
+  --shadow-md: 0 4px 12px -2px rgba(10, 18, 28, 0.08), 0 2px 4px -1px rgba(10, 18, 28, 0.05);
+  --shadow-lg: 0 12px 32px -6px rgba(10, 18, 28, 0.12), 0 4px 12px -2px rgba(10, 18, 28, 0.07);
+  --shadow-xl: 0 24px 48px -12px rgba(10, 18, 28, 0.18), 0 8px 16px -4px rgba(10, 18, 28, 0.10);
+
+  /* Glow — elemento-chave do guia ("0 0 24px rgba(0,200,232,0.3)"). Exposto
+     como token para o botão primário/métrica de alerta poder usá-lo via
+     `shadow-glow` / `shadow-glow-warning` do Tailwind. No claro fica mais
+     contido: glow sobre fundo claro vira borrão, não brilho. */
+  --shadow-glow: 0 0 16px rgba(0, 200, 232, 0.18);
+  --shadow-glow-warning: 0 0 14px rgba(249, 115, 22, 0.16);
 
   /* Density — Aerada */
   --density-row: 56px;
@@ -144,71 +159,80 @@
 }
 
 [data-theme="dark"] {
-  /* Surfaces (dark — drawn) */
-  --color-bg: #161510;
-  --color-surface: #1d1c17;
-  --color-surface-elevated: #272620;
-  --color-overlay: rgba(0, 0, 0, 0.55);
+  /* Surfaces (dark) — os três hexes do guia, sem desvio */
+  --color-bg: #050e1f;
+  --color-surface: #081422;
+  --color-surface-elevated: #0d1c2e;
+  --color-overlay: rgba(2, 6, 15, 0.68);
 
-  /* Text (dark) */
-  --color-text: #f5f4ef;
-  --color-text-muted: #8e8b7f;
-  --color-text-subtle: #605e54;
+  /* Text (dark) — `#e2e8f0` é o texto do guia. O secundário é #94a3b8 (7,5:1
+     sobre o navy) e não o `#64748b` do guia, que dá 4,05:1 e não sustenta
+     corpo de 13px; o #64748b fica no `subtle`, onde 4,05:1 basta. */
+  --color-text: #e2e8f0;
+  --color-text-muted: #94a3b8;
+  --color-text-subtle: #64748b;
 
-  /* Borders (dark) */
-  --color-border: #33312a;
-  --color-border-strong: #444239;
+  /* Borders (dark) — ciano translúcido, o elemento-chave do guia:
+     0.14 no repouso, 0.30 no realce. */
+  --color-border: rgba(0, 200, 232, 0.14);
+  --color-border-strong: rgba(0, 200, 232, 0.30);
 
-  /* Accent stays same hex stops; default shifts up for dark contrast */
-  --color-accent-50:  #f3f6f1;
-  --color-accent-100: #e4ebe0;
-  --color-accent-200: #c8d6c1;
-  --color-accent-300: #a4ba9a;
-  --color-accent-400: #82a077;
-  --color-accent-500: #67885d;
-  --color-accent-600: #506d48;
-  --color-accent-700: #41573b;
-  --color-accent-800: #374731;
-  --color-accent-900: #2f3c2b;
-  --color-accent-950: #171f15;
+  /* Accent — mesmos stops; no escuro o default sobe para o 400, que É o ciano
+     da marca, com o navy por cima (9,6:1, exatamente o botão do guia). */
+  --color-accent-50:  #ecfdff;
+  --color-accent-100: #cff7fe;
+  --color-accent-200: #a2eefb;
+  --color-accent-300: #67e0f5;
+  --color-accent-400: #00c8e8;
+  --color-accent-500: #04a5c4;
+  --color-accent-600: #0a7d95;
+  --color-accent-700: #0e6577;
+  --color-accent-800: #135160;
+  --color-accent-900: #144351;
+  --color-accent-950: #072b36;
   --color-accent: var(--color-accent-400);
-  --color-accent-fg: #161510;
-  --color-accent-soft: rgba(130, 160, 119, 0.16);
+  --color-accent-fg: #050e1f;
+  --color-accent-soft: rgba(0, 200, 232, 0.16);
   --color-accent-hover: var(--color-accent-300);
 
-  /* Neutrals — greige (11 stops, dark) */
-  --color-neutral-50:  #f5f4ef;
-  --color-neutral-100: #e6e4dc;
-  --color-neutral-200: #bbb8ac;
-  --color-neutral-300: #8e8b7f;
-  --color-neutral-400: #605e54;
-  --color-neutral-500: #444239;
-  --color-neutral-600: #33312a;
-  --color-neutral-700: #272620;
-  --color-neutral-800: #1d1c17;
-  --color-neutral-900: #161510;
-  --color-neutral-950: #0c0b08;
+  /* Neutrals — navy (11 stops, dark). 950/900/800 = bg/surface/elevated. */
+  --color-neutral-50:  #e2e8f0;
+  --color-neutral-100: #cbd5e1;
+  --color-neutral-200: #94a3b8;
+  --color-neutral-300: #64748b;
+  --color-neutral-400: #4a5a71;
+  --color-neutral-500: #34455c;
+  --color-neutral-600: #22334a;
+  --color-neutral-700: #16263a;
+  --color-neutral-800: #0d1c2e;
+  --color-neutral-900: #081422;
+  --color-neutral-950: #050e1f;
 
-  /* States (dark) */
-  --color-success: #82a077;
-  --color-success-bg: rgba(130, 160, 119, 0.18);
-  --color-success-fg: #a4ba9a;
-  --color-warning: #d09455;
-  --color-warning-bg: rgba(208, 148, 85, 0.18);
-  --color-warning-fg: #e0ad77;
-  --color-error: #c87263;
-  --color-error-bg: rgba(200, 114, 99, 0.18);
-  --color-error-fg: #d99182;
-  --color-info: #7da9bf;
-  --color-info-bg: rgba(125, 169, 191, 0.18);
-  --color-info-fg: #9bbfd2;
+  /* States (dark) — o alerta é o laranja #f97316 do guia (6,9:1 sobre o navy);
+     info é o próprio ciano. */
+  --color-success: #34d399;
+  --color-success-bg: rgba(52, 211, 153, 0.16);
+  --color-success-fg: #6ee7b7;
+  --color-warning: #f97316;
+  --color-warning-bg: rgba(249, 115, 22, 0.18);
+  --color-warning-fg: #fdba74;
+  --color-error: #f87171;
+  --color-error-bg: rgba(248, 113, 113, 0.18);
+  --color-error-fg: #fca5a5;
+  --color-info: #00c8e8;
+  --color-info-bg: rgba(0, 200, 232, 0.16);
+  --color-info-fg: #67e0f5;
 
-  /* Shadows — heavier in dark */
-  --shadow-xs: 0 1px 2px 0 rgba(0, 0, 0, 0.30);
-  --shadow-sm: 0 1px 2px 0 rgba(0, 0, 0, 0.40), 0 1px 1px 0 rgba(0, 0, 0, 0.20);
-  --shadow-md: 0 4px 12px -2px rgba(0, 0, 0, 0.45), 0 2px 4px -1px rgba(0, 0, 0, 0.30);
-  --shadow-lg: 0 12px 32px -6px rgba(0, 0, 0, 0.55), 0 4px 12px -2px rgba(0, 0, 0, 0.40);
-  --shadow-xl: 0 24px 48px -12px rgba(0, 0, 0, 0.65), 0 8px 16px -4px rgba(0, 0, 0, 0.50);
+  /* Shadows — mais pesadas e com base navy, não preto puro */
+  --shadow-xs: 0 1px 2px 0 rgba(2, 6, 15, 0.40);
+  --shadow-sm: 0 1px 2px 0 rgba(2, 6, 15, 0.50), 0 1px 1px 0 rgba(2, 6, 15, 0.28);
+  --shadow-md: 0 4px 12px -2px rgba(2, 6, 15, 0.55), 0 2px 4px -1px rgba(2, 6, 15, 0.38);
+  --shadow-lg: 0 12px 32px -6px rgba(2, 6, 15, 0.65), 0 4px 12px -2px rgba(2, 6, 15, 0.48);
+  --shadow-xl: 0 24px 48px -12px rgba(2, 6, 15, 0.75), 0 8px 16px -4px rgba(2, 6, 15, 0.58);
+
+  /* Glow — no escuro é o valor do guia, sem atenuação */
+  --shadow-glow: 0 0 24px rgba(0, 200, 232, 0.30);
+  --shadow-glow-warning: 0 0 22px rgba(249, 115, 22, 0.28);
 
   /* shadcn-compat aliases */
   --background: var(--color-bg);
@@ -236,11 +260,14 @@
     border-color: var(--color-border);
   }
 
+  /* Escuro é o padrão da marca, então é ele o `color-scheme` de base — o claro
+     só se anuncia quando o atributo o pede. Trocar a ordem faria o navegador
+     pintar scrollbar/form nativo em claro no instante antes do CSS resolver. */
   html {
-    color-scheme: light;
-  }
-  [data-theme="dark"] {
     color-scheme: dark;
+  }
+  [data-theme="light"] {
+    color-scheme: light;
   }
 
   body {

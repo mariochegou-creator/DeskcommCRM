@@ -75,7 +75,13 @@ function applyToRoot(s: State) {
   root.style.setProperty("--ds-accent", p.accent[s.theme === "dark" ? 400 : 600]);
   root.style.setProperty("--ds-accent-hover", p.accent[s.theme === "dark" ? 300 : 700]);
   root.style.setProperty("--ds-accent-soft", p.accent[s.theme === "dark" ? 800 : 100]);
-  root.style.setProperty("--ds-accent-fg", s.theme === "dark" ? "#0c0b08" : "#ffffff");
+  // Derivado da paleta, não fixo: o texto sobre o accent no escuro é o próprio
+  // fundo da paleta (no nexo, o navy #050e1f do guia). Fixar um quase-preto
+  // greige aqui daria um contraste alheio à paleta selecionada.
+  root.style.setProperty(
+    "--ds-accent-fg",
+    s.theme === "dark" ? p.surfaces.dark.bg : "#ffffff",
+  );
 
   root.style.setProperty("--ds-success", states.success);
   root.style.setProperty("--ds-warning", states.warning);
@@ -98,11 +104,14 @@ function applyToRoot(s: State) {
 }
 
 export function VariantProvider({ children }: { children: React.ReactNode }) {
+  // Abre no que está EM PRODUÇÃO (paleta nexo, escuro), não numa combinação que
+  // o produto não usa: o showcase serve para conferir o sistema real primeiro e
+  // explorar alternativas depois.
   const [state, setState] = React.useState<State>({
-    palette: "sage",
-    typo: "bricolage-jakarta",
-    density: "equilibrada",
-    theme: "light",
+    palette: "nexo",
+    typo: "atkinson",
+    density: "aerada",
+    theme: "dark",
   });
   const [hydrated, setHydrated] = React.useState(false);
 

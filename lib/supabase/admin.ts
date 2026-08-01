@@ -16,6 +16,11 @@
  *  - Substituir auth por conveniência
  */
 
+// Faz o build quebrar se este módulo for importado por um componente de
+// cliente — a regra acima passa a ser garantida pelo compilador, não só
+// por convenção.
+import "server-only";
+
 import { createClient as createSupabaseClient, type SupabaseClient } from "@supabase/supabase-js";
 import { env } from "@/lib/env";
 
