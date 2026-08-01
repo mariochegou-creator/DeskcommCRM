@@ -155,7 +155,7 @@ jobs:
             echo "Expandir é trabalho de seguimento — issue #63."
           } >> "$GITHUB_STEP_SUMMARY"
 
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         if: failure()
         with:
           name: playwright-report
