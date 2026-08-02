@@ -5,6 +5,7 @@ import {
   MagnifyingGlass,
   Plus,
   Export,
+  UploadSimple,
   ArrowsDownUp,
   DotsThree,
   CaretLeft,
@@ -37,6 +38,7 @@ import {
 import { EditableStagePill } from "@/components/kanban/StagePill";
 import { FunnelSummaryCards } from "@/components/kanban/FunnelSummaryCards";
 import { NewLeadDialog } from "@/components/kanban/NewLeadDialog";
+import { ImportKaptarDialog } from "@/components/kanban/ImportKaptarDialog";
 import { FilterChips, type ActiveFilter } from "./FilterChips";
 import { periodRange } from "@/lib/dashboard/period";
 import { formatBRL, pickFunnelStages } from "@/lib/dashboard/metrics";
@@ -125,6 +127,7 @@ export function LeadsClient({
   const [page, setPage] = useState(0);
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [createOpen, setCreateOpen] = useState(false);
+  const [importOpen, setImportOpen] = useState(false);
 
   const board = useBoard(pipelineId);
   const move = useMoveCard(pipelineId ?? "");
@@ -288,6 +291,15 @@ export function LeadsClient({
               </span>
 
               <div className="ml-auto flex flex-wrap items-center gap-2">
+                <Button
+                  variant="link"
+                  onClick={() => setImportOpen(true)}
+                  className="gap-2 no-underline"
+                >
+                  <UploadSimple size={16} aria-hidden />
+                  Importar
+                </Button>
+
                 <Button
                   variant="link"
                   onClick={() => exportCsv(filtered, stages)}
@@ -523,6 +535,15 @@ export function LeadsClient({
         <NewLeadDialog
           open={createOpen}
           onOpenChange={setCreateOpen}
+          pipelineId={pipelineId}
+          stages={board.data.stages}
+        />
+      )}
+
+      {board.data && (
+        <ImportKaptarDialog
+          open={importOpen}
+          onOpenChange={setImportOpen}
           pipelineId={pipelineId}
           stages={board.data.stages}
         />

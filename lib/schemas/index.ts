@@ -9,6 +9,7 @@
 export * from "./_validate";
 export * from "./health";
 export * from "./leads";
+export * from "./import-kaptar";
 export * from "./contacts";
 export * from "./team";
 export * from "./onboarding";
