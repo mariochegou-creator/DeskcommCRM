@@ -88,6 +88,18 @@ export {
   // followup flow builder (Task 6.2)
   GitBranch,
   Flag,
+  // redesign Nexo IA — os ícones da nova pele
+  // `ArrowUpRight` é o ↗ do botão circular que abre o detalhe de cada card:
+  // é a assinatura do layout e aparece em TODO card de KPI.
+  ArrowUpRight,
+  ArrowUp,
+  ArrowDown,
+  Export,
+  ArrowsDownUp,
+  FunnelSimple,
+  CurrencyDollar,
+  Target,
+  CalendarBlank,
   // misc
   DotsThree,
   CaretDown,
@@ -102,4 +114,7 @@ export {
   PuzzlePiece,
   UploadSimple,
   Signpost,
+  // guias in-app (Configurações › Guias)
+  BookOpen,
+  ListBullets,
 } from "@phosphor-icons/react/dist/ssr";

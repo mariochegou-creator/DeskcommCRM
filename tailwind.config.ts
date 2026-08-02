@@ -34,6 +34,10 @@ const config: Config = {
         accent: {
           DEFAULT: "var(--color-accent)",
           foreground: "var(--color-accent-fg)",
+          // Par secundário PARA USO SOBRE O ACCENT sólido (card de destaque).
+          // Não confundir com `text-muted`: aquele é calibrado contra o navy.
+          "foreground-muted": "var(--color-accent-fg-muted)",
+          "foreground-soft": "var(--color-accent-fg-soft)",
           soft: "var(--color-accent-soft)",
           hover: "var(--color-accent-hover)",
           50: "var(--color-accent-50)",
@@ -117,15 +121,50 @@ const config: Config = {
           DEFAULT: "var(--color-surface)",
           foreground: "var(--color-text)",
         },
+
+        // Séries de gráfico — ordem fixa (ciano, azul, âmbar, vermelho, verde).
+        // A MESMA série mantém a MESMA cor ao alternar tema; só o stop muda.
+        chart: {
+          1: "var(--chart-1)",
+          2: "var(--chart-2)",
+          3: "var(--chart-3)",
+          4: "var(--chart-4)",
+          5: "var(--chart-5)",
+          grid: "var(--chart-grid)",
+        },
+
+        // Etapas do funil — pill da tabela e header do card de resumo leem
+        // daqui, então a cor de uma etapa é uma decisão só.
+        stage: {
+          entrada: "var(--stage-entrada)",
+          r1: "var(--stage-r1)",
+          proposta: "var(--stage-proposta)",
+          fechado: "var(--stage-fechado)",
+          perdido: "var(--stage-perdido)",
+        },
       },
       fontFamily: {
+        // Inter e JetBrains Mono são as duas fontes servidas por
+        // nexoialocal.com.br. `display` aponta para a MESMA família de
+        // propósito: o site não carrega fonte de display separada, então
+        // título e KPI se distinguem por PESO (800) e tracking, não por
+        // família. O alias existe para o dia em que houver uma — aí muda aqui,
+        // num lugar só, em vez de em cada `<h1>`.
         sans: [
-          "var(--font-atkinson)",
+          "var(--font-inter)",
           "ui-sans-serif",
           "system-ui",
           "-apple-system",
           "Segoe UI",
           "Roboto",
+          "sans-serif",
+        ],
+        display: [
+          "var(--font-inter)",
+          "ui-sans-serif",
+          "system-ui",
+          "-apple-system",
+          "Segoe UI",
           "sans-serif",
         ],
         mono: [
@@ -161,6 +200,11 @@ const config: Config = {
         md: "var(--radius-md)",
         lg: "var(--radius-lg)",
         xl: "var(--radius-xl)",
+        // Papéis semânticos do redesign — preferir estes a `lg`/`xl` em
+        // superfície nova. Ver a nota no bloco Radius de app/globals.css.
+        card: "var(--radius-card)",
+        control: "var(--radius-control)",
+        pill: "var(--radius-pill)",
         full: "var(--radius-full)",
       },
       boxShadow: {

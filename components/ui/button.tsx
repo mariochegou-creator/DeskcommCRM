@@ -5,20 +5,30 @@ import { cva, type VariantProps } from "class-variance-authority";
 import { cn } from "@/lib/utils";
 
 /**
- * Button — Sage design system.
+ * Button — identidade Nexo IA.
+ *
+ * Forma: `rounded-control` (12px, o mesmo raio de botão do site) e altura 40px
+ * no tamanho padrão. Sem sombra — no escuro os tokens `shadow-*` resolvem para
+ * `none` (ver app/globals.css), então a separação vem da cor.
+ *
+ * O CIANO É ESCASSO. Só `primary` o usa preenchido, e ele é o único botão de
+ * ação principal por tela; `secondary`/`outline`/`ghost` existem justamente
+ * para que o resto não dispute com ele. Dois botões ciano lado a lado = um dos
+ * dois está errado.
+ *
  * Variants:
- *   - primary (default): accent fill, branded CTA
- *   - secondary: surface-elevated com border, ação neutra
- *   - ghost: transparent, hover suave (toolbar/inline)
+ *   - primary (default): fundo ciano, texto navy — a CTA da tela
+ *   - secondary: surface-elevated com borda, ação neutra
+ *   - ghost: transparente, para barra de ferramentas (ver nota no variant)
  *   - destructive: error fill (delete/cancel destrutivo)
- *   - outline: alias de secondary com background transparente (compat shadcn)
- *   - link: text-only com underline
+ *   - outline: secondary com fundo transparente (compat shadcn)
+ *   - link: texto ciano sem fundo
  *   - default: alias de primary (compat shadcn)
  */
 const buttonVariants = cva(
   [
     "inline-flex items-center justify-center gap-2 whitespace-nowrap",
-    "rounded-sm font-medium",
+    "rounded-control font-medium",
     "transition-[background-color,border-color,color,box-shadow,transform]",
     "duration-fast ease-out",
     "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent-500 focus-visible:ring-offset-2 focus-visible:ring-offset-bg",
@@ -30,26 +40,34 @@ const buttonVariants = cva(
     variants: {
       variant: {
         primary:
-          "bg-accent text-accent-foreground hover:bg-accent-hover shadow-xs",
+          "bg-accent text-accent-foreground hover:bg-accent-hover",
         default:
-          "bg-accent text-accent-foreground hover:bg-accent-hover shadow-xs",
+          "bg-accent text-accent-foreground hover:bg-accent-hover",
         secondary:
-          "bg-surface-elevated text-text border border-border hover:border-accent hover:text-accent",
+          "bg-surface-elevated text-text border border-border hover:border-border-strong",
         outline:
-          "bg-transparent text-text border border-border hover:border-accent hover:text-accent",
+          "bg-transparent text-text border border-border hover:border-border-strong",
+        // Hover em `surface-elevated`, não em `accent-soft`: ghost é o botão de
+        // barra de ferramentas e aparece EM SÉRIE (⋯, ordenar, filtro, fechar).
+        // Tingir cada um de ciano ao passar o mouse espalha o accent pela tela,
+        // que é exatamente o que a regra do ciano escasso proíbe.
         ghost:
-          "bg-transparent text-text hover:bg-accent-soft hover:text-accent",
+          "bg-transparent text-text-muted hover:bg-surface-elevated hover:text-text",
         destructive:
-          "bg-error text-white hover:brightness-95 shadow-xs",
+          "bg-error text-white hover:brightness-95",
         link:
           "bg-transparent text-accent underline underline-offset-4 decoration-1 hover:decoration-2 h-auto p-0",
       },
       size: {
         sm: "h-8 px-3 text-xs",
-        default: "h-9 px-4 text-sm",
-        md: "h-9 px-4 text-sm",
+        default: "h-10 px-4 text-sm",
+        md: "h-10 px-4 text-sm",
         lg: "h-11 px-6 text-sm",
-        icon: "h-9 w-9",
+        icon: "h-10 w-10",
+        // Ícone REDONDO — a "assinatura do layout": o ↗ no canto do card e os
+        // controles da topbar. `rounded-pill` sobrescreve o `rounded-control`
+        // da base porque aqui o círculo é o ponto, não o quadrado macio.
+        "icon-round": "h-9 w-9 rounded-pill",
       },
     },
     defaultVariants: {

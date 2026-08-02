@@ -1,0 +1,18 @@
+# Ajustes locais da NEXO IA — o Docker Compose carrega este arquivo
+# automaticamente, sem precisar de flag.
+#
+# Existe para NÃO editar o docker-compose.yml do projeto: assim a gente continua
+# conseguindo puxar atualizações do repositório original sem conflito.
+#
+# Só referências a variáveis aqui — os valores moram no .env.local, que é
+# ignorado pelo git. Por isso todo comando precisa de `--env-file .env.local`.
+
+services:
+  waha:
+    environment:
+      # O docker-compose.yml liga o painel (WAHA_DASHBOARD_ENABLED) mas não
+      # define login nenhum. Sem estas duas, o WAHA cai num padrão que a própria
+      # documentação não define com clareza ("admin ou waha", "senha aleatória")
+      # — e o painel fica pedindo credencial que ninguém sabe qual é.
+      WAHA_DASHBOARD_USERNAME: ${WAHA_DASHBOARD_USERNAME}
+      WAHA_DASHBOARD_PASSWORD: ${WAHA_DASHBOARD_PASSWORD}

@@ -1,5 +1,5 @@
 import type { Metadata, Viewport } from "next";
-import { Atkinson_Hyperlegible, IBM_Plex_Mono } from "next/font/google";
+import { Inter, JetBrains_Mono } from "next/font/google";
 import { Toaster } from "sonner";
 import { branding } from "@/lib/branding";
 import { ThemeProvider } from "@/lib/theme";
@@ -7,16 +7,28 @@ import { Providers } from "./providers";
 import { PublicEnvScript } from "./public-env-script";
 import "./globals.css";
 
-const atkinson = Atkinson_Hyperlegible({
+/**
+ * As DUAS fontes do nexoialocal.com.br, na mesma combinação que o site serve:
+ *   <link href="…family=Inter:wght@300..900&family=JetBrains+Mono:wght@400..600">
+ *
+ * Inter carrega até o 800 porque ela é corpo E display — o site não usa Space
+ * Grotesk (nem nenhuma outra de display), então título de página e valor de KPI
+ * saem do próprio Inter em peso alto. Sem o 800 aqui o navegador sintetizaria
+ * um bold falso e o KPI ficaria borrado.
+ *
+ * `variable` (e não `className` direto) porque o Tailwind lê estas duas via
+ * `fontFamily.sans`/`.mono` em tailwind.config.ts.
+ */
+const inter = Inter({
   subsets: ["latin", "latin-ext"],
-  weight: ["400", "700"],
+  weight: ["400", "500", "600", "700", "800"],
   display: "swap",
-  variable: "--font-atkinson",
+  variable: "--font-inter",
 });
 
-const plexMono = IBM_Plex_Mono({
+const jetbrainsMono = JetBrains_Mono({
   subsets: ["latin", "latin-ext"],
-  weight: ["400", "500"],
+  weight: ["400", "500", "600"],
   display: "swap",
   variable: "--font-mono",
 });
@@ -84,7 +96,7 @@ export default function RootLayout({
       lang="pt-BR"
       data-theme="dark"
       suppressHydrationWarning
-      className={`${atkinson.variable} ${plexMono.variable}`}
+      className={`${inter.variable} ${jetbrainsMono.variable}`}
     >
       <head>
         {/* Config pública do Supabase em runtime (imagem genérica self-host). */}

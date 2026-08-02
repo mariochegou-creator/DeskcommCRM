@@ -13,6 +13,7 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
+import { MonoLabel } from "@/components/ui/mono-label";
 import { useContactList } from "@/hooks/contacts/useContactList";
 import { ContactsTable } from "@/components/contacts/ContactsTable";
 import { NewContactDialog } from "@/components/contacts/NewContactDialog";
@@ -53,25 +54,28 @@ export function ContactsListClient() {
   }, [allContacts]);
 
   return (
-    <div className="space-y-4 p-6">
-      <header className="flex items-center justify-between gap-4">
-        <div>
-          <h1 className="text-2xl font-semibold tracking-tight">Contatos</h1>
-          <p className="text-sm text-muted-foreground">
+    <div className="flex flex-col gap-6">
+      <header className="flex flex-wrap items-end justify-between gap-4">
+        <div className="flex flex-col gap-1">
+          <MonoLabel>contatos</MonoLabel>
+          <h1 className="text-[28px] font-bold leading-tight tracking-[-0.5px] text-text">
+            Contatos
+          </h1>
+          <p className="text-sm text-text-muted">
             Customer 360 — busque, filtre e gerencie contatos.
           </p>
         </div>
-        <Button onClick={() => setCreateOpen(true)}>
+        <Button onClick={() => setCreateOpen(true)} className="gap-2">
           <Plus size={16} weight="bold" aria-hidden />
           <span>Novo contato</span>
         </Button>
       </header>
 
-      <div className="flex flex-wrap items-center gap-2 rounded-lg border border-border bg-surface p-2">
-        <div className="relative">
+      <div className="flex flex-wrap items-center gap-3 rounded-card border border-border bg-surface p-4">
+        <div className="relative min-w-0 flex-1 sm:max-w-sm">
           <MagnifyingGlass
             size={16}
-            className="absolute left-2 top-1/2 -translate-y-1/2 text-muted-foreground"
+            className="pointer-events-none absolute left-4 top-1/2 -translate-y-1/2 text-text-muted"
             aria-hidden
           />
           <Input
@@ -79,13 +83,13 @@ export function ContactsListClient() {
             placeholder="Buscar por nome, email ou telefone…"
             value={searchInput}
             onChange={(e) => setSearchInput(e.target.value)}
-            className="h-9 w-72 pl-8"
+            className="rounded-pill border-transparent pl-10"
           />
         </div>
 
         <DropdownMenu>
           <DropdownMenuTrigger asChild>
-            <Button variant="outline" size="sm" disabled={tagOptions.length === 0}>
+            <Button variant="secondary" size="sm" disabled={tagOptions.length === 0}>
               {tag ? `Tag: ${tag}` : "Tag: todas"}
             </Button>
           </DropdownMenuTrigger>
@@ -103,7 +107,7 @@ export function ContactsListClient() {
 
         <DropdownMenu>
           <DropdownMenuTrigger asChild>
-            <Button variant="outline" size="sm">
+            <Button variant="secondary" size="sm">
               {SOURCE_OPTIONS.find((s) => s.value === source)?.label ?? "Origem"}
             </Button>
           </DropdownMenuTrigger>

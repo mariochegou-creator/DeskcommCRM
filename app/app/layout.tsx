@@ -40,8 +40,14 @@ export default async function AppLayout({ children }: { children: React.ReactNod
   }
 
   // Read sidebar collapsed state SSR to avoid flash.
+  //
+  // O PADRÃO INVERTEU no redesign: o rail de 72px só com ícone é a forma da
+  // marca, então ausência de cookie = recolhido. Só um "0" explícito — que só
+  // existe depois de a pessoa clicar em "Recolher"/"Expandir" — abre para 240px.
+  // Comparar com "1" (como antes) faria todo mundo abrir o app na versão larga
+  // e o rail só apareceria para quem fosse procurá-lo.
   const store = await cookies();
-  const collapsed = store.get("sidebar_collapsed")?.value === "1";
+  const collapsed = store.get("sidebar_collapsed")?.value !== "0";
 
   // Impersonate (S-11.07): verify cookie server-side and resolve tenant name.
   // Middleware already validates HMAC + expiry on /app/*; we re-verify here as

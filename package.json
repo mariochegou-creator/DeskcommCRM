@@ -15,6 +15,7 @@
     "lint": "eslint .",
     "format": "prettier --write \"**/*.{ts,tsx,md,json,css}\"",
     "format:check": "prettier --check \"**/*.{ts,tsx,md,json,css}\"",
+    "guides:build": "node scripts/build-guides.mjs",
     "typecheck": "tsc --noEmit",
     "db:migrate": "echo 'TODO: wire supabase db push or pg-migrate' && exit 0",
     "db:reset": "supabase db reset",

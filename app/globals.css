@@ -10,6 +10,18 @@
    O ESCURO É O TEMA DA MARCA e é o padrão (app/layout.tsx). O claro existe
    para ambiente muito iluminado e é DESENHADO À PARTE, não invertido — as
    razões de contraste de cada desvio do guia estão no cabeçalho de PALETTES.nexo.
+
+   ── Redesign 2026-08: os valores do escuro foram conferidos contra o CSS
+   servido por https://nexoialocal.com.br. O site declara, no :root dele:
+       --bg #050e1f · --surface #081422 · --surface2 #0d1e35
+       --border rgba(0,200,232,.12) · --border-h rgba(0,200,232,.3)
+       --cyan #00c8e8 · --orange #f97316 · --text #e2e8f0 · --muted #64748b
+   e carrega Inter + JetBrains Mono (NÃO existe Space Grotesk no site — o
+   display é o próprio Inter nos pesos 800/900). Onde o CRM divergia, o site
+   ganhou: `surface-elevated` foi de #0d1c2e para #0d1e35 e a borda de repouso
+   de .14 para .12. A ÚNICA divergência que sobrevive de propósito é
+   `--color-text-muted` (#94a3b8 em vez do #64748b do site): o site é peça de
+   marketing em texto grande, o CRM é corpo de 13px — ver nota 1 em tokens.ts.
    ───────────────────────────────────────────────────────────────────────── */
 
 :root {
@@ -47,6 +59,15 @@
   --color-accent-fg: #ffffff;
   --color-accent-soft: var(--color-accent-100);
   --color-accent-hover: var(--color-accent-700);
+  /* Sobre o CARD DE DESTAQUE (fundo accent sólido) os tokens normais de texto
+     e de estado não servem — todos foram calibrados contra o navy do fundo.
+     Estes dois são o par secundário desse contexto e existem NOS DOIS TEMAS,
+     porque no claro o texto sobre o accent é branco e no escuro é navy:
+     escrever a cor direto no componente acertaria um tema e erraria o outro.
+       -fg-muted: rótulo/apoio sobre o accent (78% → 4,6:1 sobre #0a7d95)
+       -fg-soft:  preenchimento translúcido sobre o accent (pill de variação) */
+  --color-accent-fg-muted: rgba(255, 255, 255, 0.78);
+  --color-accent-fg-soft: rgba(255, 255, 255, 0.20);
 
   /* Neutrals — slate frio (11 stops, light) */
   --color-neutral-50:  #f4f7fa;
@@ -76,6 +97,28 @@
   --color-info-bg: rgba(0, 200, 232, 0.12);
   --color-info-fg: #0e6577;
 
+  /* Chart — ordem fixa do briefing. No claro cada stop desce o suficiente para
+     a série sobreviver ao fundo #f9fbfd; a ORDEM é a mesma nos dois temas para
+     a mesma série não trocar de cor quando alguém alterna o tema. */
+  --chart-1: #0a7d95;
+  --chart-2: #2563eb;
+  --chart-3: #b45309;
+  --chart-4: #b42318;
+  --chart-5: #157f52;
+  --chart-grid: #d5dfe9;
+  /* Texto ESCRITO EM CIMA da fatia (o "34%" dentro do donut). No claro as
+     séries são stops escuros, então o rótulo é branco; no escuro elas são
+     stops claros e ele é navy. Fixar o hex no componente acertaria um tema. */
+  --chart-label: #ffffff;
+
+  /* Etapas do funil — o pill de etapa e o header do card de resumo leem daqui,
+     então a cor de uma etapa é UMA decisão e não uma por componente. */
+  --stage-entrada: #2563eb;
+  --stage-r1: #b45309;
+  --stage-proposta: #0a7d95;
+  --stage-fechado: #157f52;
+  --stage-perdido: #b42318;
+
   /* Spacing (4-base) */
   --space-0: 0px;
   --space-1: 4px;
@@ -92,12 +135,24 @@
   --space-24: 96px;
   --space-32: 128px;
 
-  /* Radius */
+  /* Radius — a escala antiga (sm..xl) fica porque dezenas de componentes a
+     consomem. O redesign acrescenta TRÊS papéis semânticos, que são os que a
+     UI nova usa; trocar o valor aqui muda a forma do produto inteiro:
+       card    20px — bloco de conteúdo (KPI, painel, tabela, dossiê)
+       control 12px — botão, input, select, chip quadrado
+       pill    999px — status, variação percentual, busca, avatar
+     Nota: o site institucional para em 16px no card. Os 20px vêm do §Forma do
+     briefing, que é explícito; a família visual se mantém porque control/pill
+     batem exatamente com o site (12px e 100px). Para alinhar 1:1 com o site,
+     este é o único valor a mexer. */
   --radius-none: 0px;
   --radius-sm: 4px;
   --radius-md: 8px;
   --radius-lg: 12px;
   --radius-xl: 16px;
+  --radius-card: 20px;
+  --radius-control: 12px;
+  --radius-pill: 999px;
   --radius-full: 9999px;
 
   /* Shadows — base navy fria (era greige quente) */
@@ -159,10 +214,11 @@
 }
 
 [data-theme="dark"] {
-  /* Surfaces (dark) — os três hexes do guia, sem desvio */
+  /* Surfaces (dark) — os três hexes servidos pelo :root de nexoialocal.com.br,
+     sem desvio. `surface-elevated` = o `--surface2` do site (#0d1e35). */
   --color-bg: #050e1f;
   --color-surface: #081422;
-  --color-surface-elevated: #0d1c2e;
+  --color-surface-elevated: #0d1e35;
   --color-overlay: rgba(2, 6, 15, 0.68);
 
   /* Text (dark) — `#e2e8f0` é o texto do guia. O secundário é #94a3b8 (7,5:1
@@ -172,9 +228,11 @@
   --color-text-muted: #94a3b8;
   --color-text-subtle: #64748b;
 
-  /* Borders (dark) — ciano translúcido, o elemento-chave do guia:
-     0.14 no repouso, 0.30 no realce. */
-  --color-border: rgba(0, 200, 232, 0.14);
+  /* Borders (dark) — ciano translúcido, o elemento-chave da marca. Os dois
+     valores são literalmente o `--border`/`--border-h` do site: 0.12 no
+     repouso, 0.30 no realce. É esta borda que dá o contorno do card no escuro,
+     já que aqui não há sombra nenhuma (ver bloco Shadows abaixo). */
+  --color-border: rgba(0, 200, 232, 0.12);
   --color-border-strong: rgba(0, 200, 232, 0.30);
 
   /* Accent — mesmos stops; no escuro o default sobe para o 400, que É o ciano
@@ -194,6 +252,11 @@
   --color-accent-fg: #050e1f;
   --color-accent-soft: rgba(0, 200, 232, 0.16);
   --color-accent-hover: var(--color-accent-300);
+  /* Par do card de destaque no escuro: navy sobre o ciano. O 0.72 dá 5,2:1
+     contra o #00c8e8 — passa AA para corpo, que é o que o rótulo e a linha de
+     apoio do card são. Ver a nota gêmea no :root. */
+  --color-accent-fg-muted: rgba(5, 14, 31, 0.72);
+  --color-accent-fg-soft: rgba(5, 14, 31, 0.16);
 
   /* Neutrals — navy (11 stops, dark). 950/900/800 = bg/surface/elevated. */
   --color-neutral-50:  #e2e8f0;
@@ -223,16 +286,50 @@
   --color-info-bg: rgba(0, 200, 232, 0.16);
   --color-info-fg: #67e0f5;
 
-  /* Shadows — mais pesadas e com base navy, não preto puro */
-  --shadow-xs: 0 1px 2px 0 rgba(2, 6, 15, 0.40);
-  --shadow-sm: 0 1px 2px 0 rgba(2, 6, 15, 0.50), 0 1px 1px 0 rgba(2, 6, 15, 0.28);
-  --shadow-md: 0 4px 12px -2px rgba(2, 6, 15, 0.55), 0 2px 4px -1px rgba(2, 6, 15, 0.38);
-  --shadow-lg: 0 12px 32px -6px rgba(2, 6, 15, 0.65), 0 4px 12px -2px rgba(2, 6, 15, 0.48);
-  --shadow-xl: 0 24px 48px -12px rgba(2, 6, 15, 0.75), 0 8px 16px -4px rgba(2, 6, 15, 0.58);
+  /* Chart — ordem fixa do briefing: ciano, azul, âmbar, vermelho, verde. */
+  --chart-1: #00c8e8;
+  --chart-2: #60a5fa;
+  --chart-3: #fbbf24;
+  --chart-4: #f87171;
+  --chart-5: #34d399;
+  /* Grade quase invisível: é o próprio `surface-elevated`, então a linha some
+     no fundo e só estrutura o olho — nunca compete com a barra. */
+  --chart-grid: #0d1e35;
+  /* Navy sobre as séries claras — o pior par é o #60a5fa, que ainda dá 7,6:1. */
+  --chart-label: #050e1f;
 
-  /* Glow — no escuro é o valor do guia, sem atenuação */
-  --shadow-glow: 0 0 24px rgba(0, 200, 232, 0.30);
-  --shadow-glow-warning: 0 0 22px rgba(249, 115, 22, 0.28);
+  /* Etapas do funil */
+  --stage-entrada: #60a5fa;
+  --stage-r1: #fbbf24;
+  --stage-proposta: #00c8e8;
+  --stage-fechado: #34d399;
+  --stage-perdido: #f87171;
+
+  /* Shadows — NO ESCURO NÃO HÁ SOMBRA. A profundidade vem do degrau de tom
+     entre #050e1f (fundo), #081422 (card) e #0d1e35 (elevado), mais a borda
+     ciano de 1px. Sombra sobre navy não escurece nada: ela só suja a borda e
+     mata o contorno ciano, que é a assinatura da marca.
+
+     Os tokens continuam existindo e vão a `none` de propósito: ~58 arquivos
+     usam `shadow-xs`/`sm`/`md` (Card, Button, Dialog, Popover, Select…) e
+     apagar a classe em cada um seria churn sem ganho. Zerando aqui, a regra
+     vale no app inteiro e o tema CLARO — que é superfície clara sobre fundo
+     claro e realmente precisa de sombra — fica intacto.
+
+     As duas exceções são elevação REAL sobre conteúdo (menu, modal, toast):
+     essas flutuam de verdade e sem separação viram sopa. Ficam com uma sombra
+     só, de base navy. */
+  --shadow-xs: none;
+  --shadow-sm: none;
+  --shadow-md: none;
+  --shadow-lg: 0 16px 40px -12px rgba(2, 6, 15, 0.72);
+  --shadow-xl: 0 28px 60px -16px rgba(2, 6, 15, 0.80);
+
+  /* Glow — MUITO sutil e reservado ao card de destaque (`shadow-glow`).
+     O 0.30 do guia é para peça de marketing; num painel de trabalho lido o dia
+     inteiro ele vira halo permanente em volta do maior bloco da tela. */
+  --shadow-glow: 0 0 24px rgba(0, 200, 232, 0.06);
+  --shadow-glow-warning: 0 0 24px rgba(249, 115, 22, 0.06);
 
   /* shadcn-compat aliases */
   --background: var(--color-bg);
@@ -270,12 +367,20 @@
     color-scheme: light;
   }
 
+  /* Inter é a fonte do site (carregada lá nos pesos 300–900) e passa a ser a
+     do CRM, corpo e display. O briefing pedia Space Grotesk no display, mas o
+     site não a carrega — e a instrução de que o site vence valeu aqui: o
+     display é o próprio Inter em 800/900, que é como nexoialocal.com.br
+     resolve título. Isto substitui o Atkinson Hyperlegible.
+     `cv11`/`ss01` desambiguam 1/l/I e dão o "a" de bico — sem eles Inter fica
+     genérico em UI densa. `tnum` NÃO entra aqui: no texto corrido ele abre o
+     espaçamento e dá cara de planilha (ver o utilitário `.tabular` abaixo). */
   body {
     background-color: var(--color-bg);
     color: var(--color-text);
-    font-family: var(--font-atkinson), ui-sans-serif, system-ui, -apple-system,
+    font-family: var(--font-inter), ui-sans-serif, system-ui, -apple-system,
       "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
-    font-feature-settings: "rlig" 1, "calt" 1, "ss01" 1;
+    font-feature-settings: "rlig" 1, "calt" 1, "cv11" 1, "ss01" 1;
     -webkit-font-smoothing: antialiased;
     -moz-osx-font-smoothing: grayscale;
     text-rendering: optimizeLegibility;
@@ -284,6 +389,12 @@
   code, kbd, pre, samp {
     font-family: var(--font-mono), ui-monospace, "SFMono-Regular", Menlo,
       Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
+    font-variant-numeric: tabular-nums;
+  }
+
+  /* Número que se compara na vertical (KPI, coluna de valor, contagem) precisa
+     de largura fixa por dígito, senão a coluna dança a cada refetch. */
+  .tabular {
     font-variant-numeric: tabular-nums;
   }
 

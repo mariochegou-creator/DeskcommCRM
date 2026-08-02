@@ -2,6 +2,15 @@ import * as React from "react";
 
 import { cn } from "@/lib/utils";
 
+/**
+ * Card — o bloco de conteúdo do sistema.
+ *
+ * No escuro a profundidade é `bg-surface` (#081422) contra `bg-bg` (#050e1f)
+ * MAIS a borda ciano de 1px. Só isso. `shadow-xs` continua na classe porque no
+ * tema CLARO ele é uma sombra de verdade e o card claro precisa dela; no
+ * escuro o token resolve para `none` (app/globals.css), então a mesma classe
+ * serve os dois temas sem condicional.
+ */
 const Card = React.forwardRef<
   HTMLDivElement,
   React.HTMLAttributes<HTMLDivElement>
@@ -9,7 +18,7 @@ const Card = React.forwardRef<
   <div
     ref={ref}
     className={cn(
-      "rounded-lg border border-border bg-surface text-text shadow-xs",
+      "rounded-card border border-border bg-surface text-text shadow-xs",
       className,
     )}
     {...props}

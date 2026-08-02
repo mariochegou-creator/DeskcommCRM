@@ -74,10 +74,12 @@ export const PALETTES: Record<PaletteId, PaletteDef> = {
     },
     // 950/900/800 são exatamente bg/surface/elevated do guia — a escala e as
     // superfícies não são duas decisões, são a mesma.
+    // 800 = #0d1e35: é o `--surface2` que nexoialocal.com.br serve. Era
+    // #0d1c2e aqui; o site ganhou (ver cabeçalho de app/globals.css).
     neutralDark: {
       50: "#e2e8f0", 100: "#cbd5e1", 200: "#94a3b8", 300: "#64748b",
       400: "#4a5a71", 500: "#34455c", 600: "#22334a", 700: "#16263a",
-      800: "#0d1c2e", 900: "#081422", 950: "#050e1f",
+      800: "#0d1e35", 900: "#081422", 950: "#050e1f",
     },
     states: {
       // Laranja do guia = alerta. No claro ele desce para #b45309 (5,0:1 com
@@ -87,7 +89,7 @@ export const PALETTES: Record<PaletteId, PaletteDef> = {
     },
     surfaces: {
       light: { bg: "#eef3f8", surface: "#f9fbfd", surfaceElevated: "#e8eef4", text: "#141c28", textMuted: "#4a5769", border: "#d5dfe9" },
-      dark:  { bg: "#050e1f", surface: "#081422", surfaceElevated: "#0d1c2e", text: "#e2e8f0", textMuted: "#94a3b8", border: "rgba(0, 200, 232, 0.14)" },
+      dark:  { bg: "#050e1f", surface: "#081422", surfaceElevated: "#0d1e35", text: "#e2e8f0", textMuted: "#94a3b8", border: "rgba(0, 200, 232, 0.12)" },
     },
   },
   sage: {

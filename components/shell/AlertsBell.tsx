@@ -17,7 +17,7 @@ export function AlertsBell() {
       href="/app/ai/inbox"
       aria-label={count > 0 ? `Central de avisos — ${count} em aberto` : "Central de avisos"}
       data-testid="alerts-bell"
-      className="relative inline-flex h-9 w-9 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+      className="relative inline-flex h-9 w-9 items-center justify-center rounded-pill border border-border text-text-muted transition-colors duration-fast hover:border-border-strong hover:text-text"
     >
       <Bell size={18} aria-hidden />
       {count > 0 ? (

@@ -15,6 +15,11 @@ interface SettingsLink {
 }
 
 const LINKS: SettingsLink[] = [
+  {
+    href: "/app/settings/guias",
+    title: "Guias",
+    description: "Manual de uso do CRM: cada tela passo a passo, rotina e problemas comuns.",
+  },
   { href: "/app/settings/profile", title: "Perfil", description: "Nome, idioma, fuso, avatar." },
   {
     href: "/app/settings/security",
