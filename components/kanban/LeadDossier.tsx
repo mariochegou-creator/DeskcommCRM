@@ -186,7 +186,11 @@ export function LeadDossier({
           <h3 className="mb-2 text-xs font-medium uppercase tracking-wide text-text-muted">
             Dados do negócio
           </h3>
-          <LeadFieldsForm lead={lead} pipelineId={pipelineId} />
+          <LeadFieldsForm
+            lead={lead}
+            pipelineId={pipelineId}
+            phoneNumber={contato.data?.data.phone_number}
+          />
         </div>
       </SheetContent>
     </Sheet>

@@ -8,9 +8,11 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { useEditLead } from "@/hooks/kanban/useUpdateLead";
+import { Phone } from "@/lib/ui/icons";
 import type { Lead } from "@/lib/types/leads";
 import { updateLeadSchema, type UpdateLeadInput } from "@/lib/schemas/leads";
 import { parseReaisToCents } from "@/lib/money";
+import { telLink, formatarTelefone } from "@/lib/contacts/telefone";
 import { EcoDoValor } from "./EcoDoValor";
 
 interface FormShape {
@@ -24,6 +26,13 @@ interface FormShape {
 interface Props {
   lead: Lead;
   pipelineId: string;
+  /**
+   * Telefone do contato ligado ao lead, em E.164. Vem de fora porque é dado do
+   * CONTATO, não do negócio: este formulário edita o lead e não deve saber
+   * buscar contato. Ausente = a seção de telefone simplesmente não aparece —
+   * é o que acontece no diálogo de edição, que não carrega contato.
+   */
+  phoneNumber?: string | null;
   /** Quando o salvamento dá certo. O dossiê NÃO fecha aqui — ver abaixo. */
   onSaved?: () => void;
   /** O dossiê não tem "cancelar"; o diálogo tem. */
@@ -44,8 +53,10 @@ function centsToReais(cents: number | null | undefined): string {
  * registro justamente de quem o produziu — a funcionalidade que prova "sua ação
  * fica registrada" provaria isso para todo mundo menos para o autor.
  */
-export function LeadFieldsForm({ lead, pipelineId, onSaved, onCancel }: Props) {
+export function LeadFieldsForm({ lead, pipelineId, phoneNumber, onSaved, onCancel }: Props) {
   const edit = useEditLead(pipelineId);
+  const discar = telLink(phoneNumber);
+  const telefoneLegivel = formatarTelefone(phoneNumber);
 
   const form = useForm<FormShape>({
     defaultValues: {
@@ -157,6 +168,31 @@ export function LeadFieldsForm({ lead, pipelineId, onSaved, onCancel }: Props) {
           <Label htmlFor="tagsRaw">Tags (separadas por vírgula)</Label>
           <Input id="tagsRaw" placeholder="vip, recompra" {...form.register("tagsRaw")} />
         </div>
+
+        {/* O telefone é do CONTATO, não do negócio: mostrado, nunca editável
+            aqui — editar por dentro do lead criaria dois lugares para o mesmo
+            dado e eles divergiriam na primeira correção.
+
+            Ligar importa mais que o WhatsApp para boa parte desta base: 27 dos
+            leads importados só têm fixo, e fixo raramente atende no WhatsApp.
+            Por isso o `tel:` aceita central 0800/4003, que o link de WhatsApp
+            recusa — lá seria um botão quebrado, aqui é uma ligação que completa. */}
+        {telefoneLegivel && (
+          <div className="space-y-2">
+            <Label>Telefone</Label>
+            <div className="flex items-center gap-2">
+              <span className="flex-1 text-sm tabular-nums text-text">{telefoneLegivel}</span>
+              {discar && (
+                <Button asChild type="button" variant="secondary" size="sm" className="gap-2">
+                  <a href={discar}>
+                    <Phone size={14} weight="fill" />
+                    Ligar
+                  </a>
+                </Button>
+              )}
+            </div>
+          </div>
+        )}
 
       <div className="flex justify-end gap-2">
         {onCancel && (
