@@ -2,7 +2,11 @@
 import { useRef } from "react";
 
 import { Sheet, SheetContent, SheetHeader, SheetTitle } from "@/components/ui/sheet";
+import { Button } from "@/components/ui/button";
+import { WhatsappLogo } from "@/lib/ui/icons";
 import { useLeadTimeline } from "@/hooks/leads/useLeadTimeline";
+import { useContact } from "@/hooks/contacts/useContact";
+import { whatsappLink } from "@/lib/contacts/whatsapp";
 import type { Lead } from "@/lib/types/leads";
 import { LeadFieldsForm } from "./LeadFieldsForm";
 import { ScoreSlot } from "./ScoreSlot";
@@ -58,6 +62,12 @@ export function LeadDossier({
   const owner = resolveLeadOwner(lead, ownerNames);
   const score = lead.score ?? null;
 
+  // Só busca quando o dossiê está aberto E existe contato: lead sem contato é
+  // estado legítimo (prospecção importada antes de alguém atender), e disparar
+  // uma requisição por card do board para descobrir isso seria caro à toa.
+  const contato = useContact(open && lead.contact_id ? lead.contact_id : "");
+  const whatsapp = whatsappLink(contato.data?.data.phone_number);
+
   return (
     <Sheet open={open} onOpenChange={onOpenChange}>
       <SheetContent
@@ -74,6 +84,22 @@ export function LeadDossier({
         <SheetHeader className="pb-3">
           <SheetTitle className="text-base leading-6">{lead.title}</SheetTitle>
         </SheetHeader>
+
+        {/* Conversar vem ANTES do resto: quem abre um lead de prospecção fria
+            veio para falar com o negócio, não para ler o histórico — que num
+            lead recém-importado está vazio de qualquer forma.
+
+            Só aparece com número utilizável. Um botão sempre visível que às
+            vezes não funciona treina o SDR a desconfiar dele, e aí ele para de
+            usar o atalho justamente nos 95 casos em que o número presta. */}
+        {whatsapp && (
+          <Button asChild variant="primary" size="sm" className="mb-3 w-full gap-2">
+            <a href={whatsapp} target="_blank" rel="noopener noreferrer">
+              <WhatsappLogo size={16} weight="fill" />
+              Conversar no WhatsApp
+            </a>
+          </Button>
+        )}
 
         {/* ① cabeçalho vivo */}
         <div className="flex flex-wrap items-center gap-x-3 gap-y-1.5 border-b border-border pb-3 text-xs">

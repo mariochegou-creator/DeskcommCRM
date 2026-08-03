@@ -73,6 +73,7 @@ export {
   // conversation
   ChatCircle,
   Phone,
+  WhatsappLogo,
   Paperclip,
   Microphone,
   Image as ImageIcon,
