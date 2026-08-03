@@ -105,6 +105,9 @@ export const listConversationsQuerySchema = z.object({
   status: conversationStatusSchema.optional(),
   assigned_to: z.union([z.string().uuid(), z.literal("me"), z.literal("unassigned")]).optional(),
   channel_session_id: z.string().uuid().optional(),
+  // Responde "este contato já tem conversa?" — a pergunta que o dossiê do lead
+  // precisa fazer para decidir se manda o SDR para o inbox ou para o WhatsApp.
+  contact_id: z.string().uuid().optional(),
   tag: conversationTagSchema.optional(),
   search: z.string().optional(),
   cursor: z.string().optional(),

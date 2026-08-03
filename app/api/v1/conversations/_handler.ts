@@ -99,6 +99,7 @@ export async function listConversationsHandler(
 
   if (q.status) query = query.eq("status", q.status);
   if (q.channel_session_id) query = query.eq("channel_session_id", q.channel_session_id);
+  if (q.contact_id) query = query.eq("contact_id", q.contact_id);
   if (q.tag) query = query.contains("tags", [q.tag]); // tags @> array[tag] (GIN)
 
   if (q.assigned_to === "me") {

@@ -2,10 +2,12 @@
 import { useRef } from "react";
 
 import { Sheet, SheetContent, SheetHeader, SheetTitle } from "@/components/ui/sheet";
+import Link from "next/link";
 import { Button } from "@/components/ui/button";
-import { WhatsappLogo } from "@/lib/ui/icons";
+import { WhatsappLogo, ChatCircle } from "@/lib/ui/icons";
 import { useLeadTimeline } from "@/hooks/leads/useLeadTimeline";
 import { useContact } from "@/hooks/contacts/useContact";
+import { useContactConversation } from "@/hooks/inbox/useContactConversation";
 import { whatsappLink } from "@/lib/contacts/whatsapp";
 import type { Lead } from "@/lib/types/leads";
 import { LeadFieldsForm } from "./LeadFieldsForm";
@@ -68,6 +70,12 @@ export function LeadDossier({
   const contato = useContact(open && lead.contact_id ? lead.contact_id : "");
   const whatsapp = whatsappLink(contato.data?.data.phone_number);
 
+  // O atendimento pertence ao inbox; o WhatsApp é só a porta de entrada quando
+  // ela ainda não foi aberta. Conversa nasce de mensagem RECEBIDA, então um lead
+  // importado não tem nenhuma até responder — daí o primeiro contato sair pelo
+  // WhatsApp e todos os seguintes ficarem dentro do CRM, sem ninguém trocar nada.
+  const conversa = useContactConversation(open && lead.contact_id ? lead.contact_id : null);
+
   return (
     <Sheet open={open} onOpenChange={onOpenChange}>
       <SheetContent
@@ -89,16 +97,30 @@ export function LeadDossier({
             veio para falar com o negócio, não para ler o histórico — que num
             lead recém-importado está vazio de qualquer forma.
 
-            Só aparece com número utilizável. Um botão sempre visível que às
-            vezes não funciona treina o SDR a desconfiar dele, e aí ele para de
-            usar o atalho justamente nos 95 casos em que o número presta. */}
-        {whatsapp && (
+            DOIS destinos, e o rótulo diz qual: com conversa aberta o atendimento
+            é no inbox (histórico, transferência, IA, tudo registrado); sem
+            conversa, o WhatsApp é o único caminho que existe. O botão nunca
+            promete o inbox quando ele ainda não tem nada para mostrar.
+
+            O do WhatsApp só aparece com número utilizável: um botão sempre
+            visível que às vezes não funciona treina o SDR a desconfiar dele, e
+            aí ele para de usar o atalho justamente nos casos em que presta. */}
+        {conversa.data ? (
           <Button asChild variant="primary" size="sm" className="mb-3 w-full gap-2">
-            <a href={whatsapp} target="_blank" rel="noopener noreferrer">
-              <WhatsappLogo size={16} weight="fill" />
-              Conversar no WhatsApp
-            </a>
+            <Link href={`/app/inbox?id=${conversa.data.id}`}>
+              <ChatCircle size={16} weight="fill" />
+              Abrir conversa no inbox
+            </Link>
           </Button>
+        ) : (
+          whatsapp && (
+            <Button asChild variant="primary" size="sm" className="mb-3 w-full gap-2">
+              <a href={whatsapp} target="_blank" rel="noopener noreferrer">
+                <WhatsappLogo size={16} weight="fill" />
+                Iniciar no WhatsApp
+              </a>
+            </Button>
+          )
         )}
 
         {/* ① cabeçalho vivo */}
