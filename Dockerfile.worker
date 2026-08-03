@@ -15,4 +15,10 @@ COPY . .
 # Healthz do worker (bind 0.0.0.0 dentro do container).
 EXPOSE 8787
 
-CMD ["pnpm", "exec", "tsx", "workers/agent-worker/main.ts"]
+# --conditions=react-server: o worker importa `lib/supabase/admin.ts`, que tem
+# `import "server-only"` como guarda contra uso em componente de cliente. Sob
+# `tsx` (Node puro) esse pacote resolve para o `index.js`, que LANÇA — e o
+# worker morre no boot, em loop. A condição `react-server` faz o mesmo pacote
+# resolver para o `empty.js`, que é no-op. A guarda continua valendo onde ela
+# de fato serve: no build do Next, que é quem sabe o que é componente cliente.
+CMD ["pnpm", "exec", "tsx", "--conditions=react-server", "workers/agent-worker/main.ts"]
