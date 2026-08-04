@@ -34,7 +34,8 @@ import { createClient } from "@/lib/supabase/server";
 
 export const dynamic = "force-dynamic";
 
-const LEAD_COLS = "id, title, status, value_cents, currency, updated_at";
+/** custom_fields entra pelos ganchos de abertura da prospecção — o painel os destaca. */
+const LEAD_COLS = "id, title, status, value_cents, currency, updated_at, custom_fields";
 const ORDER_COLS = "id, external_id, status, total_cents, currency, created_at";
 /** Acompanha o que a timeline mostra — `reason` e `actor_kind` inclusive. */
 const ACTIVITY_COLS = "id, type, source_module, performed_at, payload, reason, actor_kind";

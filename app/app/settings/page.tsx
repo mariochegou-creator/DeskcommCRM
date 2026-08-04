@@ -50,6 +50,13 @@ const LINKS: SettingsLink[] = [
     managerOnly: true,
   },
   {
+    href: "/app/settings/import-lista",
+    title: "Importar lista",
+    description:
+      "Suba a lista de prospecção (CSV): cada linha vira contato + lead, com os ganchos de abertura salvos para quem atender.",
+    managerOnly: true,
+  },
+  {
     href: "/app/connections",
     title: "Conexões WhatsApp",
     description: "Saúde, reconexão e novos números.",

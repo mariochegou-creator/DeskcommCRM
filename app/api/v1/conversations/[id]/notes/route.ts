@@ -11,6 +11,7 @@ import { type NextRequest } from "next/server";
 import { audit } from "@/lib/audit";
 import { fail, ok } from "@/lib/api/wrappers";
 import { requireRole } from "@/lib/auth/require-role";
+import { extractGanchos, formatGanchoNote, GANCHO_NOTE_AUTHOR } from "@/lib/leads/ganchos";
 import { createNoteSchema } from "@/lib/schemas/notes";
 import { createClient } from "@/lib/supabase/server";
 
@@ -31,7 +32,7 @@ export async function GET(_req: NextRequest, { params }: RouteParams): Promise<R
   const supabase = await createClient();
   const { data: conversation } = await supabase
     .from("conversations")
-    .select("id")
+    .select("id, contact_id")
     .eq("id", id)
     .eq("organization_id", org.orgId)
     .maybeSingle();
@@ -44,7 +45,46 @@ export async function GET(_req: NextRequest, { params }: RouteParams): Promise<R
     .eq("organization_id", org.orgId)
     .order("created_at", { ascending: true });
   if (error) return fail("internal_error", "Erro ao listar notas.", 500, { requestId });
-  return ok(data ?? [], { requestId });
+
+  let notes = data ?? [];
+
+  // Ganchos de abertura da prospecção viram nota NA PRIMEIRA ABERTURA da
+  // conversa — não na importação, porque lá a conversa ainda não existe (lead
+  // importado só ganha conversa quando alguém puxa papo). Semear aqui é o
+  // único ponto que cobre todos os caminhos de criação de conversa (WAHA,
+  // automação, handoff) sem tocar em cada um. Dedupe pelo autor-marcador: já
+  // tem nota do GANCHO_NOTE_AUTHOR → não semeia de novo (apagar a nota é
+  // decisão do time e fica apagada). Falha na semeadura não derruba a
+  // listagem — gancho é enriquecimento, não gate.
+  const jaSemeada = notes.some(
+    (n) => n.created_by_user_id === null && n.created_by_name === GANCHO_NOTE_AUTHOR,
+  );
+  if (!jaSemeada && conversation.contact_id) {
+    const { data: leadsDoContato } = await supabase
+      .from("crm_leads")
+      .select("custom_fields")
+      .eq("organization_id", org.orgId)
+      .eq("contact_id", conversation.contact_id)
+      .order("created_at", { ascending: false })
+      .limit(5);
+    const ganchos = (leadsDoContato ?? []).flatMap((l) => extractGanchos(l.custom_fields));
+    if (ganchos.length > 0) {
+      const { data: semeada } = await supabase
+        .from("conversation_notes")
+        .insert({
+          organization_id: org.orgId,
+          conversation_id: id,
+          body: formatGanchoNote(ganchos),
+          created_by_user_id: null,
+          created_by_name: GANCHO_NOTE_AUTHOR,
+        })
+        .select(COLS)
+        .single();
+      if (semeada) notes = [...notes, semeada];
+    }
+  }
+
+  return ok(notes, { requestId });
 }
 
 export async function POST(req: NextRequest, { params }: RouteParams): Promise<Response> {

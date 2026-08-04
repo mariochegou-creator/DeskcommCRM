@@ -12,6 +12,7 @@ import { Tag, Receipt, Users, ArrowRight } from "@/lib/ui/icons";
 import { apiClient } from "@/lib/api/client";
 import type { ConversationWithContact } from "@/hooks/inbox/useConversationsRealtime";
 import { activityLabel, actorLabel, actorShape } from "@/lib/leads/activity-vocabulary";
+import { extractGanchos } from "@/lib/leads/ganchos";
 import { ConversationTagsEditor } from "./ConversationTagsEditor";
 import { cn } from "@/lib/utils";
 
@@ -26,6 +27,8 @@ interface LeadRow {
   value_cents: number | null;
   currency: string | null;
   updated_at: string;
+  /** Ganchos de abertura da prospecção moram aqui (chaves gancho_*). */
+  custom_fields: Record<string, unknown> | null;
 }
 
 interface OrderRow {
@@ -155,6 +158,13 @@ export function CRMSidePanel({ conversation }: Props) {
     };
   }, [contactId, tentativa]);
 
+  // O que o atendente precisa ler ANTES de responder: os ganchos vêm da lista
+  // de prospecção importada e vivem nos custom_fields dos leads do contato.
+  const ganchos = useMemo(
+    () => [...new Set((leads ?? []).flatMap((l) => extractGanchos(l.custom_fields)))],
+    [leads],
+  );
+
   const tags = contact?.tags ?? [];
   const displayName =
     contact?.display_name?.trim() ||
@@ -218,6 +228,31 @@ export function CRMSidePanel({ conversation }: Props) {
           </div>
         </Card>
       </section>
+
+      {ganchos.length > 0 && (
+        <>
+          <Separator />
+          <section>
+            <h3 className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+              Ganchos de abertura
+            </h3>
+            {/* Âmbar como a nota interna do thread — mesmo significado: só o
+                time vê, e é o que se lê antes de puxar a conversa. Sem estado
+                vazio: gancho é enriquecimento da prospecção; a ausência não
+                informa nada. */}
+            <ul className="mt-2 space-y-1.5">
+              {ganchos.map((g) => (
+                <li
+                  key={g}
+                  className="whitespace-pre-wrap break-words rounded-md border border-warning/40 bg-warning-bg p-2 text-xs leading-snug text-warning-fg"
+                >
+                  {g}
+                </li>
+              ))}
+            </ul>
+          </section>
+        </>
+      )}
 
       <Separator />
 
