@@ -188,3 +188,32 @@ describe("o que chega no CRM", () => {
     });
   });
 });
+
+describe("lista enriquecida — ganchos de abertura fora do contrato de 18 colunas", () => {
+  const CABECALHO_ENRIQUECIDO = `${CABECALHO};"Gancho de abertura";"Gancho 2"`;
+  const LINHA_ENRIQUECIDA =
+    `${LINHA_LIMPA};"Vi que vocês têm nota 5 no Google mas ainda não têm site";"Sua concorrente da rua de cima começou a anunciar"`;
+
+  it("coluna de gancho é detectada pelo cabeçalho (com acento) e viaja no lead", () => {
+    const { leads } = parseKaptarCsv(csv().replace(CABECALHO, CABECALHO_ENRIQUECIDO) + "\n" + LINHA_ENRIQUECIDA);
+    expect(primeiro(leads, "um lead").ganchos).toEqual([
+      "Vi que vocês têm nota 5 no Google mas ainda não têm site",
+      "Sua concorrente da rua de cima começou a anunciar",
+    ]);
+  });
+
+  it("ganchos saem como custom_fields gancho_* — a chave que a nota semeada e o painel do inbox procuram", () => {
+    const { leads } = parseKaptarCsv(csv().replace(CABECALHO, CABECALHO_ENRIQUECIDO) + "\n" + LINHA_ENRIQUECIDA);
+    expect(camposPersonalizados(primeiro(leads, "um lead"))).toMatchObject({
+      gancho_abertura: "Vi que vocês têm nota 5 no Google mas ainda não têm site",
+      gancho_2: "Sua concorrente da rua de cima começou a anunciar",
+    });
+  });
+
+  it("lista sem enriquecer segue igual: ganchos vazio e nenhum custom_field gancho_*", () => {
+    const { leads } = parseKaptarCsv(csv(LINHA_LIMPA));
+    const lead = primeiro(leads, "um lead");
+    expect(lead.ganchos).toEqual([]);
+    expect(Object.keys(camposPersonalizados(lead)).some((k) => k.startsWith("gancho"))).toBe(false);
+  });
+});

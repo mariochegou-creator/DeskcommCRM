@@ -31,6 +31,8 @@ const leadKaptarSchema = z.object({
     .string()
     .regex(/^\d{4}-\d{2}-\d{2}$/)
     .nullable(),
+  /** Ganchos de abertura da lista enriquecida. `.default([])`: lote antigo sem o campo continua válido. */
+  ganchos: z.array(z.string().min(1).max(2000)).max(10).default([]),
 });
 
 export const importKaptarSchema = z.object({

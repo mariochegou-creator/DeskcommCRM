@@ -8,6 +8,7 @@
  */
 import Papa from "papaparse";
 
+import { GANCHO_KEY_RE } from "@/lib/leads/ganchos";
 import { normalizePhoneBR } from "@/lib/webhooks/inbound";
 
 /** Cabeçalho do export do Kaptar, na ordem em que ele emite. */
@@ -59,6 +60,13 @@ export interface KaptarLead {
   avaliacao: number | null;
   numAvaliacoes: number | null;
   criadoEm: string | null;
+  /**
+   * Ganchos de abertura da lista ENRIQUECIDA — colunas extras (fora do
+   * contrato de 18) cujo cabeçalho case com GANCHO_KEY_RE. Viram
+   * custom_fields `gancho_*` e chegam a quem atende via nota semeada na
+   * conversa e painel do inbox. Lista sem enriquecer → array vazio.
+   */
+  ganchos: string[];
 }
 
 export interface KaptarRejeitada {
@@ -194,6 +202,13 @@ export function parseKaptarCsv(conteudo: string): KaptarParse {
 
   const colunasFaltando = KAPTAR_COLUNAS.filter((c) => !colunas.includes(c));
 
+  // Colunas de gancho são EXTRAS ao contrato do Kaptar — entram quando a lista
+  // foi enriquecida antes de subir. Sem acento no teste: "Gancho de abertura"
+  // e "gancho_abertura" têm que casar igual.
+  const colunasGancho = colunas.filter((c) =>
+    GANCHO_KEY_RE.test(c.normalize("NFD").replace(/[̀-ͯ]/g, "")),
+  );
+
   const leads: KaptarLead[] = [];
   const rejeitadas: KaptarRejeitada[] = [];
   // Dentro do próprio arquivo o Kaptar às vezes repete o mesmo estabelecimento.
@@ -251,6 +266,10 @@ export function parseKaptarCsv(conteudo: string): KaptarParse {
       avaliacao: parseDecimal(registro["Avaliação"]),
       numAvaliacoes: parseInteiro(registro["Nº avaliações"]),
       criadoEm: parseDataBr(registro["Criado em"]),
+      ganchos: colunasGancho
+        .map((c) => textoOuNull(registro[c]))
+        .filter((g): g is string => g !== null)
+        .map((g) => g.slice(0, 2000)),
     });
   });
 
@@ -287,5 +306,10 @@ export function camposPersonalizados(lead: KaptarLead): Record<string, string | 
   if (lead.site) campos.site = lead.site;
   if (lead.instagram) campos.instagram = lead.instagram;
   if (lead.placeId) campos.place_id = lead.placeId;
+  // Mesma convenção de chave da importação genérica (/api/v1/leads/import):
+  // é o nome `gancho_*` que a nota semeada e o painel do inbox procuram.
+  lead.ganchos.forEach((g, i) => {
+    campos[i === 0 ? "gancho_abertura" : `gancho_${i + 1}`] = g;
+  });
   return campos;
 }
