@@ -491,7 +491,21 @@ async function handleOutboundFromUserPhone(
     .maybeSingle();
   if (jaExiste) return;
 
-  const contactId = await upsertContact(admin, session.organization_id, parsed, chatId, notifyNameOf(p));
+  // ⚠️ SEM NOME, DE PROPÓSITO — e o `null` aqui é a correção de um estrago real.
+  //
+  // `notifyNameOf(p)` lê `_data.notifyName`/`pushName`, que numa mensagem
+  // `fromMe` é o nome de QUEM ENVIOU: nós. Passá-lo adiante batizou 48 contatos
+  // com "David wilkerson Nexoia" / "Mario Brandao" — o inbox virou uma lista de
+  // conversas com o próprio operador e o nome do negócio sumiu. A conferência
+  // nos payloads é categórica: todo valor não-nulo desse campo em evento fromMe
+  // era exatamente o pushName de uma das nossas sessões.
+  //
+  // Não dá para consertar escolhendo outro campo: uma mensagem que NÓS enviamos
+  // não carrega o nome do destinatário. O nome do contato só chega quando ele
+  // responde (aí `handleInbound` o grava). Até lá o contato fica sem nome — que
+  // é honesto — e `fn_upsert_wa_contact` faz `coalesce(display_name, excluded)`,
+  // então o nome real nunca é sobrescrito depois.
+  const contactId = await upsertContact(admin, session.organization_id, parsed, chatId, null);
   if (!contactId) return;
   const conversationId = await upsertConversation(admin, session.organization_id, contactId, session.id);
   if (!conversationId) return;

@@ -182,6 +182,29 @@ describe("mensagem enviada pelo WhatsApp Web entra no histórico", () => {
     expect(JSON.stringify(upsert!.args)).not.toContain("151084416901321");
   });
 
+  it("NÃO batiza o contato com o nome de quem enviou", async () => {
+    // Regressão medida em produção: `notifyName`/`pushName` de uma mensagem
+    // fromMe é o nome de QUEM ENVIOU (nós), não o do destinatário. Repassá-lo ao
+    // upsert batizou 48 contatos com "David wilkerson Nexoia" e o inbox virou
+    // uma lista de conversas com o próprio operador.
+    const { admin, chamadas } = adminFalso();
+    const comPushNameProprio: WahaEnvelope = {
+      ...NOWEB_TEXTO,
+      payload: {
+        ...NOWEB_TEXTO.payload!,
+        _data: { ...NOWEB_TEXTO.payload!._data, pushName: "David wilkerson Nexoia" },
+      },
+    };
+
+    await dispatchWahaEvent(admin as never, SESSAO as never, comPushNameProprio, "req-1");
+
+    const upsert = chamadas.rpc.find((c) => c.fn === "fn_upsert_wa_contact")!;
+    expect(upsert.args.p_notify).toBeNull();
+    expect(JSON.stringify(upsert.args)).not.toContain("David wilkerson Nexoia");
+    // CONTROLE: a mensagem ainda entra — o conserto é não dar nome, não descartar.
+    expect(mensagemInserida(chamadas)).toBeDefined();
+  });
+
   it("carimba a conversa como outbound (senão a lista do inbox não sobe)", async () => {
     const { admin, chamadas } = adminFalso();
     await dispatchWahaEvent(admin as never, SESSAO as never, NOWEB_TEXTO, "req-1");
