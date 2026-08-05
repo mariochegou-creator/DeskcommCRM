@@ -113,7 +113,16 @@ export function BulkActionBar({
 
   return (
     <>
-      <div className="sticky bottom-4 z-30 mx-auto flex w-fit items-center gap-2 rounded-lg border border-border bg-surface px-3 py-2 shadow-md">
+      {/* SEM posicionamento próprio: a barra é um bloco na linha de filtros,
+          que já vive no topo e nunca sai da vista.
+
+          Antes era `sticky bottom-4`, e o sticky depende de o elemento estar no
+          fluxo de um ancestral rolável — nas duas telas o resultado era a barra
+          repousar no fim do documento, alcançável só rolando até o rodapé.
+          Marcar um card e não ver nada acontecer parece defeito, e era: a ação
+          existia e ninguém chegava nela. Ancorar no topo, junto dos filtros,
+          resolve sem depender de altura de container nem de scroll. */}
+      <div className="flex flex-wrap items-center gap-2 rounded-lg border border-accent bg-accent/5 p-2">
         <span className="text-sm font-medium">
           {selectedIds.length} selecionado{selectedIds.length > 1 ? "s" : ""}
         </span>

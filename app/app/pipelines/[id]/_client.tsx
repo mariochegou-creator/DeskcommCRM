@@ -91,6 +91,15 @@ export function PipelinePageClient({
         />
       )}
       <FilterBar filters={filters} onChange={setFilters} leads={data?.leads ?? []} />
+
+      {/* Logo abaixo dos filtros, no topo: é onde o olho já está quando se
+          acabou de marcar um card, e não depende de rolar a página. */}
+      <BulkActionBar
+        selectedIds={selectedIds}
+        stages={data?.stages ?? []}
+        pipelineId={pipelineId}
+        onClear={() => setSelectedIds([])}
+      />
       {error ? (
         <div className="rounded-md border border-destructive/30 bg-destructive/10 p-4 text-sm">
           Erro ao carregar pipeline:{" "}
@@ -111,12 +120,6 @@ export function PipelinePageClient({
           onSelectionChange={setSelectedIds}
         />
       )}
-      <BulkActionBar
-        selectedIds={selectedIds}
-        stages={data?.stages ?? []}
-        pipelineId={pipelineId}
-        onClear={() => setSelectedIds([])}
-      />
     </div>
   );
 }
