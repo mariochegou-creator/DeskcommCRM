@@ -12,6 +12,7 @@ import { MonoLabel } from "@/components/ui/mono-label";
 import { EditableStagePill } from "@/components/kanban/StagePill";
 import { OwnerBadge } from "@/components/kanban/OwnerBadge";
 import { formatBRL } from "@/lib/dashboard/metrics";
+import { extractGanchos } from "@/lib/leads/ganchos";
 
 function formatDate(iso: string | null): string {
   if (!iso) return "—";
@@ -82,6 +83,10 @@ export function LeadDetailClient({
 
   const ownerName =
     lead.owner_kind === "ai" ? lead.owner_agent?.name ?? "Agente" : null;
+
+  // Ganchos da lista de prospecção importada — é o que se lê ANTES de clicar
+  // em Conversar, por isso o card vem primeiro na coluna lateral.
+  const ganchos = extractGanchos(lead.custom_fields);
 
   return (
     <div className="flex flex-col gap-6">
@@ -191,6 +196,22 @@ export function LeadDetailClient({
         </Card>
 
         <div className="flex flex-col gap-4">
+          {ganchos.length > 0 && (
+            <Card className="flex flex-col gap-3 border-warning/40 bg-warning-bg p-6">
+              <MonoLabel>ganchos de abertura</MonoLabel>
+              <ul className="flex flex-col gap-2">
+                {ganchos.map((g) => (
+                  <li
+                    key={g}
+                    className="whitespace-pre-wrap text-sm leading-relaxed text-warning-fg"
+                  >
+                    {g}
+                  </li>
+                ))}
+              </ul>
+            </Card>
+          )}
+
           {lead.score && (
             <Card className="flex flex-col gap-3 p-6">
               <MonoLabel>score</MonoLabel>
