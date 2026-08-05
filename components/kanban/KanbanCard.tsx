@@ -132,6 +132,26 @@ export function KanbanCard({
           {/* ① identidade — altura FIXA de 2 linhas, com ou sem texto longo. */}
           <div className="flex items-start justify-between gap-2">
             <div className="flex min-w-0 flex-1 items-start gap-1.5">
+              {/* A seleção múltipla já existia por ctrl/cmd+clique — e ninguém
+                  achava, porque atalho sem affordance não se descobre. A caixa
+                  é o mesmo gesto, visível. O modificador continua valendo para
+                  quem já o conhece.
+
+                  `stopPropagation` no clique: sem ele o clique subiria para o
+                  card e abriria o dossiê junto, que é o oposto do que marcar
+                  uma caixa quer dizer. `onPointerDown` idem, contra o dnd — sem
+                  isso, arrastar a partir da caixa começaria a mover o card. */}
+              {onSelect && (
+                <input
+                  type="checkbox"
+                  checked={isSelected ?? false}
+                  aria-label={`Selecionar ${card.title}`}
+                  onClick={(e) => e.stopPropagation()}
+                  onPointerDown={(e) => e.stopPropagation()}
+                  onChange={() => onSelect(card.id, true)}
+                  className="mt-1 shrink-0 cursor-pointer accent-accent"
+                />
+              )}
               {card.canonicalTag && (
                 <span
                   className="mt-1.5 h-1.5 w-1.5 shrink-0 rounded-full bg-accent"
