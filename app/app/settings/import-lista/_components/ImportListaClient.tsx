@@ -40,13 +40,20 @@ const PAPEL_LABEL: Record<Papel, string> = {
 
 interface ResultadoLinha {
   linha: number;
-  status: "criado" | "repetido" | "erro";
+  status: "criado" | "repetido" | "reparado" | "erro";
   lead_id?: string;
   motivo?: string;
 }
 
 interface RespostaImport {
-  data: { criados: number; repetidos: number; erros: number; resultados: ResultadoLinha[] };
+  data: {
+    criados: number;
+    repetidos: number;
+    /** Leads que existiam sem telefone e foram religados ao contato desta subida. */
+    reparados: number;
+    erros: number;
+    resultados: ResultadoLinha[];
+  };
 }
 
 const TAMANHO_LOTE = 25;
@@ -141,6 +148,35 @@ function detectarPapel(cabecalho: string): Papel {
   return "extra";
 }
 
+/** "7335259222", "(77) 99904-8626", "+55 74 98103-5512" — formatação à parte, é um telefone. */
+function pareceTelefone(valor: string): boolean {
+  if (!/^[\s()+\-.\d]+$/.test(valor)) return false;
+  const digitos = valor.replace(/\D/g, "");
+  return digitos.length >= 8 && digitos.length <= 13;
+}
+
+/**
+ * Segunda passada da detecção, olhando o CONTEÚDO. O cabeçalho mente: no CSV
+ * do /enriquecer-leads o telefone vem numa coluna chamada "Contato", que pelo
+ * nome vira "dono" — e o lead inteiro entra sem telefone (aconteceu em
+ * 05/08/2026: 117 leads sem botão de conversa). Se nenhuma coluna foi marcada
+ * como telefone, a primeira cujos valores são ≥80% telefones assume o papel.
+ */
+function ajustarPapeisPorConteudo(papeis: Papel[], dados: string[][]): Papel[] {
+  if (papeis.includes("telefone")) return papeis;
+  const amostra = dados.slice(0, 25);
+  for (let col = 0; col < papeis.length; col++) {
+    if (papeis[col] === "negocio" || papeis[col] === "gancho") continue;
+    const valores = amostra.map((r) => (r[col] ?? "").trim()).filter(Boolean);
+    if (valores.length === 0) continue;
+    const telefones = valores.filter(pareceTelefone).length;
+    if (telefones / valores.length >= 0.8) {
+      return papeis.map((p, i) => (i === col ? "telefone" : p));
+    }
+  }
+  return papeis;
+}
+
 /* ------------------------------------------------------------------------ */
 
 interface LinhaMontada {
@@ -217,6 +253,7 @@ export function ImportListaClient() {
   const [resultado, setResultado] = React.useState<{
     criados: number;
     repetidos: number;
+    reparados: number;
     erros: ResultadoLinha[];
     puladas: number[];
   } | null>(null);
@@ -243,7 +280,7 @@ export function ImportListaClient() {
     setNomeArquivo(file.name);
     setCabecalhos(headers);
     setDados(linhas.slice(1));
-    setPapeis(headers.map(detectarPapel));
+    setPapeis(ajustarPapeisPorConteudo(headers.map(detectarPapel), linhas.slice(1)));
     setResultado(null);
   };
 
@@ -271,6 +308,7 @@ export function ImportListaClient() {
     setProgresso(0);
     let criados = 0;
     let repetidos = 0;
+    let reparados = 0;
     const erros: ResultadoLinha[] = [];
 
     try {
@@ -290,6 +328,7 @@ export function ImportListaClient() {
         );
         criados += res.data.criados;
         repetidos += res.data.repetidos;
+        reparados += res.data.reparados ?? 0;
         for (const r of res.data.resultados) {
           if (r.status !== "erro") continue;
           // r.linha é relativa ao lote; converte para a linha real do arquivo.
@@ -297,13 +336,18 @@ export function ImportListaClient() {
         }
         setProgresso(Math.min(inicio + TAMANHO_LOTE, linhas.length));
       }
-      setResultado({ criados, repetidos, erros, puladas });
-      if (erros.length === 0) toast.success(`Lista importada: ${criados} lead(s) criados.`);
-      else toast.warning(`Importação terminou com ${erros.length} erro(s).`);
+      setResultado({ criados, repetidos, reparados, erros, puladas });
+      if (erros.length === 0) {
+        toast.success(
+          reparados > 0
+            ? `Lista importada: ${criados} criado(s), ${reparados} religado(s) ao telefone.`
+            : `Lista importada: ${criados} lead(s) criados.`,
+        );
+      } else toast.warning(`Importação terminou com ${erros.length} erro(s).`);
     } catch {
       // Interrompe onde parou; o dedupe do servidor deixa reenviar o mesmo
       // arquivo sem duplicar o que já entrou.
-      setResultado({ criados, repetidos, erros, puladas });
+      setResultado({ criados, repetidos, reparados, erros, puladas });
       toast.error("A importação parou no meio. Suba o mesmo arquivo de novo — o que já entrou não duplica.");
     } finally {
       setImportando(false);
@@ -470,6 +514,11 @@ export function ImportListaClient() {
           <h2 className="text-sm font-semibold">Resultado</h2>
           <p className="text-sm">
             <span className="font-medium">{resultado.criados}</span> criados ·{" "}
+            {resultado.reparados > 0 && (
+              <>
+                <span className="font-medium">{resultado.reparados}</span> religados ao telefone ·{" "}
+              </>
+            )}
             <span className="font-medium">{resultado.repetidos}</span> já existiam ·{" "}
             <span className="font-medium">{resultado.erros.length}</span> com erro
             {resultado.puladas.length > 0 && (

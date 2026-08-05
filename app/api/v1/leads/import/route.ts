@@ -34,7 +34,8 @@ export const runtime = "nodejs";
 
 interface ResultadoLinha {
   linha: number;
-  status: "criado" | "repetido" | "erro";
+  /** "reparado" = lead que existia SEM contato ganhou o telefone desta linha. */
+  status: "criado" | "repetido" | "reparado" | "erro";
   lead_id?: string;
   motivo?: string;
 }
@@ -154,6 +155,47 @@ export async function POST(req: NextRequest): Promise<Response> {
         }
       }
 
+      // Lead órfão do MESMO negócio (sem contato) já existe neste funil?
+      // Acontece quando uma importação anterior leu a coluna do telefone
+      // errado: o lead nasceu sem contato e sem botão de conversa. Subir o
+      // arquivo de novo REPARA em vez de duplicar — religa o telefone ao
+      // lead que já está no quadro.
+      const { data: orfao } = await supabase
+        .from("crm_leads")
+        .select("id")
+        .eq("organization_id", org.orgId)
+        .eq("pipeline_id", pipeline_id)
+        .eq("status", "open")
+        .eq("title", row.negocio)
+        .is("contact_id", null)
+        .limit(1)
+        .maybeSingle();
+      if (orfao) {
+        if (!contactId) {
+          resultados.push({
+            linha,
+            status: "repetido",
+            lead_id: orfao.id as string,
+            motivo: "Lead já existia (sem telefone nas duas listas).",
+          });
+          continue;
+        }
+        const { error: religaErr } = await supabase
+          .from("crm_leads")
+          .update({ contact_id: contactId, updated_at: new Date().toISOString() })
+          .eq("id", orfao.id);
+        if (religaErr) {
+          throw new ApiError(500, "internal_error", undefined, requestId, religaErr.message);
+        }
+        resultados.push({
+          linha,
+          status: "reparado",
+          lead_id: orfao.id as string,
+          motivo: "Lead já existia sem telefone — telefone religado ao contato.",
+        });
+        continue;
+      }
+
       const lead = await createLeadHandler(supabase, ctx, {
         pipeline_id,
         stage_id,
@@ -185,7 +227,8 @@ export async function POST(req: NextRequest): Promise<Response> {
 
   const criados = resultados.filter((r) => r.status === "criado").length;
   const repetidos = resultados.filter((r) => r.status === "repetido").length;
+  const reparados = resultados.filter((r) => r.status === "reparado").length;
   const erros = resultados.filter((r) => r.status === "erro").length;
 
-  return ok({ criados, repetidos, erros, resultados }, { requestId });
+  return ok({ criados, repetidos, reparados, erros, resultados }, { requestId });
 }
