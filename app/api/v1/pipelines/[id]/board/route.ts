@@ -178,6 +178,32 @@ async function avisaAmbiguas(
  * ignoraria a histerese e devolveria o card piscando na fronteira, no único
  * lugar onde o CHECK de coerência não alcança.
  */
+/**
+ * Roda um `.in(...)` em lotes e junta os resultados.
+ *
+ * O PostgREST recebe a lista de ids na URL, e o cliente HTTP do Node recusa
+ * cabeçalho+URL acima de 16 KB — com `Headers Overflow Error`, que sobe como um
+ * `TypeError: fetch failed` sem dizer o motivo. Um UUID custa ~37 bytes, então o
+ * teto chega perto de 440 ids: o quadro funcionava e passou a falhar INTEIRO no
+ * dia em que a importação cruzou essa marca, sem nada no log e sem relação
+ * visível com a mudança que estivesse no ar. Em 200 a URL fica em ~7 KB, metade
+ * do limite — folga suficiente para não voltar a acontecer por crescimento.
+ */
+async function emLotes<T>(
+  ids: string[],
+  consulta: (lote: string[]) => PromiseLike<{ data: T[] | null; error: { message: string } | null }>,
+  tamanho = 200,
+): Promise<{ data: T[]; error: string | null }> {
+  const lotes: string[][] = [];
+  for (let i = 0; i < ids.length; i += tamanho) lotes.push(ids.slice(i, i + tamanho));
+
+  const resultados = await Promise.all(lotes.map((lote) => consulta(lote)));
+  const falha = resultados.find((r) => r.error);
+  if (falha?.error) return { data: [], error: falha.error.message };
+
+  return { data: resultados.flatMap((r) => r.data ?? []), error: null };
+}
+
 async function withScores(
   supabase: Awaited<ReturnType<typeof createClient>>,
   organizationId: string,
@@ -185,17 +211,18 @@ async function withScores(
 ): Promise<{ leads: Lead[]; error: string | null }> {
   if (leads.length === 0) return { leads, error: null };
 
-  const { data, error } = await supabase
-    .from("crm_lead_scores")
-    .select(
-      "lead_id, ai_probability, ai_probability_reason, ai_probability_band, ai_probability_evidence, ai_probability_at",
-    )
-    .eq("organization_id", organizationId)
-    .in(
-      "lead_id",
-      leads.map((l) => l.id),
-    );
-  if (error) return { leads, error: error.message };
+  const { data, error } = await emLotes(
+    leads.map((l) => l.id),
+    (lote) =>
+      supabase
+        .from("crm_lead_scores")
+        .select(
+          "lead_id, ai_probability, ai_probability_reason, ai_probability_band, ai_probability_evidence, ai_probability_at",
+        )
+        .eq("organization_id", organizationId)
+        .in("lead_id", lote),
+  );
+  if (error) return { leads, error };
 
   const porLead = new Map<string, NonNullable<Lead["score"]>>();
   for (const row of (data ?? []) as Array<{
@@ -241,25 +268,31 @@ async function withNextActions(
   ];
   if (contactIds.length === 0) return { leads, error: null };
 
+  // Em lotes pelo mesmo motivo do withScores: a lista de ids viaja na URL e
+  // estoura o limite de 16 KB do cliente HTTP quando o funil cresce.
   const [{ data: estados, error: estadosErr }, { data: candidatos, error: candErr }] =
     await Promise.all([
-      supabase
-        .from("lead_state")
-        .select("contact_id, next_action, next_action_seq, updated_at")
-        .eq("organization_id", organizationId)
-        .in("contact_id", contactIds)
-        .not("next_action", "is", null),
-      supabase
-        .from("crm_leads")
-        .select(
-          "id, organization_id, pipeline_id, status, last_activity_at, created_at, contact_id",
-        )
-        .eq("organization_id", organizationId)
-        .eq("status", "open")
-        .in("contact_id", contactIds),
+      emLotes(contactIds, (lote) =>
+        supabase
+          .from("lead_state")
+          .select("contact_id, next_action, next_action_seq, updated_at")
+          .eq("organization_id", organizationId)
+          .in("contact_id", lote)
+          .not("next_action", "is", null),
+      ),
+      emLotes(contactIds, (lote) =>
+        supabase
+          .from("crm_leads")
+          .select(
+            "id, organization_id, pipeline_id, status, last_activity_at, created_at, contact_id",
+          )
+          .eq("organization_id", organizationId)
+          .eq("status", "open")
+          .in("contact_id", lote),
+      ),
     ]);
-  if (estadosErr) return { leads, error: estadosErr.message };
-  if (candErr) return { leads, error: candErr.message };
+  if (estadosErr) return { leads, error: estadosErr };
+  if (candErr) return { leads, error: candErr };
   if (!estados || estados.length === 0) return { leads, error: null };
 
   const { porLead, ambiguas } = roteiaProximasAcoes(
