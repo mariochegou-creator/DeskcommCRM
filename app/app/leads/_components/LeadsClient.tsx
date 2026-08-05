@@ -554,13 +554,24 @@ export function LeadsClient({
           elas: dava para marcar dez negócios e não havia o que fazer com eles.
           A barra é a MESMA do Kanban, não uma cópia — mover, atribuir,
           etiquetar e excluir se comportam igual nas duas telas, e uma correção
-          futura vale para as duas de uma vez. */}
-      <BulkActionBar
-        selectedIds={[...selected]}
-        stages={stages}
-        pipelineId={pipelineId}
-        onClear={() => setSelected(new Set())}
-      />
+          futura vale para as duas de uma vez.
+
+          `fixed` aqui, e não o `sticky` que a barra traz: no Kanban o quadro
+          tem altura própria e o sticky cola: nesta tela a lista é longa (358
+          negócios paginados) e a barra ficava no fim do documento — só aparecia
+          para quem rolasse até o rodapé, que é o mesmo que não existir.
+
+          `pointer-events-none` no invólucro devolvido em `auto` na barra: sem
+          isso a faixa invisível cobriria a largura toda e engoliria cliques na
+          última linha da tabela. */}
+      <div className="pointer-events-none fixed inset-x-0 bottom-4 z-40 flex justify-center [&>*]:pointer-events-auto">
+        <BulkActionBar
+          selectedIds={[...selected]}
+          stages={stages}
+          pipelineId={pipelineId}
+          onClear={() => setSelected(new Set())}
+        />
+      </div>
     </div>
   );
 }
