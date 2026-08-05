@@ -36,6 +36,7 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { EditableStagePill } from "@/components/kanban/StagePill";
+import { BulkActionBar } from "@/components/kanban/BulkActionBar";
 import { FunnelSummaryCards } from "@/components/kanban/FunnelSummaryCards";
 import { NewLeadDialog } from "@/components/kanban/NewLeadDialog";
 import { ImportKaptarDialog } from "@/components/kanban/ImportKaptarDialog";
@@ -548,6 +549,18 @@ export function LeadsClient({
           stages={board.data.stages}
         />
       )}
+
+      {/* As caixas de seleção desta tabela existiam sem NENHUMA ação ligada a
+          elas: dava para marcar dez negócios e não havia o que fazer com eles.
+          A barra é a MESMA do Kanban, não uma cópia — mover, atribuir,
+          etiquetar e excluir se comportam igual nas duas telas, e uma correção
+          futura vale para as duas de uma vez. */}
+      <BulkActionBar
+        selectedIds={[...selected]}
+        stages={stages}
+        pipelineId={pipelineId}
+        onClear={() => setSelected(new Set())}
+      />
     </div>
   );
 }
