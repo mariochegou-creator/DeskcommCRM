@@ -46,13 +46,23 @@ export interface WahaPayload {
     pushName?: string;
     /** NOWEB: o conteúdo real (imageMessage, stickerMessage, …) — fonte do tipo. */
     message?: Record<string, unknown>;
+    /** NOWEB: a WAMessageKey. `remoteJid` é SEMPRE o outro lado do chat. */
+    key?: { id?: string; fromMe?: boolean; remoteJid?: string } & Record<string, unknown>;
   } & Record<string, unknown>;
+}
+
+/** Identidade da própria sessão, como o WAHA a devolve no envelope. */
+export interface WahaMe {
+  id?: string | null;
+  lid?: string | null;
 }
 
 export interface WahaEnvelope {
   event?: string;
   session?: string;
   payload?: WahaPayload;
+  /** Quem é a sessão. Usado para nunca confundir o próprio número com o contato. */
+  me?: WahaMe | null;
 }
 
 export type ChatIdentity =
@@ -416,21 +426,70 @@ async function handleInbound(
 }
 
 /**
- * fromMe=true: operador respondeu direto do WhatsApp dele (não pelo composer).
- * Contato = destinatário (`to`). `from` é o próprio número do operador — nunca
- * vira contato. Registrado como outbound p/ o operador ver o histórico completo.
+ * Descobre COM QUEM é a conversa numa mensagem `fromMe=true`.
+ *
+ * ⚠️ Esta função existe por causa de um bug que apagou 368 mensagens enviadas.
+ * A versão original lia só `p.to`, porque no WEBJS o `to` é o destinatário e o
+ * `from` é o próprio operador. **O NOWEB não manda `to` nenhum**: para fromMe
+ * ele põe o outro lado do chat em `from` (= `_data.key.remoteJid`). Resultado no
+ * ar: `p.to ?? ""` virava `parseChatId("")` → `group` → `return` mudo, e TODA
+ * mensagem enviada pelo WhatsApp Web/celular era descartada sem erro, sem log e
+ * sem evento. O inbox ficou só com o que o cliente escreveu — metade da conversa.
+ *
+ * Ordem: `to` (WEBJS) → `_data.key.remoteJid` (NOWEB, explícito) → `from`
+ * (NOWEB). O último passo é o perigoso: no WEBJS `from` É o operador. Por isso a
+ * identidade da própria sessão (`me`) veta o candidato — sem esse veto o CRM
+ * criaria um "contato" que é o próprio número e conversaria consigo mesmo.
+ */
+export function resolveOutboundChatId(p: WahaPayload, me?: WahaMe | null): string | null {
+  const proprios = new Set(
+    [me?.id, me?.lid].filter((v): v is string => typeof v === "string" && v.length > 0),
+  );
+  for (const candidato of [p.to, p._data?.key?.remoteJid, p.from]) {
+    if (!candidato) continue;
+    if (proprios.has(candidato)) continue;
+    return candidato;
+  }
+  return null;
+}
+
+/**
+ * fromMe=true: a mensagem saiu do WhatsApp vinculado (Web, celular, outro
+ * atendente) — ou é o eco da que o próprio CRM acabou de enviar. Nos dois casos
+ * ela PRECISA entrar no histórico, senão o inbox mostra só um lado da conversa.
+ *
+ * O contato é o outro lado do chat (ver `resolveOutboundChatId`), nunca o
+ * próprio número da sessão.
  */
 async function handleOutboundFromUserPhone(
   admin: Admin,
   session: Session,
   p: WahaPayload,
   requestId: string,
+  me?: WahaMe | null,
 ): Promise<void> {
-  const chatId = p.to ?? "";
+  const chatId = resolveOutboundChatId(p, me) ?? "";
   const parsed = parseChatId(chatId);
   if (parsed.kind === "group") return;
   if (!p.id || !chatId) return;
   if (!p.body && !mediaUrlOf(p) && !p.hasMedia) return;
+
+  // Eco do próprio composer: o CRM já gravou esta linha em `sendMessageHandler`.
+  // Os dois lados guardam formas DIFERENTES do mesmo id — o NOWEB responde ao
+  // envio com o id cru (`3EB0…`) e manda no webhook o completo
+  // (`true_{chat}_3EB0…`); o WEBJS usa o completo nos dois. Procurar pelas duas
+  // formas é o que impede a mensagem enviada pelo CRM de aparecer duplicada no
+  // thread. A unique (organization_id, external_id) continua como rede embaixo.
+  const bare = bareWaMessageId(p.id);
+  const idsPossiveis = bare === p.id ? [p.id] : [p.id, bare];
+  const { data: jaExiste } = await admin
+    .from("messages")
+    .select("id")
+    .eq("organization_id", session.organization_id)
+    .in("external_id", idsPossiveis)
+    .limit(1)
+    .maybeSingle();
+  if (jaExiste) return;
 
   const contactId = await upsertContact(admin, session.organization_id, parsed, chatId, notifyNameOf(p));
   if (!contactId) return;
@@ -553,7 +612,7 @@ export async function dispatchWahaEvent(
 
   if (eventType === "message" || eventType === "message.any") {
     if (payload.fromMe) {
-      await handleOutboundFromUserPhone(admin, session, payload, requestId);
+      await handleOutboundFromUserPhone(admin, session, payload, requestId, envelope.me);
     } else {
       await handleInbound(admin, session, payload, requestId);
     }

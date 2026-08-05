@@ -59,17 +59,15 @@ export function useSendMessage() {
         created_at: new Date().toISOString(),
       };
 
+      // A página 0 é a janela MAIS RECENTE da conversa (ver listMessagesHandler),
+      // e dentro dela as mensagens vêm em ordem cronológica — então o rascunho
+      // otimista entra no fim dela, não no fim da última página (que é a mais
+      // antiga carregada).
       qc.setQueryData<InfiniteData<MessagesPage>>(queryKey, (old) => {
-        if (!old) return old;
+        if (!old || old.pages.length === 0) return old;
         const pages = [...old.pages];
-        if (pages.length > 0) {
-          const lastIdx = pages.length - 1;
-          const lastPage = pages[lastIdx]!;
-          pages[lastIdx] = {
-            ...lastPage,
-            data: [...lastPage.data, tempMsg],
-          };
-        }
+        const recente = pages[0]!;
+        pages[0] = { ...recente, data: [...recente.data, tempMsg] };
         return { ...old, pages };
       });
 

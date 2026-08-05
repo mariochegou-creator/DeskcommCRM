@@ -71,6 +71,27 @@ export interface ListMessagesResult {
   has_more: boolean;
 }
 
+/**
+ * Página do histórico de uma conversa — a JANELA MAIS RECENTE primeiro.
+ *
+ * ⚠️ A ordem da consulta é decrescente de propósito, e isso não é detalhe de
+ * gosto. A versão anterior lia `sent_at` ASCENDENTE com `limit`, ou seja: a
+ * primeira página era a das mensagens MAIS ANTIGAS e o cursor andava para
+ * frente. Numa conversa com mais de `limit` mensagens o efeito era o oposto do
+ * pretendido — abrir o inbox mostrava o começo da conversa, a mensagem recém
+ * enviada não entrava na página carregada, e o botão "Carregar mais antigas"
+ * trazia mensagens mais NOVAS. Quem enviava via composer via a mensagem sumir
+ * assim que o refetch acontecia.
+ *
+ * O mesmo handler serve o `crm_get_conversation_history` do MCP, onde o defeito
+ * era ainda mais silencioso: o agente recebia as 20 mensagens mais velhas da
+ * conversa como "contexto recente".
+ *
+ * Cada página é devolvida em ordem cronológica (mais antiga → mais nova) porque
+ * é assim que se lê uma conversa; o que muda é QUAL janela vem, não a ordem
+ * dentro dela. O cursor aponta para a mensagem mais antiga da página e anda para
+ * trás — "mais antigas" passa a significar mais antigas.
+ */
 export async function listMessagesHandler(
   supabase: SB,
   ctx: HandlerCtx,
@@ -82,8 +103,8 @@ export async function listMessagesHandler(
     .select(MSG_COLS)
     .eq("conversation_id", conversationId)
     .eq("organization_id", ctx.organization_id)
-    .order("sent_at", { ascending: true })
-    .order("id", { ascending: true })
+    .order("sent_at", { ascending: false })
+    .order("id", { ascending: false })
     .limit(q.limit + 1);
 
   if (q.cursor) {
@@ -91,7 +112,7 @@ export async function listMessagesHandler(
     if (!c) {
       throw new ApiError(400, "invalid_cursor", undefined, ctx.requestId, "Cursor inválido.");
     }
-    query = query.or(`sent_at.gt.${c.sent_at},and(sent_at.eq.${c.sent_at},id.gt.${c.id})`);
+    query = query.or(`sent_at.lt.${c.sent_at},and(sent_at.eq.${c.sent_at},id.lt.${c.id})`);
   }
 
   const { data, error } = await query;
@@ -102,11 +123,15 @@ export async function listMessagesHandler(
   const rows = (data ?? []) as unknown as Message[];
   const hasMore = rows.length > q.limit;
   const page = hasMore ? rows.slice(0, q.limit) : rows;
-  const last = page[page.length - 1];
+  // O cursor sai da ponta ANTIGA da página — e é lido antes do reverse, porque
+  // depois dele o "último" elemento passa a ser o mais novo.
+  const maisAntiga = page[page.length - 1];
   const cursor =
-    hasMore && last ? encodeMsgCursor({ sent_at: last.sent_at, id: last.id }) : null;
+    hasMore && maisAntiga
+      ? encodeMsgCursor({ sent_at: maisAntiga.sent_at, id: maisAntiga.id })
+      : null;
 
-  return { messages: page, cursor, has_more: hasMore };
+  return { messages: page.reverse(), cursor, has_more: hasMore };
 }
 
 // ---------------------------------------------------------------------------
