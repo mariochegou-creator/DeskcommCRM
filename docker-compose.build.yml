@@ -10,7 +10,16 @@ services:
     build:
       context: .
       dockerfile: Dockerfile
-      # Sem args: a imagem é genérica (NEXT_PUBLIC_* viram placeholder no build
-      # e os valores reais entram em runtime via env_file).
+      args:
+        # Sem args de CONFIGURAÇÃO: a imagem é genérica (NEXT_PUBLIC_* viram
+        # placeholder no build e os valores reais entram em runtime via
+        # env_file). Este arg é a exceção e não é configuração: é a IDENTIDADE
+        # do que foi buildado, e é o que faz `pnpm versao` conseguir dizer se o
+        # que está no ar é o que você viu no localhost.
+        #
+        # Vem do ambiente de quem builda; o runbook exporta antes de chamar.
+        # Vazio → 'desconhecido' no Dockerfile: a imagem admite que não sabe,
+        # em vez de mentir um SHA.
+        APP_GIT_SHA: ${APP_GIT_SHA:-desconhecido}
     image: ${APP_IMAGE:-deskcomm-app:local}
     pull_policy: never

@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { env } from "@/lib/env";
+import { versaoDoApp } from "@/lib/versao-do-app";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
@@ -145,6 +146,10 @@ export async function GET() {
       data: {
         status,
         version: process.env.npm_package_version ?? "0.1.0",
+        // Qual CÓDIGO está no ar aqui. É o que torna comparável o localhost e o
+        // domínio: mesmo `commit` com `limpo: true` dos dois lados = mesma
+        // versão, e nenhuma outra combinação é.
+        codigo: versaoDoApp(),
         timestamp: new Date().toISOString(),
         checks,
       },

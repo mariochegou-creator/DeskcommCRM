@@ -8,6 +8,7 @@
   },
   "scripts": {
     "dev": "next dev",
+    "versao": "node scripts/versao.mjs",
     "dev:webpack": "next dev",
     "build": "next build",
     "build:webpack": "next build",
