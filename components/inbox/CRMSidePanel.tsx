@@ -12,7 +12,8 @@ import { Tag, Receipt, Users, ArrowRight } from "@/lib/ui/icons";
 import { apiClient } from "@/lib/api/client";
 import type { ConversationWithContact } from "@/hooks/inbox/useConversationsRealtime";
 import { activityLabel, actorLabel, actorShape } from "@/lib/leads/activity-vocabulary";
-import { extractGanchos } from "@/lib/leads/ganchos";
+import { extractExtras, extractGanchos } from "@/lib/leads/ganchos";
+import { LeadExtrasList } from "@/components/leads/LeadExtrasList";
 import { ConversationTagsEditor } from "./ConversationTagsEditor";
 import { cn } from "@/lib/utils";
 
@@ -165,6 +166,18 @@ export function CRMSidePanel({ conversation }: Props) {
     [leads],
   );
 
+  // O resto do dossiê (Dores, Score, Nota Google…) vem do lead mais recente
+  // que tiver algum — os leads chegam ordenados por updated_at desc, e juntar
+  // extras de leads diferentes misturaria scores e dores de negócios distintos
+  // sob os mesmos rótulos.
+  const extras = useMemo(() => {
+    for (const l of leads ?? []) {
+      const e = extractExtras(l.custom_fields);
+      if (e.length > 0) return e;
+    }
+    return [];
+  }, [leads]);
+
   const tags = contact?.tags ?? [];
   const displayName =
     contact?.display_name?.trim() ||
@@ -250,6 +263,22 @@ export function CRMSidePanel({ conversation }: Props) {
                 </li>
               ))}
             </ul>
+          </section>
+        </>
+      )}
+
+      {extras.length > 0 && (
+        <>
+          <Separator />
+          <section>
+            <h3 className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+              Dossiê de prospecção
+            </h3>
+            {/* Sem estado vazio, como os ganchos: dossiê é enriquecimento da
+                prospecção e a ausência não informa nada. */}
+            <div className="mt-2">
+              <LeadExtrasList extras={extras} dense />
+            </div>
           </section>
         </>
       )}

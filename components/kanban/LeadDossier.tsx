@@ -5,7 +5,8 @@ import { Sheet, SheetContent, SheetHeader, SheetTitle } from "@/components/ui/sh
 import Link from "next/link";
 import { Button } from "@/components/ui/button";
 import { WhatsappLogo, ChatCircle, MapPin } from "@/lib/ui/icons";
-import { extractGoogleMapsUrl } from "@/lib/leads/ganchos";
+import { extractExtras, extractGanchos, extractGoogleMapsUrl } from "@/lib/leads/ganchos";
+import { LeadExtrasList } from "@/components/leads/LeadExtrasList";
 import { useLeadTimeline } from "@/hooks/leads/useLeadTimeline";
 import { useContact } from "@/hooks/contacts/useContact";
 import { useContactConversation } from "@/hooks/inbox/useContactConversation";
@@ -78,6 +79,12 @@ export function LeadDossier({
   // WhatsApp e todos os seguintes ficarem dentro do CRM, sem ninguém trocar nada.
   const conversa = useContactConversation(open && lead.contact_id ? lead.contact_id : null);
 
+  // Ganchos + dossiê da prospecção. A gaveta é onde o SDR trabalha — era a
+  // única superfície que NÃO mostrava os ganchos (só a página /leads/[id]
+  // mostrava); quem operava pelo kanban abria conversa sem ver o gancho.
+  const ganchos = extractGanchos(lead.custom_fields);
+  const extras = extractExtras(lead.custom_fields);
+
   return (
     <Sheet open={open} onOpenChange={onOpenChange}>
       <SheetContent
@@ -138,6 +145,22 @@ export function LeadDossier({
           </Button>
         )}
 
+        {/* Ganchos antes de tudo: quem abre a gaveta veio conversar, e o
+            gancho é o que se lê antes do primeiro toque. Âmbar como no inbox
+            e na página — mesmo significado, só o time vê. Sem estado vazio. */}
+        {ganchos.length > 0 && (
+          <ul className="mb-3 space-y-1.5">
+            {ganchos.map((g) => (
+              <li
+                key={g}
+                className="whitespace-pre-wrap break-words rounded-md border border-warning/40 bg-warning-bg p-2 text-xs leading-snug text-warning-fg"
+              >
+                {g}
+              </li>
+            ))}
+          </ul>
+        )}
+
         {/* ① cabeçalho vivo */}
         <div className="flex flex-wrap items-center gap-x-3 gap-y-1.5 border-b border-border pb-3 text-xs">
           <span className="font-medium tabular-nums text-text">
@@ -195,6 +218,18 @@ export function LeadDossier({
             isError={timeline.isError}
           />
         </section>
+
+        {/* ②½ dossiê de prospecção — o que a lista enriquecida gravou além dos
+            ganchos (Dores, Score, Nota Google…). Leitura, não edição: por isso
+            fica antes do formulário, junto do que se consulta. */}
+        {extras.length > 0 && (
+          <section className="border-t border-border py-3">
+            <h3 className="mb-2 text-xs font-medium uppercase tracking-wide text-text-muted">
+              Dossiê de prospecção
+            </h3>
+            <LeadExtrasList extras={extras} dense />
+          </section>
+        )}
 
         {/* ③ campos, por último */}
         <div ref={campos} className="border-t border-border pt-3">

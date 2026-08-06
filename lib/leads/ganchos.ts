@@ -16,6 +16,8 @@
 
 export const GANCHO_KEY_RE = /gancho|hook|icebreaker|abertura/i;
 
+const MAPS_KEY_RE = /google.?maps|^maps$|place_?url/i;
+
 /**
  * Autor-marcador da nota semeada com os ganchos. Também é o dedupe: a rota de
  * notas só semeia se a conversa ainda não tem nota com este autor. Mudar o
@@ -50,12 +52,40 @@ export function extractGoogleMapsUrl(customFields: unknown): string | null {
     return null;
   }
   for (const [key, value] of Object.entries(customFields as Record<string, unknown>)) {
-    if (!/google.?maps|^maps$|place_?url/i.test(key)) continue;
+    if (!MAPS_KEY_RE.test(key)) continue;
     if (typeof value !== "string") continue;
     const v = value.trim();
     if (/^https?:\/\//i.test(v)) return v;
   }
   return null;
+}
+
+/**
+ * O resto do dossiê de prospecção: todo custom_field que NÃO é gancho nem
+ * link do Maps (esses dois já têm renderização própria). É o que a lista
+ * enriquecida manda além dos ganchos — Dores, Entregáveis, Score, Nota
+ * Google, Cidade, Instagram, Site, Origem da linha — e também o que o
+ * importador do Kaptar grava (tem_site, categoria, score_kaptar…).
+ *
+ * Valores number/boolean viram string aqui (o Kaptar grava tipados); objeto
+ * e array são descartados — campo de dossiê é sempre escalar, estrutura é
+ * ruído de webhook.
+ */
+export function extractExtras(customFields: unknown): Array<[string, string]> {
+  if (!customFields || typeof customFields !== "object" || Array.isArray(customFields)) {
+    return [];
+  }
+  const extras: Array<[string, string]> = [];
+  for (const [key, value] of Object.entries(customFields as Record<string, unknown>)) {
+    if (GANCHO_KEY_RE.test(key)) continue;
+    if (MAPS_KEY_RE.test(key)) continue;
+    let v: string;
+    if (typeof value === "string") v = value.trim();
+    else if (typeof value === "number" || typeof value === "boolean") v = String(value);
+    else continue;
+    if (v) extras.push([key, v]);
+  }
+  return extras;
 }
 
 /** Corpo da nota semeada. 4096 é o teto de createNoteSchema — a nota entra pela mesma tabela. */

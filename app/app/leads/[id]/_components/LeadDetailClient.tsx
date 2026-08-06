@@ -12,7 +12,8 @@ import { MonoLabel } from "@/components/ui/mono-label";
 import { EditableStagePill } from "@/components/kanban/StagePill";
 import { OwnerBadge } from "@/components/kanban/OwnerBadge";
 import { formatBRL } from "@/lib/dashboard/metrics";
-import { extractGanchos, extractGoogleMapsUrl } from "@/lib/leads/ganchos";
+import { extractExtras, extractGanchos, extractGoogleMapsUrl } from "@/lib/leads/ganchos";
+import { LeadExtrasList } from "@/components/leads/LeadExtrasList";
 
 function formatDate(iso: string | null): string {
   if (!iso) return "—";
@@ -88,6 +89,9 @@ export function LeadDetailClient({
   // em Conversar, por isso o card vem primeiro na coluna lateral.
   const ganchos = extractGanchos(lead.custom_fields);
   const mapsUrl = extractGoogleMapsUrl(lead.custom_fields);
+  // O resto do dossiê da prospecção (Dores, Score, Nota Google…) — tudo que a
+  // importação gravou em custom_fields além dos ganchos e do link do Maps.
+  const extras = extractExtras(lead.custom_fields);
 
   return (
     <div className="flex flex-col gap-6">
@@ -220,6 +224,13 @@ export function LeadDetailClient({
                   </li>
                 ))}
               </ul>
+            </Card>
+          )}
+
+          {extras.length > 0 && (
+            <Card className="flex flex-col gap-3 p-6">
+              <MonoLabel>dossiê de prospecção</MonoLabel>
+              <LeadExtrasList extras={extras} />
             </Card>
           )}
 
