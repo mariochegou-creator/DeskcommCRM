@@ -30,7 +30,7 @@ interface FilterBarProps {
 
 const STATUS_OPTIONS: Array<{ value: NonNullable<LeadFilters["status"]>; label: string }> = [
   { value: "all", label: "Todos" },
-  { value: "novos", label: "Novos (últimos 7 dias)" },
+  { value: "novos", label: "Novos (últimas 24h)" },
   { value: "open", label: "Abertos" },
   { value: "won", label: "Ganhos" },
   { value: "lost", label: "Perdidos" },

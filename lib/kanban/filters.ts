@@ -17,12 +17,13 @@ export function parseAgentOwnerFilter(value: string | undefined): string | null 
 }
 
 /**
- * Janela do filtro "Novos": lead criado há menos de 7 dias. Não é status do
+ * Janela do filtro "Novos": lead criado há menos de 24 horas. Não é status do
  * banco — é um recorte por created_at que vive no mesmo dropdown porque a
- * pergunta do usuário é a mesma ("o que eu quero ver no quadro?"). 7 dias
- * cobre o ritmo real: lista de prospecção sobe no máximo uma vez por semana.
+ * pergunta do usuário é a mesma ("o que eu quero ver no quadro?"). Começou em
+ * 7 dias; o Mario pediu 24h em 05/08/2026 — o recorte que ele quer é "a leva
+ * que acabei de subir", não "a semana".
  */
-export const NOVOS_DIAS = 7;
+export const NOVOS_HORAS = 24;
 
 export interface LeadFilters {
   /** userId | `agent:<uuid>` | "any" | "unassigned" */
@@ -94,7 +95,7 @@ export function applyFilters(leads: Lead[], f: LeadFilters): Lead[] {
     if (f.status === "novos") {
       // Recorte por chegada, não por situação: um lead novo que já foi ganho
       // ou perdido continua sendo "dos últimos adicionados".
-      const corte = Date.now() - NOVOS_DIAS * 24 * 60 * 60 * 1000;
+      const corte = Date.now() - NOVOS_HORAS * 60 * 60 * 1000;
       if (new Date(l.created_at).getTime() < corte) return false;
     } else if (f.status && f.status !== "all" && l.status !== f.status) return false;
     if (f.tag && !l.tags.includes(f.tag)) return false;
