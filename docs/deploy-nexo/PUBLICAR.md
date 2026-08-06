@@ -68,7 +68,7 @@ commit**, e a sua máquina tem que estar sem arquivo solto.
 
 ```bash
 ssh root@145.223.94.63
-cd /opt/deskcomm-nexo            # confirme com `docker compose ps` se o caminho mudou
+cd /root/DeskcommCRM             # confirme com `docker compose ps` se o caminho mudou
 ```
 
 **Ponto de retorno** (a imagem de hoje é o botão de desfazer):
@@ -81,7 +81,7 @@ docker inspect --format '{{.Config.Image}}' $(docker compose -f docker-compose.p
 **Trazer o código e carimbar a imagem com o commit:**
 
 ```bash
-git fetch nexo nexo-ia && git checkout nexo-ia && git pull
+git fetch origin nexo-ia && git checkout nexo-ia && git pull
 git log --oneline -1                      # tem que bater com o `pnpm versao` da sua máquina
 
 export APP_GIT_SHA=$(git rev-parse --short=7 HEAD)
