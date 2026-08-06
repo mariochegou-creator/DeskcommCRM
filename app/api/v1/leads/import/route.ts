@@ -129,17 +129,23 @@ export async function POST(req: NextRequest): Promise<Response> {
 
         if (existente) {
           contactId = existente.id as string;
-          // Dedupe: mesmo arquivo subido de novo → o lead aberto já existe.
-          // Mas se ESTA subida traz gancho que o lead não tem, o gancho entra:
-          // é o caminho de enriquecer uma leva que subiu sem os ganchos.
+          // Dedupe: mesmo arquivo subido de novo → o lead já existe.
+          // Mas se ESTA subida traz dado que o lead não tem, ele entra:
+          // é o caminho de enriquecer uma leva que subiu incompleta.
+          //
+          // SEM filtro de status DE PROPÓSITO: reimportar é ATUALIZAR, nunca
+          // recomeçar. Um lead que o Mario já marcou como ganho ou perdido
+          // continua sendo o mesmo negócio da lista — criar outro em "Novo"
+          // desfaria o trabalho dele. E nada aqui toca etapa, posição,
+          // responsável ou status: card movido fica onde está.
           const { data: leadExistente } = await supabase
             .from("crm_leads")
             .select("id, custom_fields")
             .eq("organization_id", org.orgId)
             .eq("contact_id", contactId)
             .eq("pipeline_id", pipeline_id)
-            .eq("status", "open")
             .eq("title", row.negocio)
+            .order("created_at", { ascending: false })
             .limit(1)
             .maybeSingle();
           if (leadExistente) {
@@ -170,7 +176,7 @@ export async function POST(req: NextRequest): Promise<Response> {
               linha,
               status: "repetido",
               lead_id: leadExistente.id as string,
-              motivo: "Já existe lead aberto deste negócio para este telefone.",
+              motivo: "Já existe lead deste negócio para este telefone.",
             });
             continue;
           }
@@ -208,14 +214,16 @@ export async function POST(req: NextRequest): Promise<Response> {
       // errado: o lead nasceu sem contato e sem botão de conversa. Subir o
       // arquivo de novo REPARA em vez de duplicar — religa o telefone ao
       // lead que já está no quadro.
+      // Também sem filtro de status: órfão marcado como perdido continua
+      // merecendo o telefone e os dados — religar não mexe na decisão tomada.
       const { data: orfao } = await supabase
         .from("crm_leads")
         .select("id, custom_fields")
         .eq("organization_id", org.orgId)
         .eq("pipeline_id", pipeline_id)
-        .eq("status", "open")
         .eq("title", row.negocio)
         .is("contact_id", null)
+        .order("created_at", { ascending: false })
         .limit(1)
         .maybeSingle();
       if (orfao) {
