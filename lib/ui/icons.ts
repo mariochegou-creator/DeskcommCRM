@@ -74,6 +74,8 @@ export {
   ChatCircle,
   Phone,
   WhatsappLogo,
+  // prospecção — link de volta pro anúncio do Google Maps no dossiê do lead
+  MapPin,
   Paperclip,
   Microphone,
   Image as ImageIcon,

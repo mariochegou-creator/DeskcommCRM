@@ -4,7 +4,8 @@ import { useRef } from "react";
 import { Sheet, SheetContent, SheetHeader, SheetTitle } from "@/components/ui/sheet";
 import Link from "next/link";
 import { Button } from "@/components/ui/button";
-import { WhatsappLogo, ChatCircle } from "@/lib/ui/icons";
+import { WhatsappLogo, ChatCircle, MapPin } from "@/lib/ui/icons";
+import { extractGoogleMapsUrl } from "@/lib/leads/ganchos";
 import { useLeadTimeline } from "@/hooks/leads/useLeadTimeline";
 import { useContact } from "@/hooks/contacts/useContact";
 import { useContactConversation } from "@/hooks/inbox/useContactConversation";
@@ -69,6 +70,7 @@ export function LeadDossier({
   // uma requisição por card do board para descobrir isso seria caro à toa.
   const contato = useContact(open && lead.contact_id ? lead.contact_id : "");
   const whatsapp = whatsappLink(contato.data?.data.phone_number);
+  const mapsUrl = extractGoogleMapsUrl(lead.custom_fields);
 
   // O atendimento pertence ao inbox; o WhatsApp é só a porta de entrada quando
   // ela ainda não foi aberta. Conversa nasce de mensagem RECEBIDA, então um lead
@@ -121,6 +123,19 @@ export function LeadDossier({
               </a>
             </Button>
           )
+        )}
+
+        {/* O caminho de volta pro anúncio: quando o número não está no WhatsApp
+            (Maps desatualizado acontece), é AQUI que o SDR investiga — sem este
+            link ele tem que caçar o negócio no Google de novo. Vem da lista de
+            prospecção (custom_fields), então só aparece quando existe. */}
+        {mapsUrl && (
+          <Button asChild variant="outline" size="sm" className="mb-3 w-full gap-2">
+            <a href={mapsUrl} target="_blank" rel="noopener noreferrer">
+              <MapPin size={16} weight="fill" />
+              Ver no Google Maps
+            </a>
+          </Button>
         )}
 
         {/* ① cabeçalho vivo */}

@@ -1,6 +1,6 @@
 "use client";
 import Link from "next/link";
-import { CaretLeft, ChatCircle, Users } from "@/lib/ui/icons";
+import { CaretLeft, ChatCircle, MapPin, Users } from "@/lib/ui/icons";
 
 import { useBoard } from "@/hooks/kanban/useBoard";
 import { useMoveCard } from "@/hooks/kanban/useMoveCard";
@@ -12,7 +12,7 @@ import { MonoLabel } from "@/components/ui/mono-label";
 import { EditableStagePill } from "@/components/kanban/StagePill";
 import { OwnerBadge } from "@/components/kanban/OwnerBadge";
 import { formatBRL } from "@/lib/dashboard/metrics";
-import { extractGanchos } from "@/lib/leads/ganchos";
+import { extractGanchos, extractGoogleMapsUrl } from "@/lib/leads/ganchos";
 
 function formatDate(iso: string | null): string {
   if (!iso) return "—";
@@ -87,6 +87,7 @@ export function LeadDetailClient({
   // Ganchos da lista de prospecção importada — é o que se lê ANTES de clicar
   // em Conversar, por isso o card vem primeiro na coluna lateral.
   const ganchos = extractGanchos(lead.custom_fields);
+  const mapsUrl = extractGoogleMapsUrl(lead.custom_fields);
 
   return (
     <div className="flex flex-col gap-6">
@@ -140,6 +141,16 @@ export function LeadDetailClient({
                   </Link>
                 </Button>
               </>
+            )}
+            {/* Caminho de volta pro anúncio (custom_fields da importação) —
+                é por aqui que se investiga número fora do WhatsApp. */}
+            {mapsUrl && (
+              <Button asChild variant="secondary" className="gap-2">
+                <a href={mapsUrl} target="_blank" rel="noopener noreferrer">
+                  <MapPin size={16} aria-hidden />
+                  Ver no Google Maps
+                </a>
+              </Button>
             )}
           </div>
         </header>

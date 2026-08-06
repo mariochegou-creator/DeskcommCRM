@@ -24,7 +24,6 @@ import { type NextRequest } from "next/server";
 import { ApiError } from "@/lib/api/types";
 import { fail, ok } from "@/lib/api/wrappers";
 import { requireRole } from "@/lib/auth/require-role";
-import { GANCHO_KEY_RE } from "@/lib/leads/ganchos";
 import { createClient } from "@/lib/supabase/server";
 import { normalizePhoneBR } from "@/lib/webhooks/inbound";
 import { importLeadsSchema, type ImportRow } from "@/lib/schemas/lead-import";
@@ -53,11 +52,13 @@ function customFieldsDaLinha(row: ImportRow): Record<string, string> {
 }
 
 /**
- * Ganchos da linha que o lead existente ainda não tem. Só chaves de gancho —
- * reimportar uma lista não deve reescrever os outros custom_fields de um lead
- * que alguém pode ter editado depois.
+ * Campos da linha que o lead existente ainda NÃO tem. Chave já presente nunca
+ * é tocada — reimportar preenche buraco (gancho que faltou, link do Maps que
+ * a lista antiga não trazia), jamais reescreve o que alguém editou depois.
+ * (Começou aceitando só gancho_*; generalizado em 06/08 quando o link do
+ * Google Maps precisou entrar pelo mesmo caminho.)
  */
-function ganchosFaltantes(
+function camposFaltantes(
   existentes: unknown,
   daLinha: Record<string, string>,
 ): Record<string, string> {
@@ -67,7 +68,6 @@ function ganchosFaltantes(
       : {};
   const novos: Record<string, string> = {};
   for (const [key, value] of Object.entries(daLinha)) {
-    if (!GANCHO_KEY_RE.test(key)) continue;
     if (key in atuais) continue;
     novos[key] = value;
   }
@@ -143,7 +143,7 @@ export async function POST(req: NextRequest): Promise<Response> {
             .limit(1)
             .maybeSingle();
           if (leadExistente) {
-            const novos = ganchosFaltantes(leadExistente.custom_fields, customFieldsDaLinha(row));
+            const novos = camposFaltantes(leadExistente.custom_fields, customFieldsDaLinha(row));
             if (Object.keys(novos).length > 0) {
               const { error: mesclaErr } = await supabase
                 .from("crm_leads")
@@ -162,7 +162,7 @@ export async function POST(req: NextRequest): Promise<Response> {
                 linha,
                 status: "reparado",
                 lead_id: leadExistente.id as string,
-                motivo: "Lead já existia — ganchos de abertura adicionados.",
+                motivo: "Lead já existia — dados novos da lista adicionados (ganchos, Maps…).",
               });
               continue;
             }
@@ -230,7 +230,7 @@ export async function POST(req: NextRequest): Promise<Response> {
         }
         // Religa o telefone E aproveita a passada pra entregar os ganchos que
         // esta linha traz e o lead ainda não tem.
-        const novos = ganchosFaltantes(orfao.custom_fields, customFieldsDaLinha(row));
+        const novos = camposFaltantes(orfao.custom_fields, customFieldsDaLinha(row));
         const { error: religaErr } = await supabase
           .from("crm_leads")
           .update({

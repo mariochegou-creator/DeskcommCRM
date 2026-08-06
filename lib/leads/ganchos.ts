@@ -38,6 +38,26 @@ export function extractGanchos(customFields: unknown): string[] {
   return ganchos;
 }
 
+/**
+ * Link do Google Maps do negócio, também vindo da lista de prospecção
+ * (custom_fields["Google Maps"] ou variações). É o caminho de volta pro
+ * anúncio original quando o telefone falha — número fora do WhatsApp, Maps
+ * desatualizado. Só aceita URL http(s); qualquer outro valor é ruído de
+ * planilha.
+ */
+export function extractGoogleMapsUrl(customFields: unknown): string | null {
+  if (!customFields || typeof customFields !== "object" || Array.isArray(customFields)) {
+    return null;
+  }
+  for (const [key, value] of Object.entries(customFields as Record<string, unknown>)) {
+    if (!/google.?maps|^maps$|place_?url/i.test(key)) continue;
+    if (typeof value !== "string") continue;
+    const v = value.trim();
+    if (/^https?:\/\//i.test(v)) return v;
+  }
+  return null;
+}
+
 /** Corpo da nota semeada. 4096 é o teto de createNoteSchema — a nota entra pela mesma tabela. */
 export function formatGanchoNote(ganchos: string[]): string {
   const unicos = [...new Set(ganchos)];
