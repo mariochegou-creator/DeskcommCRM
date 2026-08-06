@@ -16,10 +16,18 @@ export function parseAgentOwnerFilter(value: string | undefined): string | null 
   return value.slice(AGENT_OWNER_PREFIX.length) || null;
 }
 
+/**
+ * Janela do filtro "Novos": lead criado há menos de 7 dias. Não é status do
+ * banco — é um recorte por created_at que vive no mesmo dropdown porque a
+ * pergunta do usuário é a mesma ("o que eu quero ver no quadro?"). 7 dias
+ * cobre o ritmo real: lista de prospecção sobe no máximo uma vez por semana.
+ */
+export const NOVOS_DIAS = 7;
+
 export interface LeadFilters {
   /** userId | `agent:<uuid>` | "any" | "unassigned" */
   owner?: string | "any" | "unassigned";
-  status?: "all" | "open" | "won" | "lost";
+  status?: "all" | "open" | "won" | "lost" | "novos";
   tag?: string;
   search?: string;
   valueCentsMin?: number | null;
@@ -41,7 +49,11 @@ export function filtersFromParams(
   return {
     owner: owner ?? undefined,
     status:
-      status === "open" || status === "won" || status === "lost" || status === "all"
+      status === "open" ||
+      status === "won" ||
+      status === "lost" ||
+      status === "novos" ||
+      status === "all"
         ? status
         : "all",
     tag: tag ?? undefined,
@@ -79,7 +91,12 @@ export function applyFilters(leads: Lead[], f: LeadFilters): Lead[] {
         return false;
       }
     }
-    if (f.status && f.status !== "all" && l.status !== f.status) return false;
+    if (f.status === "novos") {
+      // Recorte por chegada, não por situação: um lead novo que já foi ganho
+      // ou perdido continua sendo "dos últimos adicionados".
+      const corte = Date.now() - NOVOS_DIAS * 24 * 60 * 60 * 1000;
+      if (new Date(l.created_at).getTime() < corte) return false;
+    } else if (f.status && f.status !== "all" && l.status !== f.status) return false;
     if (f.tag && !l.tags.includes(f.tag)) return false;
     if (
       search &&
