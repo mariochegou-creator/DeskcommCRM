@@ -31,6 +31,14 @@ export const triggerConfigSchema = z.discriminatedUnion("kind", [
     params: z.strictObject({
       threshold_minutes: z.number().int().min(5).max(10_080),
       segments: z.array(z.string()).optional(),
+      // Prospecção fria: o lead recebeu a abordagem e NUNCA respondeu. Sem
+      // isto ele é invisível pro sweep — silêncio é medido de `last_inbound_at`,
+      // que nele é null, então o contato mais silencioso que existe (o que
+      // nunca abriu a boca) era justamente o único que não entrava. Com o flag,
+      // o silêncio desses passa a ser medido do ÚLTIMO ENVIO NOSSO.
+      // Default ausente/false = comportamento histórico intacto: fluxo de
+      // silêncio existente continua só reagindo a quem já conversou.
+      include_never_replied: z.boolean().optional(),
     }),
     ...CANCEL_ON_REPLY,
   }),

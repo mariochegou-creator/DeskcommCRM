@@ -70,7 +70,10 @@ function silenceSweepDb(): SilenceSweepDb {
         id: string;
         organization_id: string;
         active_version_id: string | null;
-        trigger_config: { kind: string; params?: { threshold_minutes: number; segments?: string[] } };
+        trigger_config: {
+          kind: string;
+          params?: { threshold_minutes: number; segments?: string[]; include_never_replied?: boolean };
+        };
       }>(
         `select id, organization_id, active_version_id, trigger_config
          from followup_flow_pointers
@@ -85,26 +88,46 @@ function silenceSweepDb(): SilenceSweepDb {
           active_version_id: row.active_version_id,
           threshold_minutes: row.trigger_config.params!.threshold_minutes,
           segments: row.trigger_config.params!.segments ?? [],
+          includeNeverReplied: row.trigger_config.params!.include_never_replied ?? false,
         });
       }
       return pointers;
     },
-    async loadSilentContactIds(orgId, cutoffIso, segments) {
-      const { rows } = await pool.query<{ contact_id: string; last_inbound_at: string; tags: string[]; is_blocked: boolean }>(
-        `select conv.contact_id, max(conv.last_inbound_at) as last_inbound_at,
+    // Espelha createSupabaseSilenceSweepDb: um contato que respondeu em QUALQUER
+    // conversa é medido só pelo inbound mais recente; o outbound só decide para
+    // quem nunca respondeu, e só quando includeNeverReplied. Por isso os dois
+    // agregados vêm separados e a escolha é feita aqui, não no SQL.
+    async loadSilentContactIds(orgId, cutoffIso, segments, includeNeverReplied = false) {
+      const { rows } = await pool.query<{
+        contact_id: string;
+        last_inbound_at: string | null;
+        last_outbound_at: string | null;
+        tags: string[];
+        is_blocked: boolean;
+      }>(
+        `select conv.contact_id,
+                max(conv.last_inbound_at) as last_inbound_at,
+                max(conv.last_outbound_at) as last_outbound_at,
                 c.tags as tags, c.is_blocked as is_blocked
          from conversations conv
          join contacts c on c.id = conv.contact_id
-         where conv.organization_id = $1 and conv.last_inbound_at is not null
+         where conv.organization_id = $1
+           and (conv.last_inbound_at is not null or ($2 and conv.last_outbound_at is not null))
          group by conv.contact_id, c.tags, c.is_blocked`,
-        [orgId],
+        [orgId, includeNeverReplied],
       );
       const cutoff = new Date(cutoffIso).getTime();
-      return rows
-        .filter((r) => !r.is_blocked)
-        .filter((r) => new Date(r.last_inbound_at).getTime() <= cutoff)
-        .filter((r) => segments.length === 0 || segments.some((s) => r.tags.includes(s)))
-        .map((r) => r.contact_id);
+      const silent: string[] = [];
+      for (const r of rows) {
+        if (r.is_blocked) continue;
+        const base =
+          r.last_inbound_at ?? (includeNeverReplied ? r.last_outbound_at : null);
+        if (base === null) continue;
+        if (new Date(base).getTime() > cutoff) continue;
+        if (segments.length > 0 && !segments.some((s) => r.tags.includes(s))) continue;
+        silent.push(r.contact_id);
+      }
+      return silent;
     },
     async loadTriggerNodeId(orgId, versionId) {
       const { rows } = await pool.query<{ graph: FlowGraph }>(
@@ -219,9 +242,24 @@ async function seedConversationAt(org: string, contactId: string, atIso: string)
   return rows[0]!.id;
 }
 
+/** Conversa de prospecção fria: só saiu mensagem nossa, nunca entrou resposta. */
+async function seedOutboundOnlyConversation(
+  org: string,
+  contactId: string,
+  agoMinutes: number,
+): Promise<string> {
+  const sessionId = await seedChannelSession(org);
+  const { rows } = await pool.query<{ id: string }>(
+    `insert into conversations (organization_id, contact_id, channel_session_id, status, is_group, last_inbound_at, last_outbound_at)
+     values ($1, $2, $3, 'open', false, null, now() - interval '${agoMinutes} minutes') returning id`,
+    [org, contactId, sessionId],
+  );
+  return rows[0]!.id;
+}
+
 async function seedSilenceFlow(
   org: string,
-  opts?: { thresholdMinutes?: number; segments?: string[] },
+  opts?: { thresholdMinutes?: number; segments?: string[]; includeNeverReplied?: boolean },
 ): Promise<{ pointerId: string; versionId: string }> {
   const graph: FlowGraph = {
     nodes: [
@@ -237,7 +275,13 @@ async function seedSilenceFlow(
   const versionId = versionRows[0]!.id;
   const triggerConfig = {
     kind: "silence",
-    params: { threshold_minutes: opts?.thresholdMinutes ?? 60, segments: opts?.segments ?? [] },
+    params: {
+      threshold_minutes: opts?.thresholdMinutes ?? 60,
+      segments: opts?.segments ?? [],
+      ...(opts?.includeNeverReplied === undefined
+        ? {}
+        : { include_never_replied: opts.includeNeverReplied }),
+    },
   };
   const { rows: pointerRows } = await pool.query<{ id: string }>(
     `insert into followup_flow_pointers (organization_id, name, status, active_version_id, trigger_config)
@@ -411,6 +455,101 @@ describe("runSilenceSweep — redução anti-spam (multi-conversa + never-inboun
     await seedPublishedAgentVersion(org, { enabled: true, pointerIds: [pointerId] });
     const contactId = await seedContact(org);
     await seedConversation(org, contactId, null); // nunca recebeu inbound — não é "silêncio", é ausência de histórico
+
+    const summary = await runSilenceSweep({ db: silenceSweepDb(), gateDb: pgGateDb(), clock: CLOCK });
+    expect(summary.enrolled).toBe(0);
+    expect(await countEnrollments(pointerId, contactId)).toBe(0);
+  });
+});
+
+// ---- 3c. include_never_replied: a cadência anti-vácuo da prospecção fria ----
+//
+// O lead prospectado recebeu a abordagem e sumiu: nunca houve inbound, então
+// `last_inbound_at` é null e o sweep clássico não o enxerga — o contato mais
+// silencioso que existe era o único que não entrava. Com o flag, a régua dele
+// passa a ser o ÚLTIMO ENVIO NOSSO. O flag é opt-in por pointer: os testes de
+// cima (sem o flag) provam que o comportamento histórico continua intacto.
+
+describe("runSilenceSweep — include_never_replied (prospecção fria)", () => {
+  it("só outbound, silêncio > threshold, flag LIGADA → enrolla (medido pelo last_outbound_at)", async () => {
+    const org = nextOrgId();
+    await seedOrg(org);
+    const { pointerId } = await seedSilenceFlow(org, {
+      thresholdMinutes: 60,
+      includeNeverReplied: true,
+    });
+    await seedPublishedAgentVersion(org, { enabled: true, pointerIds: [pointerId] });
+    const contactId = await seedContact(org);
+    await seedOutboundOnlyConversation(org, contactId, 120);
+
+    const summary = await runSilenceSweep({ db: silenceSweepDb(), gateDb: pgGateDb(), clock: CLOCK });
+    expect(summary.enrolled).toBe(1);
+    expect(await countEnrollments(pointerId, contactId)).toBe(1);
+  });
+
+  it("só outbound, mas DENTRO do threshold → não enrolla (a abordagem é recente demais)", async () => {
+    const org = nextOrgId();
+    await seedOrg(org);
+    const { pointerId } = await seedSilenceFlow(org, {
+      thresholdMinutes: 60,
+      includeNeverReplied: true,
+    });
+    await seedPublishedAgentVersion(org, { enabled: true, pointerIds: [pointerId] });
+    const contactId = await seedContact(org);
+    await seedOutboundOnlyConversation(org, contactId, 5);
+
+    const summary = await runSilenceSweep({ db: silenceSweepDb(), gateDb: pgGateDb(), clock: CLOCK });
+    expect(summary.enrolled).toBe(0);
+    expect(await countEnrollments(pointerId, contactId)).toBe(0);
+  });
+
+  // O furo que a redução ingênua abriria: se o outbound recente vencesse, um
+  // lead que respondeu há 3h e recebeu envio nosso há 5min sairia do silêncio
+  // sem ter aberto a boca desde então.
+  it("respondeu há muito + envio nosso recente → enrolla mesmo assim (inbound manda na régua)", async () => {
+    const org = nextOrgId();
+    await seedOrg(org);
+    const { pointerId } = await seedSilenceFlow(org, {
+      thresholdMinutes: 60,
+      includeNeverReplied: true,
+    });
+    await seedPublishedAgentVersion(org, { enabled: true, pointerIds: [pointerId] });
+    const contactId = await seedContact(org);
+    await seedConversation(org, contactId, 180); // inbound de 3h atrás
+    await seedOutboundOnlyConversation(org, contactId, 5); // envio nosso de 5min atrás
+
+    const summary = await runSilenceSweep({ db: silenceSweepDb(), gateDb: pgGateDb(), clock: CLOCK });
+    expect(summary.enrolled).toBe(1);
+    expect(await countEnrollments(pointerId, contactId)).toBe(1);
+  });
+
+  // Simétrico do de cima: respondeu AGORA e o envio nosso é velho. Aqui o
+  // inbound tira o contato do silêncio, e é isso que impede o fluxo de
+  // atropelar uma conversa viva.
+  it("respondeu agora + envio nosso antigo → NÃO enrolla", async () => {
+    const org = nextOrgId();
+    await seedOrg(org);
+    const { pointerId } = await seedSilenceFlow(org, {
+      thresholdMinutes: 60,
+      includeNeverReplied: true,
+    });
+    await seedPublishedAgentVersion(org, { enabled: true, pointerIds: [pointerId] });
+    const contactId = await seedContact(org);
+    await seedConversation(org, contactId, 5); // respondeu há 5min
+    await seedOutboundOnlyConversation(org, contactId, 300); // envio nosso de 5h atrás
+
+    const summary = await runSilenceSweep({ db: silenceSweepDb(), gateDb: pgGateDb(), clock: CLOCK });
+    expect(summary.enrolled).toBe(0);
+    expect(await countEnrollments(pointerId, contactId)).toBe(0);
+  });
+
+  it("mesmo contato, flag DESLIGADA → continua invisível (comportamento histórico intacto)", async () => {
+    const org = nextOrgId();
+    await seedOrg(org);
+    const { pointerId } = await seedSilenceFlow(org, { thresholdMinutes: 60 });
+    await seedPublishedAgentVersion(org, { enabled: true, pointerIds: [pointerId] });
+    const contactId = await seedContact(org);
+    await seedOutboundOnlyConversation(org, contactId, 120);
 
     const summary = await runSilenceSweep({ db: silenceSweepDb(), gateDb: pgGateDb(), clock: CLOCK });
     expect(summary.enrolled).toBe(0);

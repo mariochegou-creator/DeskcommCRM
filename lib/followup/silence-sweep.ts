@@ -47,14 +47,27 @@ export interface SilencePointer {
   active_version_id: string;
   threshold_minutes: number;
   segments: string[];
+  /** Ver `include_never_replied` em api-schemas.ts — prospecção fria. */
+  includeNeverReplied: boolean;
 }
 
 /** DB surface o sweep precisa — narrow por consumidor (mesma doutrina de `AdminClient`/`ReactivityAdminClient`/`FollowupGateDb`). */
 export interface SilenceSweepDb {
   /** Pointers ativos com trigger_config.kind='silence', de TODAS as orgs. */
   loadActiveSilencePointers(): Promise<SilencePointer[]>;
-  /** Contact ids da org sem inbound desde `cutoffIso` (inclusive); `segments` vazio = todos. */
-  loadSilentContactIds(orgId: string, cutoffIso: string, segments: string[]): Promise<string[]>;
+  /**
+   * Contact ids da org sem inbound desde `cutoffIso` (inclusive); `segments` vazio = todos.
+   *
+   * `includeNeverReplied` (4º parâmetro, opcional para não quebrar adapters
+   * antigos): quando true, contato SEM nenhum inbound também conta como
+   * silencioso, medido pelo `last_outbound_at` — é o lead frio prospectado.
+   */
+  loadSilentContactIds(
+    orgId: string,
+    cutoffIso: string,
+    segments: string[],
+    includeNeverReplied?: boolean,
+  ): Promise<string[]>;
   /** id do nó `trigger` do grafo pinado da version; `null` se version/nó não existir (defensivo — não deveria acontecer, validate-publish garante 1 trigger). */
   loadTriggerNodeId(orgId: string, versionId: string): Promise<string | null>;
   /** Insere o enrollment nascendo no nó trigger; `inserted:false` = 23505 (já vivo nesse pointer) → skip. */
@@ -121,7 +134,12 @@ export async function runSilenceSweep(deps: SilenceSweepDeps): Promise<SilenceSw
     if (!triggerNodeId) continue;
 
     const cutoffIso = new Date(clock().getTime() - pointer.threshold_minutes * 60_000).toISOString();
-    const contactIds = await db.loadSilentContactIds(pointer.organization_id, cutoffIso, pointer.segments);
+    const contactIds = await db.loadSilentContactIds(
+      pointer.organization_id,
+      cutoffIso,
+      pointer.segments,
+      pointer.includeNeverReplied,
+    );
     const nextEvalAt = clock().toISOString();
 
     for (const contactId of contactIds) {
@@ -171,32 +189,63 @@ export function createSupabaseSilenceSweepDb(admin: SupabaseClient): SilenceSwee
           active_version_id: row.active_version_id,
           threshold_minutes: parsed.data.params.threshold_minutes,
           segments: parsed.data.params.segments ?? [],
+          includeNeverReplied: parsed.data.params.include_never_replied ?? false,
         });
       }
       return pointers;
     },
 
-    async loadSilentContactIds(orgId, cutoffIso, segments) {
+    async loadSilentContactIds(orgId, cutoffIso, segments, includeNeverReplied = false) {
       // last_inbound_at é POR CONVERSA; o enrollment é POR CONTATO — reduz
       // client-side pro MAIS RECENTE `last_inbound_at` entre as conversas do
       // contato (um contato com 2+ channel_sessions não pode ser marcado
       // silencioso por causa da conversa mais antiga se a mais nova respondeu).
-      const { data, error } = await admin
+      //
+      // Com `includeNeverReplied`, a conversa SEM inbound deixa de ser
+      // descartada e passa a valer pelo `last_outbound_at`. O filtro de linhas
+      // afrouxa, mas a redução por contato NÃO: qualquer inbound real, em
+      // qualquer conversa, continua ganhando do outbound — senão um contato que
+      // respondeu numa conversa e só ouviu na outra entraria como silencioso.
+      const query = admin
         .from("conversations")
-        .select("contact_id, last_inbound_at, contacts:contact_id(tags, is_blocked)")
-        .eq("organization_id", orgId)
-        .not("last_inbound_at", "is", null);
+        .select("contact_id, last_inbound_at, last_outbound_at, contacts:contact_id(tags, is_blocked)")
+        .eq("organization_id", orgId);
+      const { data, error } = includeNeverReplied
+        ? await query.or("last_inbound_at.not.is.null,last_outbound_at.not.is.null")
+        : await query.not("last_inbound_at", "is", null);
       if (error) throw new Error(error.message);
 
-      type Row = { contact_id: string; last_inbound_at: string; contacts: ContactEmbed };
+      type Row = {
+        contact_id: string;
+        last_inbound_at: string | null;
+        last_outbound_at: string | null;
+        contacts: ContactEmbed;
+      };
       const cutoff = new Date(cutoffIso).getTime();
-      const latest = new Map<string, { at: number; tags: string[]; blocked: boolean }>();
+      // `replied` marca que o instante veio de um inbound de verdade. Inbound
+      // sempre vence outbound na redução, por mais velho que seja: quem já
+      // respondeu não é "nunca respondeu", e a régua dele é a do silêncio
+      // clássico.
+      const latest = new Map<string, { at: number; replied: boolean; tags: string[]; blocked: boolean }>();
       for (const row of (data ?? []) as unknown as Row[]) {
-        const at = new Date(row.last_inbound_at).getTime();
+        const inboundAt = row.last_inbound_at === null ? null : new Date(row.last_inbound_at).getTime();
+        const outboundAt =
+          !includeNeverReplied || row.last_outbound_at === null
+            ? null
+            : new Date(row.last_outbound_at).getTime();
+        const replied = inboundAt !== null;
+        const at = replied ? inboundAt : outboundAt;
+        if (at === null || Number.isNaN(at)) continue; // conversa muda dos dois lados: nada a medir
+
         const prev = latest.get(row.contact_id);
-        if (!prev || at > prev.at) {
+        const ganha =
+          !prev ||
+          (replied && !prev.replied) || // inbound sempre bate outbound
+          (replied === prev.replied && at > prev.at); // mesma natureza: o mais recente
+        if (ganha) {
           latest.set(row.contact_id, {
             at,
+            replied,
             tags: row.contacts?.tags ?? [],
             blocked: row.contacts?.is_blocked ?? false,
           });
