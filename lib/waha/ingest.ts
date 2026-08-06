@@ -46,8 +46,17 @@ export interface WahaPayload {
     pushName?: string;
     /** NOWEB: o conteúdo real (imageMessage, stickerMessage, …) — fonte do tipo. */
     message?: Record<string, unknown>;
-    /** NOWEB: a WAMessageKey. `remoteJid` é SEMPRE o outro lado do chat. */
-    key?: { id?: string; fromMe?: boolean; remoteJid?: string } & Record<string, unknown>;
+    /**
+     * NOWEB: a WAMessageKey. `remoteJid` é SEMPRE o outro lado do chat.
+     * `remoteJidAlt` é o JID alternativo: quando o chat vem identificado por
+     * `@lid` (pseudônimo de privacidade), o telefone real chega aqui.
+     */
+    key?: {
+      id?: string;
+      fromMe?: boolean;
+      remoteJid?: string;
+      remoteJidAlt?: string;
+    } & Record<string, unknown>;
   } & Record<string, unknown>;
 }
 
@@ -86,6 +95,32 @@ export function parseChatId(chatId: string): ChatIdentity {
     return { kind: "phone", phone: "+" + digits, lid: null };
   }
   return { kind: "group", phone: null, lid: null };
+}
+
+/**
+ * parseChatId com o véu do LID levantado: quando o chat chega como `@lid`
+ * (pseudônimo de privacidade do WhatsApp), a WAMessageKey traz o JID real em
+ * `remoteJidAlt` — e é o TELEFONE que casa com o resto do CRM.
+ *
+ * Sem esta troca, `wa_identity` nasce como `lid:…` e NÃO bate com o contato
+ * que a importação de prospecção criou (`phone:+55…`): a conversa aparece no
+ * inbox sem nome, sem telefone, sem os leads e sem os ganchos de abertura.
+ * Visto no ar em 05/08/2026 — o "oi" pro Hotel Rio Branco criou um contato
+ * fantasma em vez de cair no contato com o gancho.
+ *
+ * O alt só é aceito se resolver para telefone: alt ausente, de grupo ou de
+ * formato desconhecido mantém a identidade lid (que segue funcional — só não
+ * casa com contatos importados).
+ */
+export function parseChatIdComAlt(chatId: string, p: WahaPayload): ChatIdentity {
+  const parsed = parseChatId(chatId);
+  if (parsed.kind !== "lid") return parsed;
+  const alt = p._data?.key?.remoteJidAlt;
+  if (typeof alt === "string" && alt) {
+    const altParsed = parseChatId(alt);
+    if (altParsed.kind === "phone") return altParsed;
+  }
+  return parsed;
 }
 
 const STOP_RX = /\b(STOP|PARAR|SAIR|UNSUBSCRIBE)\b/i;
@@ -302,7 +337,7 @@ async function handleInbound(
   requestId: string,
 ): Promise<void> {
   const chatId = p.from ?? "";
-  const parsed = parseChatId(chatId);
+  const parsed = parseChatIdComAlt(chatId, p);
   if (parsed.kind === "group") return; // grupos não fazem binding CRM
   if (!p.id || !chatId) return;
   // WAHA emite eventos vazios p/ status/read-receipt/presence — não viram mensagem.
@@ -469,7 +504,7 @@ async function handleOutboundFromUserPhone(
   me?: WahaMe | null,
 ): Promise<void> {
   const chatId = resolveOutboundChatId(p, me) ?? "";
-  const parsed = parseChatId(chatId);
+  const parsed = parseChatIdComAlt(chatId, p);
   if (parsed.kind === "group") return;
   if (!p.id || !chatId) return;
   if (!p.body && !mediaUrlOf(p) && !p.hasMedia) return;
