@@ -134,6 +134,67 @@ export async function isLeadInHandoff(db: pg.Pool, tenantId: string, leadId: str
   return rows[0]?.handoff === true;
 }
 
+/**
+ * `messages.sent_via` que denunciam MÃO HUMANA no outbound. `ai` é o agente e
+ * `automation`/`system` são o próprio produto — só estes três valores restam.
+ * `crm` entra porque é o DEFAULT da coluna: uma escrita que não declara origem
+ * é do app, e presumi-la humana erra pro lado seguro (bot cala a mais, nunca a
+ * menos).
+ */
+const HUMAN_SENT_VIA = ['external_device', 'user', 'crm'] as const;
+
+/** Por quanto tempo a resposta de um humano mantém o bot calado NAQUELA conversa. */
+export const HUMAN_ACTIVE_WINDOW_HOURS = 24;
+
+/**
+ * Humano no volante desta CONVERSA → o turno vira NO-OP. Complementa
+ * `isLeadInHandoff`, que só pega o handoff EXPLÍCITO (o lead pediu atendente, ou
+ * o modelo escalou): aqui o gatilho é o atendente simplesmente ter respondido.
+ *
+ * Existe porque o silêncio do handoff não cobria o modo como o time atende de
+ * verdade — pelo celular, sem tocar no inbox. Nesse caminho a mensagem entra por
+ * `handleOutboundFromUserPhone` com `sent_via='external_device'`, ninguém clica
+ * em "Assumir" (`assignee_kind` fica null) e o bot respondia POR CIMA do
+ * atendente, no mesmo thread, para o mesmo lead.
+ *
+ * Duas evidências, uma barata e uma precisa:
+ *   1. `assignee_kind='user'` — alguém assumiu a conversa no inbox;
+ *   2. outbound humano dentro da janela — vale para quem responde pelo celular.
+ *
+ * A janela é o que separa "conversa que um humano está tocando AGORA" de "lead
+ * que um humano atendeu semana passada e voltou hoje" — sem ela o primeiro
+ * atendimento manual calaria o bot naquela conversa para sempre.
+ *
+ * O eco da própria mensagem do agente NÃO cai aqui: o webhook `fromMe` deduplica
+ * por `external_id` antes de gravar (`lib/waha/ingest.ts`), então o que o bot
+ * envia fica só como `sent_via='ai'`. Se um dia esse dedup falhar, o bot se cala
+ * sozinho — falha segura, na direção certa.
+ */
+export async function isHumanHandlingConversation(
+  db: pg.Pool,
+  tenantId: string,
+  conversationId: string,
+  windowHours: number = HUMAN_ACTIVE_WINDOW_HOURS,
+): Promise<boolean> {
+  const { rows } = await db.query<{ humano: boolean }>(
+    `select (
+       coalesce(v.assignee_kind = 'user', false)
+       or exists (
+         select 1 from messages m
+         where m.organization_id = $1
+           and m.conversation_id = v.id
+           and m.direction = 'outbound'
+           and m.sent_via = any($3::text[])
+           and m.sent_at > now() - make_interval(hours => $4::int)
+       )
+     ) as humano
+     from conversations v
+     where v.organization_id = $1 and v.id = $2`,
+    [tenantId, conversationId, HUMAN_SENT_VIA, windowHours],
+  );
+  return rows[0]?.humano === true;
+}
+
 export interface HandoffIds {
   tenantId: string;
   leadId: string;

@@ -59,6 +59,7 @@ import {
   buildHandoffSummary,
   detectAmbiguousOptOut,
   detectHumanHandoffRequest,
+  isHumanHandlingConversation,
   isLeadInHandoff,
   performHumanHandoff,
 } from './human-handoff';
@@ -587,6 +588,19 @@ export async function runAgentTurn(
   // do force_human do CRM) e só o humano/CRM libera — o agente nunca reassume (regra dura 2).
   if (await isLeadInHandoff(pool, tenantId, leadId)) {
     runLog.info('turno pulado — lead em handoff humano (bot silenciado)', { kind: job.kind });
+    return;
+  }
+
+  // Humano já está atendendo ESTA conversa → NO-OP, pelo mesmo motivo e no mesmo
+  // lugar do gate acima: antes de qualquer modelo/CRM. O gate de handoff só cobre
+  // a escalação explícita; este cobre o atendente que respondeu por conta própria
+  // — inclusive pelo celular, que é como o time atende de fato. Sem ele o agente
+  // responde POR CIMA do humano no mesmo thread (visto em produção 05/08/2026).
+  if (await isHumanHandlingConversation(pool, tenantId, input.conversationId)) {
+    runLog.info('turno pulado — humano atendendo esta conversa', {
+      kind: job.kind,
+      conversation_id: input.conversationId,
+    });
     return;
   }
 
