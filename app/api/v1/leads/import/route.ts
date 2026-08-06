@@ -24,6 +24,7 @@ import { type NextRequest } from "next/server";
 import { ApiError } from "@/lib/api/types";
 import { fail, ok } from "@/lib/api/wrappers";
 import { requireRole } from "@/lib/auth/require-role";
+import { GANCHO_KEY_RE } from "@/lib/leads/ganchos";
 import { createClient } from "@/lib/supabase/server";
 import { normalizePhoneBR } from "@/lib/webhooks/inbound";
 import { importLeadsSchema, type ImportRow } from "@/lib/schemas/lead-import";
@@ -49,6 +50,28 @@ function customFieldsDaLinha(row: ImportRow): Record<string, string> {
     if (!(key in campos)) campos[key] = value;
   }
   return campos;
+}
+
+/**
+ * Ganchos da linha que o lead existente ainda não tem. Só chaves de gancho —
+ * reimportar uma lista não deve reescrever os outros custom_fields de um lead
+ * que alguém pode ter editado depois.
+ */
+function ganchosFaltantes(
+  existentes: unknown,
+  daLinha: Record<string, string>,
+): Record<string, string> {
+  const atuais =
+    existentes && typeof existentes === "object" && !Array.isArray(existentes)
+      ? (existentes as Record<string, unknown>)
+      : {};
+  const novos: Record<string, string> = {};
+  for (const [key, value] of Object.entries(daLinha)) {
+    if (!GANCHO_KEY_RE.test(key)) continue;
+    if (key in atuais) continue;
+    novos[key] = value;
+  }
+  return novos;
 }
 
 export async function POST(req: NextRequest): Promise<Response> {
@@ -107,9 +130,11 @@ export async function POST(req: NextRequest): Promise<Response> {
         if (existente) {
           contactId = existente.id as string;
           // Dedupe: mesmo arquivo subido de novo → o lead aberto já existe.
+          // Mas se ESTA subida traz gancho que o lead não tem, o gancho entra:
+          // é o caminho de enriquecer uma leva que subiu sem os ganchos.
           const { data: leadExistente } = await supabase
             .from("crm_leads")
-            .select("id")
+            .select("id, custom_fields")
             .eq("organization_id", org.orgId)
             .eq("contact_id", contactId)
             .eq("pipeline_id", pipeline_id)
@@ -118,6 +143,29 @@ export async function POST(req: NextRequest): Promise<Response> {
             .limit(1)
             .maybeSingle();
           if (leadExistente) {
+            const novos = ganchosFaltantes(leadExistente.custom_fields, customFieldsDaLinha(row));
+            if (Object.keys(novos).length > 0) {
+              const { error: mesclaErr } = await supabase
+                .from("crm_leads")
+                .update({
+                  custom_fields: {
+                    ...((leadExistente.custom_fields as Record<string, unknown>) ?? {}),
+                    ...novos,
+                  },
+                  updated_at: new Date().toISOString(),
+                })
+                .eq("id", leadExistente.id);
+              if (mesclaErr) {
+                throw new ApiError(500, "internal_error", undefined, requestId, mesclaErr.message);
+              }
+              resultados.push({
+                linha,
+                status: "reparado",
+                lead_id: leadExistente.id as string,
+                motivo: "Lead já existia — ganchos de abertura adicionados.",
+              });
+              continue;
+            }
             resultados.push({
               linha,
               status: "repetido",
@@ -162,7 +210,7 @@ export async function POST(req: NextRequest): Promise<Response> {
       // lead que já está no quadro.
       const { data: orfao } = await supabase
         .from("crm_leads")
-        .select("id")
+        .select("id, custom_fields")
         .eq("organization_id", org.orgId)
         .eq("pipeline_id", pipeline_id)
         .eq("status", "open")
@@ -180,9 +228,23 @@ export async function POST(req: NextRequest): Promise<Response> {
           });
           continue;
         }
+        // Religa o telefone E aproveita a passada pra entregar os ganchos que
+        // esta linha traz e o lead ainda não tem.
+        const novos = ganchosFaltantes(orfao.custom_fields, customFieldsDaLinha(row));
         const { error: religaErr } = await supabase
           .from("crm_leads")
-          .update({ contact_id: contactId, updated_at: new Date().toISOString() })
+          .update({
+            contact_id: contactId,
+            ...(Object.keys(novos).length > 0
+              ? {
+                  custom_fields: {
+                    ...((orfao.custom_fields as Record<string, unknown>) ?? {}),
+                    ...novos,
+                  },
+                }
+              : {}),
+            updated_at: new Date().toISOString(),
+          })
           .eq("id", orfao.id);
         if (religaErr) {
           throw new ApiError(500, "internal_error", undefined, requestId, religaErr.message);
@@ -191,7 +253,10 @@ export async function POST(req: NextRequest): Promise<Response> {
           linha,
           status: "reparado",
           lead_id: orfao.id as string,
-          motivo: "Lead já existia sem telefone — telefone religado ao contato.",
+          motivo:
+            Object.keys(novos).length > 0
+              ? "Lead já existia sem telefone — telefone religado e ganchos adicionados."
+              : "Lead já existia sem telefone — telefone religado ao contato.",
         });
         continue;
       }
