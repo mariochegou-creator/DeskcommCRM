@@ -11,7 +11,12 @@ import {
 } from "@/hooks/inbox/useConversationsRealtime";
 import { useConversation, isNotFound } from "@/hooks/inbox/useConversation";
 import { ConversationList } from "./ConversationList";
-import { InboxFilters, type InboxFiltersValue, type InboxTab } from "./InboxFilters";
+import {
+  InboxFilters,
+  visibleInboxTabs,
+  type InboxFiltersValue,
+  type InboxTab,
+} from "./InboxFilters";
 import { ChatThread } from "./ChatThread";
 import { Composer, type ComposerHandle } from "./Composer";
 import { ConversationHeader } from "./ConversationHeader";
@@ -40,10 +45,12 @@ const FILTER_TABS: InboxTab[] = ["unassigned", "mine", "all", "closed", "ai"];
 
 /**
  * Lê ?filter= (G4-02, deep-link). ?filter=all é HONRADO mesmo para agent — a
- * lista volta RLS-scoped (a tab só some cosmeticamente); default: fila.
+ * lista volta RLS-scoped (a tab só some cosmeticamente). O default é "all"
+ * (comportamento WhatsApp: mais recente no topo) — exceto para quem não vê a
+ * aba Todas, que cai na fila.
  */
-function parseFilterParam(v: string | null): InboxTab {
-  return v && FILTER_TABS.includes(v as InboxTab) ? (v as InboxTab) : "unassigned";
+function parseFilterParam(v: string | null, fallback: InboxTab): InboxTab {
+  return v && FILTER_TABS.includes(v as InboxTab) ? (v as InboxTab) : fallback;
 }
 
 interface InboxLayoutProps {
@@ -57,7 +64,11 @@ export function InboxLayout({ initialSelectedId = null }: InboxLayoutProps = {})
   const router = useRouter();
   const pathname = usePathname();
   const searchParams = useSearchParams();
-  const tab = parseFilterParam(searchParams.get("filter"));
+  const fallbackTab: InboxTab =
+    !activeOrg || visibleInboxTabs(activeOrg.role, activeOrg.visibility_mode).includes("all")
+      ? "all"
+      : "unassigned";
+  const tab = parseFilterParam(searchParams.get("filter"), fallbackTab);
 
   // tab vive na URL (?filter=); os demais filtros são estado local de sessão.
   const [aux, setAux] = useState<Omit<InboxFiltersValue, "tab">>({
@@ -103,7 +114,7 @@ export function InboxLayout({ initialSelectedId = null }: InboxLayoutProps = {})
 
   // We need the selected conversation object for header / composer / side panel.
   // Source it from the same query the list uses to avoid an extra request.
-  const listQ = useConversationsRealtime(filters, orgId);
+  const listQ = useConversationsRealtime(filters, orgId, { comSeguranca: true });
   const inList = useMemo(() => {
     const all = listQ.data?.pages.flatMap((p) => p.data) ?? [];
     return all.find((c) => c.id === selectedId) ?? null;

@@ -329,24 +329,28 @@ async function markConversation(
 
 /**
  * Mensagem recebida (fromMe=false). Contato = remetente (`from`).
+ *
+ * Devolve o MOTIVO do descarte (ou `null` quando gravou) — o route handler
+ * carimba isso em `webhook_events_log.error_message`. Antes eram returns mudos
+ * e "evento chegou mas mensagem não existe" era indiagnosticável.
  */
 async function handleInbound(
   admin: Admin,
   session: Session,
   p: WahaPayload,
   requestId: string,
-): Promise<void> {
+): Promise<string | null> {
   const chatId = p.from ?? "";
   const parsed = parseChatIdComAlt(chatId, p);
-  if (parsed.kind === "group") return; // grupos não fazem binding CRM
-  if (!p.id || !chatId) return;
+  if (parsed.kind === "group") return "grupo"; // grupos não fazem binding CRM
+  if (!p.id || !chatId) return "sem_id_ou_chat";
   // WAHA emite eventos vazios p/ status/read-receipt/presence — não viram mensagem.
-  if (!p.body && !mediaUrlOf(p) && !p.hasMedia) return;
+  if (!p.body && !mediaUrlOf(p) && !p.hasMedia) return "sem_conteudo";
 
   const contactId = await upsertContact(admin, session.organization_id, parsed, chatId, notifyNameOf(p));
-  if (!contactId) return;
+  if (!contactId) return "contato_upsert_falhou";
   const conversationId = await upsertConversation(admin, session.organization_id, contactId, session.id);
-  if (!conversationId) return;
+  if (!conversationId) return "conversa_upsert_falhou";
 
   const now = new Date().toISOString();
   const { data: insertedMessage, error: insertErr } = await admin
@@ -375,9 +379,9 @@ async function handleInbound(
   // Idempotência: 23505 = unique (organization_id, external_id) já ingerido.
   if (insertErr && insertErr.code !== "23505") {
     console.error("[waha.ingest] message insert failed", insertErr.message);
-    return;
+    return `insert_falhou:${insertErr.message}`;
   }
-  if (insertErr?.code === "23505") return;
+  if (insertErr?.code === "23505") return "dedupe";
 
   await markConversation(admin, session.organization_id, conversationId, "inbound", previewFromMessage(p), now);
 
@@ -458,6 +462,7 @@ async function handleInbound(
         });
     }
   }
+  return null;
 }
 
 /**
@@ -502,12 +507,12 @@ async function handleOutboundFromUserPhone(
   p: WahaPayload,
   requestId: string,
   me?: WahaMe | null,
-): Promise<void> {
+): Promise<string | null> {
   const chatId = resolveOutboundChatId(p, me) ?? "";
   const parsed = parseChatIdComAlt(chatId, p);
-  if (parsed.kind === "group") return;
-  if (!p.id || !chatId) return;
-  if (!p.body && !mediaUrlOf(p) && !p.hasMedia) return;
+  if (parsed.kind === "group") return "grupo";
+  if (!p.id || !chatId) return "sem_id_ou_chat";
+  if (!p.body && !mediaUrlOf(p) && !p.hasMedia) return "sem_conteudo";
 
   // Eco do próprio composer: o CRM já gravou esta linha em `sendMessageHandler`.
   // Os dois lados guardam formas DIFERENTES do mesmo id — o NOWEB responde ao
@@ -524,7 +529,7 @@ async function handleOutboundFromUserPhone(
     .in("external_id", idsPossiveis)
     .limit(1)
     .maybeSingle();
-  if (jaExiste) return;
+  if (jaExiste) return "dedupe";
 
   // ⚠️ SEM NOME, DE PROPÓSITO — e o `null` aqui é a correção de um estrago real.
   //
@@ -541,9 +546,9 @@ async function handleOutboundFromUserPhone(
   // é honesto — e `fn_upsert_wa_contact` faz `coalesce(display_name, excluded)`,
   // então o nome real nunca é sobrescrito depois.
   const contactId = await upsertContact(admin, session.organization_id, parsed, chatId, null);
-  if (!contactId) return;
+  if (!contactId) return "contato_upsert_falhou";
   const conversationId = await upsertConversation(admin, session.organization_id, contactId, session.id);
-  if (!conversationId) return;
+  if (!conversationId) return "conversa_upsert_falhou";
 
   const now = new Date().toISOString();
   const { data: insertedOutbound, error: insertErr } = await admin
@@ -569,9 +574,9 @@ async function handleOutboundFromUserPhone(
     .maybeSingle();
   if (insertErr && insertErr.code !== "23505") {
     console.error("[waha.ingest] outbound insert failed", insertErr.message);
-    return;
+    return `insert_falhou:${insertErr.message}`;
   }
-  if (insertErr?.code === "23505") return;
+  if (insertErr?.code === "23505") return "dedupe";
 
   await markConversation(admin, session.organization_id, conversationId, "outbound", previewFromMessage(p), now);
 
@@ -597,6 +602,7 @@ async function handleOutboundFromUserPhone(
         if (error) console.error("[waha.ingest] emit media.persist_requested failed", error.message);
       });
   }
+  return null;
 }
 
 async function handleAck(admin: Admin, session: Session, p: WahaPayload): Promise<void> {
@@ -649,25 +655,29 @@ async function handleSessionStatus(
 /**
  * Roteador único de eventos WAHA. Os dois route handlers convergem aqui após
  * resolver a sessão e validar HMAC.
+ *
+ * Devolve o motivo do descarte (`"grupo"`, `"dedupe"`, `"insert_falhou:…"`, …)
+ * ou `null` quando o evento foi consumido — o route handler grava isso em
+ * `webhook_events_log` para o descarte nunca ser mudo.
  */
 export async function dispatchWahaEvent(
   admin: Admin,
   session: SessionStatusRow,
   envelope: WahaEnvelope,
   requestId: string,
-): Promise<void> {
+): Promise<string | null> {
   const eventType = envelope.event ?? "unknown";
   const payload = envelope.payload ?? {};
 
   if (eventType === "message" || eventType === "message.any") {
     if (payload.fromMe) {
-      await handleOutboundFromUserPhone(admin, session, payload, requestId, envelope.me);
-    } else {
-      await handleInbound(admin, session, payload, requestId);
+      return handleOutboundFromUserPhone(admin, session, payload, requestId, envelope.me);
     }
+    return handleInbound(admin, session, payload, requestId);
   } else if (eventType === "message.ack") {
     await handleAck(admin, session, payload);
   } else if (eventType === "session.status" || eventType === "state.change") {
     await handleSessionStatus(admin, session, payload);
   }
+  return null;
 }

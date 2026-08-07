@@ -1,7 +1,8 @@
 "use client";
-import { useInfiniteQuery, useQueryClient } from "@tanstack/react-query";
+import { useInfiniteQuery, useQueryClient, type InfiniteData } from "@tanstack/react-query";
 import { useCallback } from "react";
 import { useRealtimeChannel } from "@/hooks/realtime/useRealtimeChannel";
+import { useRefetchDeSeguranca } from "@/hooks/realtime/useRefetchDeSeguranca";
 import { apiClient } from "@/lib/api/client";
 import { showApiError } from "@/components/feedback/ApiErrorToast";
 import type { Conversation } from "@/lib/types/messaging";
@@ -36,6 +37,7 @@ interface ListResponse {
 export function useConversationsRealtime(
   filters: ConversationsFilters,
   orgId: string | null,
+  opts?: { comSeguranca?: boolean },
 ) {
   const qc = useQueryClient();
   const queryKey = ["conversations", filters] as const;
@@ -77,7 +79,7 @@ export function useConversationsRealtime(
   // com o filtro amplo `organization_id=eq.<org>` abaixo. Prova do filtro em
   // tests/invariants/gov-5-visibility-scope.test.ts (SELECT sob role agent = 0 rows
   // para conversa de outro atendente — o mesmo SELECT que o Realtime executa).
-  useRealtimeChannel({
+  const { status: realtimeStatus, ultimaEntrega } = useRealtimeChannel({
     name: orgId ? `inbox-${orgId}` : "inbox-disabled",
     postgresChanges: orgId
       ? {
@@ -91,5 +93,25 @@ export function useConversationsRealtime(
     enabled: !!orgId,
   });
 
-  return query;
+  // A REDE DE SEGURANÇA (mesmo padrão do useBoard): canal que para de entregar
+  // deixava a lista congelada até um F5. A assinatura é contagem + maior
+  // last_message_at: sensível a conversa nova, mensagem nova e reordenação.
+  // `comSeguranca` existe porque o hook é montado DUAS vezes com os mesmos
+  // filters (InboxLayout + ConversationList) — só um deve manter o timer.
+  const seguranca = useRefetchDeSeguranca<InfiniteData<ListResponse>>({
+    queryKey,
+    assinatura: (d) => {
+      const rows = d?.pages.flatMap((p) => p.data) ?? [];
+      let maior = "";
+      for (const c of rows) {
+        const u = c.last_message_at ?? "";
+        if (u > maior) maior = u;
+      }
+      return `${rows.length}:${maior}`;
+    },
+    ultimaEntrega,
+    enabled: !!orgId && (opts?.comSeguranca ?? false),
+  });
+
+  return { ...query, realtimeStatus, seguranca };
 }

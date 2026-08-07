@@ -131,8 +131,13 @@ export async function listConversationsHandler(
     }
     const op = asc ? "gt" : "lt";
     if (c.sort) {
+      // `.is.null` no OR: NULLS LAST vale nas duas ordenações, então a partir
+      // de qualquer cursor não-nulo TODAS as linhas NULL ainda estão à frente.
+      // Sem esse braço, comparação com NULL é sempre falsa e conversa sem
+      // last_inbound_at (criada só por envio nosso) ficava inalcançável
+      // depois da página 1.
       query = query.or(
-        `${sortCol}.${op}.${c.sort},and(${sortCol}.eq.${c.sort},id.${op}.${c.id})`,
+        `${sortCol}.${op}.${c.sort},and(${sortCol}.eq.${c.sort},id.${op}.${c.id}),${sortCol}.is.null`,
       );
     } else {
       // Página já na região de sort NULL (nulls last): pagina só por id.

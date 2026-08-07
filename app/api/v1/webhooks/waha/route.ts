@@ -53,7 +53,23 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
   if (!session) {
     // Sessão ainda não registrada no nosso DB — aceita e ignora (200 p/ WAHA
     // não ficar retentando). Comum quando a sessão foi iniciada pelo dashboard
-    // antes da nossa linha existir.
+    // antes da nossa linha existir. Deixa rastro: sem esta linha o evento
+    // sumia sem registro nenhum e "não chegou" era indistinguível de
+    // "chegou com o nome de sessão errado".
+    await admin.from("webhook_events_log").insert({
+      organization_id: null,
+      channel_session_id: null,
+      provider: "waha",
+      webhook_path_token: null,
+      http_method: "POST",
+      raw_body: rawBody,
+      payload_parsed: envelope as unknown as Record<string, unknown>,
+      event_type: envelope.event ?? "unknown",
+      external_id: envelope.payload?.id ?? null,
+      status: "error",
+      error_message: `session_not_registered:${sessionName}`,
+      attempts: 0,
+    });
     return ok(
       { accepted: false, reason: "session_not_registered", session: sessionName },
       { requestId },
@@ -83,6 +99,23 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
       organizationId: session.organization_id,
       metadata: { provider: "waha", session: session.waha_session_name, event: envelope.event },
     });
+    // Rastro no log (antes o 401 acontecia ANTES do INSERT e o evento sumia).
+    await admin.from("webhook_events_log").insert({
+      organization_id: session.organization_id,
+      channel_session_id: session.id,
+      provider: "waha",
+      webhook_path_token: null,
+      http_method: "POST",
+      raw_body: rawBody,
+      payload_parsed: envelope as unknown as Record<string, unknown>,
+      signature_header: sigHeader ?? null,
+      valid_signature: false,
+      event_type: envelope.event ?? "unknown",
+      external_id: envelope.payload?.id ?? null,
+      status: "error",
+      error_message: "invalid_signature",
+      attempts: 0,
+    });
     return fail("unauthenticated", "invalid_signature", 401, { requestId });
   }
 
@@ -95,27 +128,50 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
     if (key.toLowerCase() === "cookie") return;
     headersJson[key] = value;
   });
-  await admin.from("webhook_events_log").insert({
-    organization_id: session.organization_id,
-    channel_session_id: session.id,
-    provider: "waha",
-    webhook_path_token: null,
-    http_method: "POST",
-    headers: headersJson,
-    raw_body: rawBody,
-    payload_parsed: envelope as unknown as Record<string, unknown>,
-    signature_header: sigHeader ?? null,
-    valid_signature: validSignature || hmacSkipped,
-    event_type: eventType,
-    external_id: externalId,
-    status: "received",
-    attempts: 0,
-  });
+  const { data: logRow } = await admin
+    .from("webhook_events_log")
+    .insert({
+      organization_id: session.organization_id,
+      channel_session_id: session.id,
+      provider: "waha",
+      webhook_path_token: null,
+      http_method: "POST",
+      headers: headersJson,
+      raw_body: rawBody,
+      payload_parsed: envelope as unknown as Record<string, unknown>,
+      signature_header: sigHeader ?? null,
+      valid_signature: validSignature || hmacSkipped,
+      event_type: eventType,
+      external_id: externalId,
+      status: "received",
+      attempts: 0,
+    })
+    .select("id")
+    .maybeSingle();
 
+  // O resultado do dispatch é carimbado no log: `processed` + motivo de skip,
+  // ou `error` com a exceção. É o que torna "evento chegou mas não virou
+  // mensagem" diagnosticável com um SELECT.
   try {
-    await dispatchWahaEvent(admin, session, envelope, requestId);
+    const motivo = await dispatchWahaEvent(admin, session, envelope, requestId);
+    if (logRow?.id) {
+      await admin
+        .from("webhook_events_log")
+        .update({
+          status: "processed",
+          processed_at: new Date().toISOString(),
+          error_message: motivo ? `skip:${motivo}` : null,
+        })
+        .eq("id", logRow.id);
+    }
   } catch (err) {
     console.error("[waha.webhook] handler failed", err);
+    if (logRow?.id) {
+      await admin
+        .from("webhook_events_log")
+        .update({ status: "error", error_message: String(err) })
+        .eq("id", logRow.id);
+    }
   }
 
   return ok({ accepted: true }, { requestId });

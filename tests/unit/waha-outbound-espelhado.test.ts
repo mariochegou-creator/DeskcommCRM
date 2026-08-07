@@ -155,8 +155,11 @@ describe("mensagem enviada pelo WhatsApp Web entra no histórico", () => {
   it("grava a mensagem de texto como outbound do contato certo", async () => {
     const { admin, chamadas } = adminFalso();
 
-    await dispatchWahaEvent(admin as never, SESSAO as never, NOWEB_TEXTO, "req-1");
+    const motivo = await dispatchWahaEvent(admin as never, SESSAO as never, NOWEB_TEXTO, "req-1");
 
+    // `null` = consumido; qualquer string aqui é motivo de descarte, que o
+    // webhook carimba em webhook_events_log.error_message.
+    expect(motivo).toBeNull();
     const linha = mensagemInserida(chamadas);
     expect(linha, "nada foi inserido — a mensagem enviada sumiu de novo").toBeDefined();
     expect(linha).toMatchObject({
@@ -235,8 +238,9 @@ describe("eco do próprio composer não duplica", () => {
     // mensagem enviada pelo composer apareceria duas vezes no thread.
     const { admin, chamadas } = adminFalso({ jaGravada: { id: "linha-do-composer" } });
 
-    await dispatchWahaEvent(admin as never, SESSAO as never, NOWEB_TEXTO, "req-1");
+    const motivo = await dispatchWahaEvent(admin as never, SESSAO as never, NOWEB_TEXTO, "req-1");
 
+    expect(motivo).toBe("dedupe");
     expect(mensagemInserida(chamadas)).toBeUndefined();
     expect(chamadas.buscasPorExternalId[0]).toEqual([
       "true_246093354901631@lid_3EB0C5CCCBAFBB2A26110C",

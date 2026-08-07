@@ -1,7 +1,8 @@
 "use client";
-import { useInfiniteQuery, useQueryClient } from "@tanstack/react-query";
+import { useInfiniteQuery, useQueryClient, type InfiniteData } from "@tanstack/react-query";
 import { useCallback } from "react";
 import { useRealtimeChannel } from "@/hooks/realtime/useRealtimeChannel";
+import { useRefetchDeSeguranca } from "@/hooks/realtime/useRefetchDeSeguranca";
 import { apiClient } from "@/lib/api/client";
 import { showApiError } from "@/components/feedback/ApiErrorToast";
 import type { Message } from "@/lib/types/messaging";
@@ -44,7 +45,7 @@ export function useMessagesRealtime(conversationId: string | null) {
     qc.invalidateQueries({ queryKey: ["conversations"] });
   }, [qc, conversationId]);
 
-  useRealtimeChannel({
+  const { status: realtimeStatus, ultimaEntrega } = useRealtimeChannel({
     name: conversationId ? `messages-${conversationId}` : "messages-disabled",
     postgresChanges: conversationId
       ? {
@@ -58,5 +59,19 @@ export function useMessagesRealtime(conversationId: string | null) {
     enabled: !!conversationId,
   });
 
-  return query;
+  // Rede de segurança da thread aberta (consumidor único — sem flag): se o
+  // canal de messages cair, a conversa aberta se recompõe em ≤45s e ao voltar
+  // para a aba, em vez de congelar até um F5.
+  const seguranca = useRefetchDeSeguranca<InfiniteData<MessagesResponse>>({
+    queryKey,
+    assinatura: (d) => {
+      const rows = d?.pages.flatMap((p) => p.data) ?? [];
+      const ultima = rows.length ? rows[rows.length - 1] : undefined;
+      return `${rows.length}:${ultima?.id ?? ""}`;
+    },
+    ultimaEntrega,
+    enabled: !!conversationId,
+  });
+
+  return { ...query, realtimeStatus, seguranca };
 }
