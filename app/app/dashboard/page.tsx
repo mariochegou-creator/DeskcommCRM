@@ -1,4 +1,5 @@
 import { loadAuthUser } from "@/lib/auth/server";
+import { detectProspectingPipeline } from "@/lib/dashboard/prospecting-pipeline";
 import { createClient } from "@/lib/supabase/server";
 import { DashboardClient } from "./_components/DashboardClient";
 
@@ -18,14 +19,24 @@ export default async function DashboardPage() {
   const user = await loadAuthUser();
   const supabase = await createClient();
 
-  const { data: pipelines } = await supabase
-    .from("crm_pipelines")
-    .select("id, name, is_default")
-    .eq("is_archived", false)
-    .order("position");
+  const [{ data: pipelines }, { data: stages }] = await Promise.all([
+    supabase
+      .from("crm_pipelines")
+      .select("id, name, slug, position, is_default")
+      .eq("is_archived", false)
+      .order("position"),
+    supabase
+      .from("crm_stages")
+      .select("pipeline_id, slug")
+      .eq("is_archived", false),
+  ]);
 
   const list = pipelines ?? [];
   const active = list.find((p) => p.is_default) ?? list[0] ?? null;
+
+  // O funil de PROSPECÇÃO é resolvido aqui e fixado na seção "// prospecção",
+  // independente do funil padrão que o topo da tela mostra.
+  const prospecting = detectProspectingPipeline(list, stages ?? []);
 
   // Só o primeiro nome: "Olá, Mario" é saudação; "Olá, Mario Silva Chegou" é
   // um formulário te chamando pelo nome completo.
@@ -35,6 +46,8 @@ export default async function DashboardPage() {
     <DashboardClient
       pipelineId={active?.id ?? null}
       pipelineName={active?.name ?? null}
+      prospectingPipelineId={prospecting?.id ?? null}
+      prospectingPipelineName={prospecting?.name ?? null}
       firstName={firstName}
     />
   );

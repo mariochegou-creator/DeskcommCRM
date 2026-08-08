@@ -12,6 +12,7 @@ import { MonoLabel } from "@/components/ui/mono-label";
 import { BarChart } from "@/components/charts/BarChart";
 import { DonutChart } from "@/components/charts/DonutChart";
 import { EmptyPipeline } from "@/components/empty";
+import { ProspectingSection } from "./ProspectingSection";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -33,10 +34,19 @@ import {
 interface Props {
   pipelineId: string | null;
   pipelineName: string | null;
+  /** Funil de prospecção detectado no servidor; null ⇒ a seção não renderiza. */
+  prospectingPipelineId: string | null;
+  prospectingPipelineName: string | null;
   firstName: string | null;
 }
 
-export function DashboardClient({ pipelineId, pipelineName, firstName }: Props) {
+export function DashboardClient({
+  pipelineId,
+  pipelineName,
+  prospectingPipelineId,
+  prospectingPipelineName,
+  firstName,
+}: Props) {
   const [period, setPeriod] = useState<PeriodId>("month");
   const board = useBoard(pipelineId);
 
@@ -205,6 +215,20 @@ export function DashboardClient({ pipelineId, pipelineName, firstName }: Props) 
             </Card>
           </section>
         </>
+      )}
+
+      {/* Fora do ternário do board de propósito: a seção busca os próprios
+          dados e não deve esperar (nem cair junto com) o funil de cima. O
+          `range` congelado é o MESMO — o seletor de período governa as duas
+          metades atomicamente. */}
+      {prospectingPipelineId && prospectingPipelineName && (
+        <ProspectingSection
+          pipelineId={prospectingPipelineId}
+          pipelineName={prospectingPipelineName}
+          range={range}
+          comparison={comparison}
+          periodLabel={periodLabel}
+        />
       )}
     </div>
   );

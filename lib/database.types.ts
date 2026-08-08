@@ -5493,6 +5493,17 @@ export type Database = {
         Args: { p_org: string; p_user: string }
         Returns: string
       }
+      fn_prospecting_metrics: {
+        Args: {
+          p_from: string
+          p_org: string
+          p_pipeline: string
+          p_prev_from?: string
+          p_prev_to?: string
+          p_to: string
+        }
+        Returns: Json
+      }
       fn_publish_ai_agent_version: {
         Args: { p_agent_id: string; p_org_id: string; p_version_id: string }
         Returns: {
