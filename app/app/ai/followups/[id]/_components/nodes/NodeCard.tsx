@@ -1,7 +1,8 @@
 "use client";
 
-import { Handle, Position } from "@xyflow/react";
+import { Handle, Position, useReactFlow } from "@xyflow/react";
 
+import { Trash } from "@/lib/ui/icons";
 import { cn } from "@/lib/utils";
 import type { NodeVisual } from "./nodeVisuals";
 
@@ -34,11 +35,12 @@ export function NodeCard({
 }: Props) {
   const Icon = visual.icon;
   const hasError = (errors?.length ?? 0) > 0;
+  const { deleteElements } = useReactFlow();
 
   return (
     <div
       className={cn(
-        "w-56 rounded-md border border-l-4 border-border bg-surface shadow-sm transition-shadow",
+        "group w-56 rounded-md border border-l-4 border-border bg-surface shadow-sm transition-shadow",
         visual.borderClassName,
         selected && "ring-2 ring-accent-500 ring-offset-1 ring-offset-bg",
         hasError && "border-error ring-2 ring-error ring-offset-1 ring-offset-bg",
@@ -60,6 +62,23 @@ export function NodeCard({
           <p className="truncate text-sm font-medium text-text">{label}</p>
           <p className="truncate text-xs text-text-muted">{subtitle}</p>
         </div>
+        <button
+          type="button"
+          className={cn(
+            // `nodrag` — sem ela o React Flow trata o clique como início de drag e o botão nunca dispara
+            "nodrag shrink-0 rounded p-1 text-text-muted opacity-0 transition-opacity hover:bg-error/10 hover:text-error focus-visible:opacity-100 group-hover:opacity-100",
+            selected && "opacity-100",
+          )}
+          onClick={(e) => {
+            e.stopPropagation();
+            void deleteElements({ nodes: [{ id }] });
+          }}
+          aria-label="Excluir nó"
+          title="Excluir nó"
+          data-testid={`node-delete-${id}`}
+        >
+          <Trash size={14} aria-hidden />
+        </button>
       </div>
       {hasError && (
         <p

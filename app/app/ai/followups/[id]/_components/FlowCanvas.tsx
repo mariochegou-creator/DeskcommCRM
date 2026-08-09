@@ -217,6 +217,7 @@ function FlowCanvasInner({ flowId, initialData }: Props) {
             onNodeClick={onNodeClick}
             onEdgeClick={onEdgeClick}
             onPaneClick={onPaneClick}
+            deleteKeyCode={["Backspace", "Delete"]}
             fitView
           >
             <Background />
