@@ -23,11 +23,14 @@ export async function GET(): Promise<Response> {
   if (!authz.ok) return authz.response;
 
   const supabase = await createClient();
+  // A RLS enxerga TODAS as orgs do usuário; o Painel é da org ATIVA. Sem este
+  // filtro, quem participa de duas orgs veria as tarefas de uma dentro da outra.
   const { data, error } = await supabase
     .from("plan_tasks")
     .select(
       "id, slug, title, description, phase, owner, due_date, position, status, resolved_at",
     )
+    .eq("organization_id", authz.org.orgId)
     .eq("plan_key", SIXTY_DAY_PLAN.key)
     .order("phase", { ascending: true })
     .order("position", { ascending: true })

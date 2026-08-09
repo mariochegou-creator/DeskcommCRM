@@ -56,12 +56,11 @@ export function SixtyDayPlanSection({ prospectingPipelineId, now }: Props) {
   const pace = usePlanPace(prospectingPipelineId, now);
 
   const tasks = tasksQuery.data?.data.tasks ?? null;
+  // Métrica com erro NÃO derruba a seção: os cards degradam para "—" e as
+  // tarefas — o coração — continuam de pé. Só a lista de tarefas é fatal.
   const paceLoading =
     prospectingPipelineId !== null &&
     (pace.today.isLoading || pace.week.isLoading || pace.plan.isLoading);
-  const paceError =
-    prospectingPipelineId !== null &&
-    (pace.today.isError || pace.week.isError || pace.plan.isError);
 
   const day = planDayNumber(now);
   const phase = currentPhase(now);
@@ -84,7 +83,7 @@ export function SixtyDayPlanSection({ prospectingPipelineId, now }: Props) {
 
       {tasksQuery.isLoading || paceLoading ? (
         <PlanSkeleton />
-      ) : tasksQuery.isError || tasks === null || paceError ? (
+      ) : tasksQuery.isError || tasks === null ? (
         <Card className="flex flex-col items-center gap-3 p-10 text-center">
           <p className="text-sm text-error-fg">
             Não foi possível carregar o plano de 60 dias.
@@ -104,6 +103,8 @@ export function SixtyDayPlanSection({ prospectingPipelineId, now }: Props) {
         </Card>
       ) : (
         <PlanContent
+          pipelineDetected={prospectingPipelineId !== null}
+          planStarted={pace.planStarted}
           todayFunnel={pace.today.data?.data.funnel ?? null}
           weekFunnel={pace.week.data?.data.funnel ?? null}
           planFunnel={pace.plan.data?.data.funnel ?? null}
@@ -116,19 +117,27 @@ export function SixtyDayPlanSection({ prospectingPipelineId, now }: Props) {
 }
 
 function PlanContent({
+  pipelineDetected,
+  planStarted,
   todayFunnel,
   weekFunnel,
   planFunnel,
   tasks,
   now,
 }: {
+  pipelineDetected: boolean;
+  planStarted: boolean;
   todayFunnel: PaceFunnelStage[] | null;
   weekFunnel: PaceFunnelStage[] | null;
   planFunnel: PaceFunnelStage[] | null;
   tasks: PlanTask[];
   now: Date;
 }) {
-  const noPipelineHint = "funil de prospecção não detectado";
+  // funnel null com funil detectado = a métrica falhou/não carregou — coisa
+  // diferente de "não há funil", e o hint não pode mentir sobre qual é o caso.
+  const noPipelineHint = pipelineDetected
+    ? "métricas indisponíveis agora"
+    : "funil de prospecção não detectado";
   const targets = SIXTY_DAY_PLAN.dailyTargets;
 
   const today = todayFunnel ? pickPlanNumbers(todayFunnel) : null;
@@ -149,8 +158,9 @@ function PlanContent({
 
   const cp = nextCheckpoint(now);
   const xrayCp = SIXTY_DAY_PLAN.checkpoints.find((c) => c.metric === "xray_accepted");
-  const xrayHint =
-    plan === null
+  const xrayHint = !planStarted
+    ? `começa segunda ${shortDate(SIXTY_DAY_PLAN.startDate)} · meta ${xrayCp?.target ?? 15} até ${shortDate(xrayCp?.date ?? "2026-08-21")}`
+    : plan === null
       ? noPipelineHint
       : plan.xrayStage === null
         ? "etapa de raio-x não encontrada no funil"

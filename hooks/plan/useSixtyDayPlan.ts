@@ -54,6 +54,7 @@ function usePlanWindow(
   from: Date,
   to: Date,
   prev?: { from: Date; to: Date },
+  enabled = true,
 ) {
   const qs = new URLSearchParams({
     pipeline_id: pipelineId ?? "",
@@ -79,7 +80,7 @@ function usePlanWindow(
       apiClient.get<{ data: ProspectingMetrics }>(
         `/api/v1/metrics/prospecting?${qs.toString()}`,
       ),
-    enabled: pipelineId !== null,
+    enabled: enabled && pipelineId !== null,
     staleTime: 30_000,
   });
 }
@@ -114,7 +115,12 @@ export function usePlanPace(pipelineId: string | null, now: Date) {
     from: prevWeekFrom,
     to: prevWeekTo.getTime() > prevWeekFrom.getTime() ? prevWeekTo : weekStart,
   });
-  const plan = usePlanWindow(pipelineId, "plan", planStartInstant(), now);
 
-  return { today, week, plan };
+  // Antes de 10/08 a janela do acumulado seria [futuro, agora) — from > to, e
+  // a rota recusa com 422 (com razão). A query só liga quando o plano começa.
+  const planStart = planStartInstant();
+  const planStarted = now.getTime() > planStart.getTime();
+  const plan = usePlanWindow(pipelineId, "plan", planStart, now, undefined, planStarted);
+
+  return { today, week, plan, planStarted };
 }
