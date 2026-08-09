@@ -71,7 +71,8 @@ export const SIXTY_DAY_PLAN = {
   totals: { touches: 800, contractsMin: 2, contractsMax: 3 },
   routine: [
     { window: "9h–12h", what: "Abertura: 40 mensagens novas na dupla (20 por chip) + responder quem chegou" },
-    { window: "14h–18h", what: "Ligações (piso 40, David) + raios-x do dia" },
+    { window: "10h · 14h · 16h", what: "Slots do Closer (Mario): raio-x, R1 e R2 — TODA reunião se marca num deles" },
+    { window: "14h–18h", what: "Ligações (piso 40, David), marcando as reuniões nos slots do Closer" },
   ],
   checkpoints: [
     {
