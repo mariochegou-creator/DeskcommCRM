@@ -139,14 +139,17 @@ export async function DELETE(
     return fail("already_archived", "Este número já foi removido.", 409, { requestId });
   }
 
-  // Best-effort: parar no WAHA é o que desconecta o aparelho de verdade, mas
-  // WAHA fora do ar não pode travar a remoção no painel.
+  // Best-effort: parar + APAGAR no WAHA. O stop sozinho não resolve — a sessão
+  // fica salva em disco e volta a WORKING no próximo restart do container, com
+  // o aparelho ainda plugado no celular do dono. WAHA fora do ar não pode
+  // travar a remoção no painel, por isso o try/catch.
   const waha = getWahaClient();
   if (waha) {
     try {
       await waha.stopSession(session.waha_session_name);
+      await waha.deleteSession(session.waha_session_name);
     } catch {
-      // sessão já parada / container fora — segue para a remoção no DB
+      // container fora / sessão inexistente — segue para a remoção no DB
     }
   }
 

@@ -649,7 +649,10 @@ async function handleSessionStatus(
     update.is_warmup_complete = true;
     update.warmup_completed_at = now;
   }
-  await admin.from("channel_sessions").update(update).eq("id", session.id);
+  // Canal removido não tem status para sincronizar. Sem esta guarda, um evento
+  // atrasado do WAHA ressuscita a linha arquivada para WORKING — foi o que
+  // aconteceu no primeiro número removido em 09/08/2026.
+  await admin.from("channel_sessions").update(update).eq("id", session.id).is("archived_at", null);
 }
 
 /**

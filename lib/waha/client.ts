@@ -71,6 +71,46 @@ export class WahaClient {
     }
   }
 
+  /**
+   * Apaga a sessão do WAHA de vez — logout (desvincula o aparelho na tela
+   * "Aparelhos conectados" do celular) + DELETE (remove a credencial salva).
+   *
+   * ⚠️ `stopSession` NÃO basta e foi o furo da primeira versão do "remover
+   * número": o WAHA guarda a sessão em disco e o container sobe com
+   * `restart: unless-stopped`, então a sessão parada **voltava sozinha para
+   * WORKING** no próximo restart — número removido do painel, mas ainda
+   * plugado no celular do dono.
+   *
+   * Tolerante por desenho: 404 (já não existe), 422/409 (estado que não
+   * permite a operação) e 501 (WAHA Core sem o endpoint) contam como sucesso.
+   * Remover do painel não pode falhar por causa do que o WAHA respondeu.
+   */
+  async deleteSession(name: string): Promise<void> {
+    const alvo = `${this.baseUrl}/api/sessions/${encodeURIComponent(name)}`;
+    const okish = [404, 422, 409, 501];
+
+    // 1) logout — é o que solta o aparelho do lado do WhatsApp.
+    const outRes = await fetch(`${alvo}/logout`, {
+      method: "POST",
+      headers: { "X-Api-Key": this.apiKey, "Content-Type": "application/json" },
+      body: JSON.stringify({}),
+    }).catch(() => null);
+    if (outRes && !outRes.ok && !okish.includes(outRes.status)) {
+      const body = await outRes.text().catch(() => "");
+      throw new Error(`waha_logout_${outRes.status}: ${body.slice(0, 200)}`);
+    }
+
+    // 2) delete — some com a sessão e com a credencial em disco.
+    const delRes = await fetch(alvo, {
+      method: "DELETE",
+      headers: { "X-Api-Key": this.apiKey },
+    });
+    if (!delRes.ok && !okish.includes(delRes.status)) {
+      const body = await delRes.text().catch(() => "");
+      throw new Error(`waha_delete_${delRes.status}: ${body.slice(0, 200)}`);
+    }
+  }
+
   async getSessionQr(name: string): Promise<{ qr?: string; status: string }> {
     const res = await fetch(`${this.baseUrl}/api/sessions/${encodeURIComponent(name)}`, {
       headers: { "X-Api-Key": this.apiKey },

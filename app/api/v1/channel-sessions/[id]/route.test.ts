@@ -212,6 +212,36 @@ describe("DELETE /api/v1/channel-sessions/[id]", () => {
     expect(stub.__state.updatePatch?.archived_at).toEqual(expect.any(String));
   });
 
+  it("apaga a sessão no WAHA, não só para — senão ela volta sozinha no restart", async () => {
+    mockAuthzOk();
+    const stopSession = vi.fn(async () => undefined);
+    const deleteSession = vi.fn(async () => undefined);
+    vi.mocked(getWahaClient).mockReturnValue({ stopSession, deleteSession } as never);
+    vi.mocked(createClient).mockResolvedValue(
+      makeSupabaseStub({ sessao: SESSAO_BASE, conversas: 3, mensagens: 9 }) as never,
+    );
+    const { DELETE } = await import("./route");
+    await DELETE(req(), params);
+    expect(stopSession).toHaveBeenCalledWith(SESSAO_BASE.waha_session_name);
+    expect(deleteSession).toHaveBeenCalledWith(SESSAO_BASE.waha_session_name);
+  });
+
+  it("WAHA fora do ar não trava a remoção no painel", async () => {
+    mockAuthzOk();
+    vi.mocked(getWahaClient).mockReturnValue({
+      stopSession: vi.fn(async () => {
+        throw new Error("ECONNREFUSED");
+      }),
+      deleteSession: vi.fn(async () => undefined),
+    } as never);
+    vi.mocked(createClient).mockResolvedValue(
+      makeSupabaseStub({ sessao: SESSAO_BASE, conversas: 3, mensagens: 9 }) as never,
+    );
+    const { DELETE } = await import("./route");
+    const res = await DELETE(req(), params);
+    expect(res.status).toBe(200);
+  });
+
   it("RESTRICT dispara numa corrida → cai para arquivamento em vez de 500", async () => {
     mockAuthzOk();
     const stub = makeSupabaseStub({
