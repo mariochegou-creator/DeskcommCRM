@@ -58,8 +58,12 @@ export async function GET(
     };
     if (remote.status) liveStatus = remote.status;
     // WAHA expõe o número (JID `<phone>@c.us`) quando a sessão está WORKING.
+    // Vale MAIS que a coluna do banco: quando o mesmo telefone está vinculado
+    // em duas sessões, a unique (org, phone_number) deixa a coluna vazia numa
+    // delas — e foi o card em branco que fez o número certo ser removido por
+    // engano em 09/08/2026. Aqui a resposta sempre carrega o número de verdade.
     const jid = remote.me?.id;
-    if (jid && !phoneNumber) phoneNumber = jid.replace(/@.*/, "");
+    if (jid) phoneNumber = jid.replace(/@.*/, "");
   } catch (err) {
     const msg = err instanceof Error ? err.message : "unknown";
     // 404 no WAHA = sessão não iniciada lá → considera STOPPED.
@@ -74,7 +78,19 @@ export async function GET(
     patch.last_status_change_at = new Date().toISOString();
   }
   if (phoneNumber && phoneNumber !== session.phone_number) patch.phone_number = phoneNumber;
-  await supabase.from("channel_sessions").update(patch).eq("organization_id", activeOrg.orgId).eq("id", id);
+
+  const alvo = () =>
+    supabase.from("channel_sessions").update(patch).eq("organization_id", activeOrg.orgId).eq("id", id);
+  const { error: upErr } = await alvo();
+  if (upErr && patch.phone_number) {
+    // Mesmo telefone vinculado em duas sessões → colide na unique
+    // (organization_id, phone_number). Antes o erro era engolido e o
+    // last_health_check_at NUNCA avançava nesse canal ("Ainda não verificado"
+    // para sempre). Regrava sem o telefone: o carimbo de saúde é o que importa
+    // no banco, e o número correto já vai na resposta abaixo.
+    delete patch.phone_number;
+    await alvo();
+  }
 
   return ok(
     {

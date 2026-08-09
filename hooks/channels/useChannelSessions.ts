@@ -15,6 +15,14 @@ export interface ChannelSession {
   daily_message_limit: number;
   is_warmup_complete: boolean | null;
   created_at: string;
+  /**
+   * Atividade (view 0097). É o que separa número vivo de número esquecido —
+   * dois canais "Conectado" são indistinguíveis por status, e foi assim que o
+   * número que trabalhava acabou removido no lugar do duplicado morto.
+   */
+  ultima_mensagem_em: string | null;
+  conversas_7d: number;
+  conversas_total: number;
 }
 
 export type ConnectionHealth = "connected" | "connecting" | "down" | "none";

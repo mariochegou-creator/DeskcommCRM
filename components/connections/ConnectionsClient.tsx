@@ -59,6 +59,28 @@ function channelLabel(c: ChannelSession): string {
   return c.display_name || c.phone_number || c.waha_session_name;
 }
 
+/**
+ * "hoje 22:34", "ontem 09:12", "5 de agosto". Data crua em card é ruído; o que
+ * o usuário precisa responder é "esse número trabalhou hoje?".
+ */
+function quandoFoi(iso: string | null): string {
+  if (!iso) return "Nenhuma mensagem ainda";
+  const d = new Date(iso);
+  const hoje = new Date();
+  const dia = (x: Date) => new Date(x.getFullYear(), x.getMonth(), x.getDate()).getTime();
+  const diff = Math.round((dia(hoje) - dia(d)) / 86_400_000);
+  const hora = d.toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" });
+  if (diff === 0) return `hoje ${hora}`;
+  if (diff === 1) return `ontem ${hora}`;
+  if (diff < 7) return `há ${diff} dias`;
+  return d.toLocaleDateString("pt-BR", { day: "numeric", month: "long" });
+}
+
+/** Número que recebeu conversa na semana não se remove por engano. */
+function estaTrabalhando(c: ChannelSession): boolean {
+  return c.conversas_7d > 0;
+}
+
 function errMsg(err: unknown, fallback: string): string {
   return err instanceof ApiError && err.message ? err.message : fallback;
 }
@@ -72,6 +94,7 @@ export function ConnectionsClient({ wahaConfigured }: { wahaConfigured: boolean 
   const [qr, setQr] = useState<{ sessionId: string; title: string } | null>(null);
   const [antiBanId, setAntiBanId] = useState<string | null>(null);
   const [removing, setRemoving] = useState<ChannelSession | null>(null);
+  const [telefoneVivo, setTelefoneVivo] = useState<Record<string, string>>({});
   const pacingItems = usePacingKnobs().data?.items ?? [];
 
   const invalidate = useCallback(
@@ -87,9 +110,25 @@ export function ConnectionsClient({ wahaConfigured }: { wahaConfigured: boolean 
       if (!wahaConfigured || list.length === 0) return;
       setChecking(true);
       try {
-        await Promise.allSettled(
-          list.map((c) => apiClient.get(`/api/v1/channel-sessions/${c.id}`)),
+        const res = await Promise.allSettled(
+          list.map((c) =>
+            apiClient.get<{ data: { id: string; phone_number: string | null } }>(
+              `/api/v1/channel-sessions/${c.id}`,
+            ),
+          ),
         );
+        // O telefone da resposta vale mais que o da lista: quando o mesmo
+        // aparelho está em duas sessões, a unique do banco deixa a coluna vazia
+        // numa delas e o card fica sem identificação nenhuma.
+        setTelefoneVivo((antes) => {
+          const proximo = { ...antes };
+          for (const r of res) {
+            if (r.status !== "fulfilled") continue;
+            const { id, phone_number } = r.value.data;
+            if (phone_number) proximo[id] = phone_number;
+          }
+          return proximo;
+        });
         invalidate();
       } finally {
         setChecking(false);
@@ -228,6 +267,8 @@ export function ConnectionsClient({ wahaConfigured }: { wahaConfigured: boolean 
         <div className="grid grid-cols-1 gap-3 md:grid-cols-2 lg:grid-cols-3">
           {list.map((c) => {
             const info = statusInfo(c.status);
+            const telefone = c.phone_number ?? telefoneVivo[c.id] ?? null;
+            const trabalhando = estaTrabalhando(c);
             return (
               <Card key={c.id} className="flex flex-col gap-3 p-4">
                 <div className="flex items-start justify-between gap-2">
@@ -236,14 +277,28 @@ export function ConnectionsClient({ wahaConfigured }: { wahaConfigured: boolean 
                       <Phone size={16} className="text-muted-foreground" aria-hidden />
                       <span className="truncate text-sm font-medium">{channelLabel(c)}</span>
                     </div>
-                    {c.phone_number && c.display_name && (
-                      <p className="mt-0.5 font-mono text-xs text-muted-foreground">
-                        {c.phone_number}
-                      </p>
+                    {telefone && telefone !== channelLabel(c) && (
+                      <p className="mt-0.5 font-mono text-xs text-muted-foreground">{telefone}</p>
                     )}
                   </div>
                   <Badge variant={info.variant}>{info.label}</Badge>
                 </div>
+
+                {/* Atividade acima da saúde de propósito: "trabalhou hoje?" é a
+                    pergunta que decide o que fazer com o número. */}
+                <div className="rounded-md bg-muted/50 px-2.5 py-2">
+                  <p className="text-xs font-medium">
+                    Última mensagem: {quandoFoi(c.ultima_mensagem_em)}
+                  </p>
+                  <p className="mt-0.5 text-[11px] text-muted-foreground">
+                    {trabalhando
+                      ? `${c.conversas_7d} ${c.conversas_7d === 1 ? "conversa" : "conversas"} nos últimos 7 dias`
+                      : c.conversas_total > 0
+                        ? `Parado — ${c.conversas_total} ${c.conversas_total === 1 ? "conversa" : "conversas"} no histórico`
+                        : "Nunca foi usado"}
+                  </p>
+                </div>
+
                 <p className="text-[11px] text-muted-foreground">
                   {c.last_health_check_at
                     ? `Verificado ${new Date(c.last_health_check_at).toLocaleString("pt-BR")}`
@@ -305,6 +360,23 @@ export function ConnectionsClient({ wahaConfigured }: { wahaConfigured: boolean 
               e escanear o QR.
             </AlertDialogDescription>
           </AlertDialogHeader>
+
+          {/* Em 09/08/2026 o número removido era justamente o que trabalhava —
+              dois canais "Conectado" e nada na tela para diferenciar. O aviso
+              existe para que remover o número vivo seja uma decisão, não um
+              acidente. */}
+          {removing && estaTrabalhando(removing) && (
+            <div className="rounded-md border border-error bg-error-bg p-3 text-sm text-error-fg">
+              <p className="font-medium">Atenção: este número está trabalhando.</p>
+              <p className="mt-1">
+                {removing.conversas_7d}{" "}
+                {removing.conversas_7d === 1 ? "conversa" : "conversas"} nos últimos 7
+                dias, a última {quandoFoi(removing.ultima_mensagem_em)}. Se ele for
+                removido, mensagem que chegar nele é descartada.
+              </p>
+            </div>
+          )}
+
           <AlertDialogFooter>
             <AlertDialogCancel>Cancelar</AlertDialogCancel>
             <AlertDialogAction
@@ -314,7 +386,7 @@ export function ConnectionsClient({ wahaConfigured }: { wahaConfigured: boolean 
                 if (removing) void handleRemove(removing);
               }}
             >
-              Remover
+              {removing && estaTrabalhando(removing) ? "Remover mesmo assim" : "Remover"}
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>

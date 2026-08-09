@@ -30,17 +30,39 @@ export async function GET(): Promise<Response> {
   if (!activeOrg) return fail("forbidden_tenant", "Nenhuma organização ativa.", 403, { requestId });
 
   const supabase = await createClient();
-  const { data, error } = await supabase
-    .from("channel_sessions")
-    .select(CHANNEL_COLUMNS)
-    .eq("organization_id", activeOrg.orgId)
-    // Número removido pelo usuário (0096) sai daqui — e com isso do seletor do
-    // inbox, do sinal da sidebar e da Central. O histórico dele fica no banco.
-    .is("archived_at", null)
-    .order("created_at", { ascending: true });
+  const [{ data, error }, { data: atividade }] = await Promise.all([
+    supabase
+      .from("channel_sessions")
+      .select(CHANNEL_COLUMNS)
+      .eq("organization_id", activeOrg.orgId)
+      // Número removido pelo usuário (0096) sai daqui — e com isso do seletor do
+      // inbox, do sinal da sidebar e da Central. O histórico dele fica no banco.
+      .is("archived_at", null)
+      .order("created_at", { ascending: true }),
+    // Atividade (0097): é o que distingue número vivo de número esquecido.
+    // Status não distingue — dois "Conectado" já levaram à remoção do errado.
+    supabase
+      .from("v_channel_session_atividade")
+      .select("channel_session_id, ultima_mensagem_em, conversas_7d, conversas_total")
+      .eq("organization_id", activeOrg.orgId),
+  ]);
   if (error) return fail("internal_error", error.message, 500, { requestId });
 
-  return ok(data ?? [], { requestId });
+  const porSessao = new Map(
+    (atividade ?? []).map((a) => [a.channel_session_id as string, a]),
+  );
+
+  const comAtividade = (data ?? []).map((c) => {
+    const a = porSessao.get(c.id as string);
+    return {
+      ...c,
+      ultima_mensagem_em: (a?.ultima_mensagem_em as string | null) ?? null,
+      conversas_7d: (a?.conversas_7d as number | undefined) ?? 0,
+      conversas_total: (a?.conversas_total as number | undefined) ?? 0,
+    };
+  });
+
+  return ok(comAtividade, { requestId });
 }
 
 export async function POST(req: NextRequest): Promise<Response> {
