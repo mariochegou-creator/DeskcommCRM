@@ -182,4 +182,6 @@ export type AuditAction =
   | "pipeline.agent_mapping_updated"
   | "pipeline.stage_created"
   | "pipeline.stage_updated"
-  | "pipeline.stage_archived";
+  | "pipeline.stage_archived"
+  | "plan.task_status_changed"
+  | "plan.morning_brief_run";

@@ -13,6 +13,7 @@ import { BarChart } from "@/components/charts/BarChart";
 import { DonutChart } from "@/components/charts/DonutChart";
 import { EmptyPipeline } from "@/components/empty";
 import { ProspectingSection } from "./ProspectingSection";
+import { SixtyDayPlanSection } from "./SixtyDayPlanSection";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -116,6 +117,12 @@ export function DashboardClient({
           </DropdownMenuContent>
         </DropdownMenu>
       </header>
+
+      {/* O plano de 60 dias abre o Painel: é a resposta de "o que eu faço
+          hoje?", antes do "como está o funil?". Fora do ternário do board
+          (dados próprios) e fora do regime do seletor de período — as janelas
+          do plano são fixas (hoje/semana/60 dias), o dropdown não as governa. */}
+      <SixtyDayPlanSection prospectingPipelineId={prospectingPipelineId} now={now} />
 
       {board.isLoading || !metrics ? (
         <DashboardSkeleton />

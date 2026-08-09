@@ -4444,6 +4444,68 @@ export type Database = {
           },
         ]
       }
+      plan_tasks: {
+        Row: {
+          created_at: string
+          description: string | null
+          due_date: string | null
+          id: string
+          organization_id: string
+          owner: string
+          phase: number
+          plan_key: string
+          position: number
+          resolved_at: string | null
+          resolved_by_user_id: string | null
+          slug: string
+          status: string
+          title: string
+          updated_at: string
+        }
+        Insert: {
+          created_at?: string
+          description?: string | null
+          due_date?: string | null
+          id?: string
+          organization_id: string
+          owner: string
+          phase?: number
+          plan_key: string
+          position?: number
+          resolved_at?: string | null
+          resolved_by_user_id?: string | null
+          slug: string
+          status?: string
+          title: string
+          updated_at?: string
+        }
+        Update: {
+          created_at?: string
+          description?: string | null
+          due_date?: string | null
+          id?: string
+          organization_id?: string
+          owner?: string
+          phase?: number
+          plan_key?: string
+          position?: number
+          resolved_at?: string | null
+          resolved_by_user_id?: string | null
+          slug?: string
+          status?: string
+          title?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "plan_tasks_organization_id_fkey"
+            columns: ["organization_id"]
+            isOneToOne: false
+            referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       platform_admins: {
         Row: {
           granted_at: string

@@ -35,6 +35,34 @@ export const canonicalConversationTagsSchema = z
   .transform((tags) => Array.from(new Set(tags)))
   .catch([]);
 export type CanonicalConversationTags = z.infer<typeof canonicalConversationTagsSchema>;
+
+/**
+ * organizations.settings.sixty_day_brief — o resumo bom-dia do plano de 60
+ * dias (cron plan-morning-brief, 8h30 America/Bahia, seg–sex).
+ *
+ * Config de TENANT, não env: destinatário é dado da org (trocar telefone não
+ * pode exigir restart), e o cron descobre org + destinos numa varredura só.
+ * `.catch` em cada campo: chave ausente/mal formada degrada para "desligado"
+ * sem derrubar o tick — o padrão dos outros schemas de settings.
+ */
+export const sixtyDayBriefSchema = z
+  .object({
+    enabled: z.boolean().catch(false),
+    /** Sessão WAHA preferida (waha_session_name); null ⇒ 1ª WORKING da org. */
+    session_name: z.string().min(1).max(120).nullable().catch(null),
+    recipients: z
+      .array(
+        z.object({
+          name: z.string().min(1).max(40),
+          phone: z.string().regex(/^\+\d{8,15}$/),
+        }),
+      )
+      .max(5)
+      .catch([]),
+  })
+  .catch({ enabled: false, session_name: null, recipients: [] });
+export type SixtyDayBriefConfig = z.infer<typeof sixtyDayBriefSchema>;
+
 export type Locale = (typeof LOCALES)[number];
 
 export const profileSchema = z.object({
