@@ -7,6 +7,7 @@ import { AttachmentPreviewDialog } from "@/components/inbox/composer/AttachmentP
 import { AudioRecorder } from "@/components/inbox/composer/AudioRecorder";
 import { DraftReplyButton } from "@/components/inbox/composer/DraftReplyButton";
 import { EmojiButton } from "@/components/inbox/composer/EmojiButton";
+import { SavedAudioMenu } from "@/components/inbox/composer/SavedAudioMenu";
 import { resolveSlash, TemplateMenu } from "@/components/inbox/composer/TemplateMenu";
 import { useCreateNote } from "@/hooks/inbox/useCreateNote";
 import { useMessageTemplates, type MessageTemplate } from "@/hooks/inbox/useMessageTemplates";
@@ -174,6 +175,7 @@ export const Composer = forwardRef<ComposerHandle, Props>(function Composer(
           {mode === "reply" && (
             <DraftReplyButton conversationId={conversationId} disabled={isDisabled} onDraft={applyDraft} />
           )}
+          {mode === "reply" && <SavedAudioMenu conversationId={conversationId} disabled={isDisabled} />}
           <EmojiButton
             disabled={isDisabled}
             onPick={(emoji) => {

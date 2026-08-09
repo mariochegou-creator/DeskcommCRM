@@ -89,6 +89,9 @@ const ACTION_MIN_ROLE: Record<string, Role> = {
   "inbox.view": "viewer",
   "inbox.reply": "agent",
   "inbox.claim": "agent",
+  // Gaveta de áudios (0095): todo agent salva o SEU; compartilhar com a org é
+  // manager+, mesmo piso do template compartilhado (a RLS decide de fato).
+  "inbox.saved_audio.share": "manager",
   "contact.view": "viewer",
   "contact.create": "agent",
   "contact.update": "agent",
