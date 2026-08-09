@@ -39,6 +39,7 @@ export async function GET(): Promise<Response> {
       .from("channel_sessions")
       .select("id, waha_session_name, display_name, phone_number, status, daily_message_limit")
       .eq("organization_id", org.orgId)
+      .is("archived_at", null)
       .order("created_at", { ascending: true }),
     admin
       .from("channel_knobs")
@@ -86,6 +87,7 @@ export async function PUT(req: NextRequest): Promise<Response> {
     .select("id")
     .eq("id", channel_session_id)
     .eq("organization_id", org.orgId)
+    .is("archived_at", null)
     .maybeSingle();
   if (!session) {
     return fail("session_not_found", "Conexão não encontrada nesta organização.", 404, {

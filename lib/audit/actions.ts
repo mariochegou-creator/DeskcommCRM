@@ -127,6 +127,9 @@ export type AuditAction =
   | "ai_agent.run_failed"
   | "channel.connected"
   | "channel.reconnected"
+  // Número removido da Central. metadata.modo distingue "apagado" (linha
+  // deletada — nunca teve conversa) de "arquivado" (histórico preservado).
+  | "channel.removed"
   | "authz.denied"
   | "team.role_changed"
   | "leads.bulk_assigned"
@@ -163,6 +166,9 @@ export type AuditAction =
   | "template.created"
   | "template.updated"
   | "template.deleted"
+  | "saved_audio.created"
+  | "saved_audio.updated"
+  | "saved_audio.deleted"
   | "auth.signup_requested"
   | "auth.signup_failed"
   | "auth.signup_confirmed"

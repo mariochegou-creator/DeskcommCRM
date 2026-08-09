@@ -34,6 +34,9 @@ export async function GET(): Promise<Response> {
     .from("channel_sessions")
     .select(CHANNEL_COLUMNS)
     .eq("organization_id", activeOrg.orgId)
+    // Número removido pelo usuário (0096) sai daqui — e com isso do seletor do
+    // inbox, do sinal da sidebar e da Central. O histórico dele fica no banco.
+    .is("archived_at", null)
     .order("created_at", { ascending: true });
   if (error) return fail("internal_error", error.message, 500, { requestId });
 

@@ -11,6 +11,16 @@ import {
 } from "@/hooks/channels/useChannelSessions";
 import { usePacingKnobs } from "@/hooks/channels/usePacingKnobs";
 import { AntiBanSheet } from "./AntiBanSheet";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
@@ -28,6 +38,7 @@ import {
   Phone,
   Plus,
   ShieldCheck,
+  Trash,
 } from "@/lib/ui/icons";
 
 type Variant = "success" | "warning" | "error" | "neutral";
@@ -60,6 +71,7 @@ export function ConnectionsClient({ wahaConfigured }: { wahaConfigured: boolean 
   const [checking, setChecking] = useState(false);
   const [qr, setQr] = useState<{ sessionId: string; title: string } | null>(null);
   const [antiBanId, setAntiBanId] = useState<string | null>(null);
+  const [removing, setRemoving] = useState<ChannelSession | null>(null);
   const pacingItems = usePacingKnobs().data?.items ?? [];
 
   const invalidate = useCallback(
@@ -118,6 +130,32 @@ export function ConnectionsClient({ wahaConfigured }: { wahaConfigured: boolean 
         setQr({ sessionId: c.id, title: `Reconectar ${channelLabel(c)}` });
       } catch (err) {
         toast.error(errMsg(err, "Não foi possível reconectar."));
+      } finally {
+        setBusyId(null);
+      }
+    },
+    [invalidate],
+  );
+
+  // Remover = parar a sessão no WAHA e tirar o número de todas as listas. O
+  // servidor decide entre apagar de vez (número que nunca conversou) e
+  // arquivar (tem histórico) — aqui só refletimos o que ele fez.
+  const handleRemove = useCallback(
+    async (c: ChannelSession) => {
+      setBusyId(c.id);
+      try {
+        const res = await apiClient.delete<{ data: { modo: "apagado" | "arquivado" } }>(
+          `/api/v1/channel-sessions/${c.id}`,
+        );
+        setRemoving(null);
+        toast.success(
+          res.data.modo === "apagado"
+            ? `${channelLabel(c)} removido.`
+            : `${channelLabel(c)} removido. As conversas antigas continuam no inbox.`,
+        );
+        invalidate();
+      } catch (err) {
+        toast.error(errMsg(err, "Não foi possível remover o número."));
       } finally {
         setBusyId(null);
       }
@@ -229,6 +267,18 @@ export function ConnectionsClient({ wahaConfigured }: { wahaConfigured: boolean 
                     <ShieldCheck size={14} aria-hidden />
                     Proteção de envio
                   </Button>
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="icon"
+                    className="ml-auto text-error-fg"
+                    disabled={busyId === c.id}
+                    aria-label={`Remover ${channelLabel(c)}`}
+                    title="Remover número"
+                    onClick={() => setRemoving(c)}
+                  >
+                    <Trash size={14} aria-hidden />
+                  </Button>
                 </div>
               </Card>
             );
@@ -241,6 +291,34 @@ export function ConnectionsClient({ wahaConfigured }: { wahaConfigured: boolean 
         canWrite
         onClose={() => setAntiBanId(null)}
       />
+
+      <AlertDialog open={!!removing} onOpenChange={(o) => !o && setRemoving(null)}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>
+              Remover {removing ? channelLabel(removing) : "este número"}?
+            </AlertDialogTitle>
+            <AlertDialogDescription>
+              O número sai da Central, do seletor do inbox e do canal dos agentes, e o
+              aparelho é desconectado. As conversas e mensagens que já existem
+              continuam no inbox. Para voltar a usar este número, é só conectar de novo
+              e escanear o QR.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancelar</AlertDialogCancel>
+            <AlertDialogAction
+              disabled={!!removing && busyId === removing.id}
+              onClick={(e) => {
+                e.preventDefault(); // fecha só depois que o servidor confirmar
+                if (removing) void handleRemove(removing);
+              }}
+            >
+              Remover
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
 
       {qr && (
         <QrDialog

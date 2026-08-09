@@ -45,7 +45,7 @@ export async function POST(req: NextRequest, ctx: RouteCtx): Promise<NextRespons
   const { data: session, error: sessErr } = await admin
     .from("channel_sessions")
     .select(
-      "id, organization_id, waha_session_name, webhook_secret_encrypted, status, is_warmup_complete, warmup_started_at",
+      "id, organization_id, waha_session_name, webhook_secret_encrypted, status, is_warmup_complete, warmup_started_at, archived_at",
     )
     .eq("webhook_path_token", token)
     .maybeSingle();
@@ -55,6 +55,26 @@ export async function POST(req: NextRequest, ctx: RouteCtx): Promise<NextRespons
   }
   if (!session) {
     return fail("not_found", "unknown webhook token", 404, { requestId });
+  }
+
+  // Número removido pelo usuário (0096) — descarta com rastro, sem ressuscitar
+  // conversa de um canal que sumiu da tela. 200: retentativa não muda nada.
+  if (session.archived_at) {
+    await admin.from("webhook_events_log").insert({
+      organization_id: session.organization_id,
+      channel_session_id: session.id,
+      provider: "waha",
+      webhook_path_token: token,
+      http_method: "POST",
+      raw_body: rawBody,
+      payload_parsed: envelope as unknown as Record<string, unknown>,
+      event_type: envelope.event ?? "unknown",
+      external_id: envelope.payload?.id ?? null,
+      status: "error",
+      error_message: "skip:channel_archived",
+      attempts: 0,
+    });
+    return ok({ accepted: false, reason: "channel_archived" }, { requestId });
   }
 
   // HMAC (best-effort: se fn_decrypt_oauth falhar — ex. seed dev sem cripto —

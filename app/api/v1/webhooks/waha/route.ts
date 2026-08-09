@@ -42,7 +42,7 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
   const { data: session, error: sessErr } = await admin
     .from("channel_sessions")
     .select(
-      "id, organization_id, waha_session_name, webhook_secret_encrypted, status, is_warmup_complete, warmup_started_at",
+      "id, organization_id, waha_session_name, webhook_secret_encrypted, status, is_warmup_complete, warmup_started_at, archived_at",
     )
     .eq("waha_session_name", sessionName)
     .maybeSingle();
@@ -74,6 +74,28 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
       { accepted: false, reason: "session_not_registered", session: sessionName },
       { requestId },
     );
+  }
+
+  // Número removido pelo usuário (0096): o DELETE já parou a sessão no WAHA,
+  // mas se ele voltar a emitir (container reiniciado com a sessão salva) o
+  // evento é descartado — não pode ressuscitar conversa de um canal que sumiu
+  // da tela. 200 de propósito: retentativa não mudaria nada.
+  if (session.archived_at) {
+    await admin.from("webhook_events_log").insert({
+      organization_id: session.organization_id,
+      channel_session_id: session.id,
+      provider: "waha",
+      webhook_path_token: null,
+      http_method: "POST",
+      raw_body: rawBody,
+      payload_parsed: envelope as unknown as Record<string, unknown>,
+      event_type: envelope.event ?? "unknown",
+      external_id: envelope.payload?.id ?? null,
+      status: "error",
+      error_message: "skip:channel_archived",
+      attempts: 0,
+    });
+    return ok({ accepted: false, reason: "channel_archived" }, { requestId });
   }
 
   // HMAC — pula em dev quando o secret é o placeholder.

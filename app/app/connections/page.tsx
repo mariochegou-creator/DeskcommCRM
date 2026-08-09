@@ -24,7 +24,8 @@ export default async function ConnectionsPage() {
       <header>
         <h1 className="text-2xl font-semibold tracking-tight">Conexões</h1>
         <p className="text-sm text-muted-foreground">
-          Verifique a saúde dos seus números de WhatsApp, reconecte os que caíram e adicione novos.
+          Verifique a saúde dos seus números de WhatsApp, reconecte os que caíram, adicione novos e
+          remova os que não usa mais.
         </p>
       </header>
       <ConnectionsClient wahaConfigured={wahaConfigured} />

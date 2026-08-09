@@ -1,17 +1,20 @@
 /**
- * GET /api/v1/channel-sessions/[id] — health check AO VIVO de um canal.
+ * GET    /api/v1/channel-sessions/[id] — health check AO VIVO de um canal.
+ * DELETE /api/v1/channel-sessions/[id] — remove o número da Central (admin).
  *
- * Consulta o status real no WAHA, grava `last_health_check_at` (+ sincroniza
- * `status`) no DB e devolve o estado atual. É a fonte de verdade quando o
- * usuário abre a Central de Conexões ou está aguardando o QR ser escaneado.
+ * O GET consulta o status real no WAHA, grava `last_health_check_at` (+
+ * sincroniza `status`) no DB e devolve o estado atual. É a fonte de verdade
+ * quando o usuário abre a Central de Conexões ou aguarda o QR ser escaneado.
  *
  * Qualquer membro da org pode consultar. organization_id vem da sessão.
  */
 import { randomUUID } from "node:crypto";
 import type { NextRequest } from "next/server";
 
+import { audit } from "@/lib/audit";
 import { ok, fail } from "@/lib/api/wrappers";
 import { loadAuthUser, resolveActiveOrg } from "@/lib/auth/server";
+import { requireRole } from "@/lib/auth/require-role";
 import { isChannelStatus } from "@/lib/schemas/channels";
 import { createClient } from "@/lib/supabase/server";
 import { getWahaClient } from "@/lib/waha/client";
@@ -36,6 +39,7 @@ export async function GET(
     .select("id, waha_session_name, display_name, phone_number, status")
     .eq("organization_id", activeOrg.orgId)
     .eq("id", id)
+    .is("archived_at", null)
     .maybeSingle();
   if (!session) return fail("not_found", "Canal não encontrado.", 404, { requestId });
 
@@ -84,4 +88,135 @@ export async function GET(
     },
     { requestId },
   );
+}
+
+/**
+ * DELETE /api/v1/channel-sessions/[id] — remove o número da Central. Admin.
+ *
+ * Dois desfechos, decididos pelo próprio banco:
+ *
+ * 1. **Número virgem** (nenhuma conversa e nenhuma mensagem apontando pra ele
+ *    — erro de digitação, QR nunca escaneado): apaga a linha de verdade. Não
+ *    sobra nada.
+ * 2. **Número com histórico**: carimba `archived_at`. Some de Conexões, do
+ *    seletor do inbox, do canal do agente/roteador e do webhook — e as
+ *    conversas antigas continuam abrindo. Um DELETE aqui seria recusado pelo
+ *    banco de qualquer jeito (`conversations`/`messages` referenciam com
+ *    ON DELETE RESTRICT); arquivar é o que o usuário quer dizer com "remover".
+ *
+ * O `phone_number` é zerado no arquivamento porque a unique
+ * (organization_id, phone_number) bloquearia reconectar o MESMO número depois.
+ * O rótulo é preservado em `display_name` antes de zerar.
+ *
+ * A sessão no WAHA é parada em best-effort: se o container estiver fora do ar,
+ * a remoção acontece do mesmo jeito (o ingest descarta evento de sessão
+ * arquivada, então nada volta a entrar).
+ */
+export async function DELETE(
+  _req: NextRequest,
+  { params }: { params: Promise<{ id: string }> },
+): Promise<Response> {
+  const requestId = randomUUID();
+  const { id } = await params;
+
+  const authz = await requireRole("admin", {
+    requestId,
+    resource: "channel_sessions",
+    allowPlatformAdmin: true,
+  });
+  if (!authz.ok) return authz.response;
+  const { user, org: activeOrg } = authz;
+
+  const supabase = await createClient();
+  const { data: session } = await supabase
+    .from("channel_sessions")
+    .select("id, waha_session_name, display_name, phone_number, archived_at")
+    .eq("organization_id", activeOrg.orgId)
+    .eq("id", id)
+    .maybeSingle();
+  if (!session) return fail("not_found", "Canal não encontrado.", 404, { requestId });
+  if (session.archived_at) {
+    return fail("already_archived", "Este número já foi removido.", 409, { requestId });
+  }
+
+  // Best-effort: parar no WAHA é o que desconecta o aparelho de verdade, mas
+  // WAHA fora do ar não pode travar a remoção no painel.
+  const waha = getWahaClient();
+  if (waha) {
+    try {
+      await waha.stopSession(session.waha_session_name);
+    } catch {
+      // sessão já parada / container fora — segue para a remoção no DB
+    }
+  }
+
+  // Tem histórico pendurado? Uma linha de cada tabela basta para decidir.
+  const [{ count: convCount }, { count: msgCount }] = await Promise.all([
+    supabase
+      .from("conversations")
+      .select("id", { count: "exact", head: true })
+      .eq("organization_id", activeOrg.orgId)
+      .eq("channel_session_id", id),
+    supabase
+      .from("messages")
+      .select("id", { count: "exact", head: true })
+      .eq("organization_id", activeOrg.orgId)
+      .eq("channel_session_id", id),
+  ]);
+  const temHistorico = (convCount ?? 0) > 0 || (msgCount ?? 0) > 0;
+
+  const rotulo = session.display_name || session.phone_number || session.waha_session_name;
+
+  if (!temHistorico) {
+    const { error: delErr } = await supabase
+      .from("channel_sessions")
+      .delete()
+      .eq("organization_id", activeOrg.orgId)
+      .eq("id", id);
+    // FK RESTRICT que escapou da checagem acima (corrida com uma mensagem
+    // chegando neste exato instante): cai para o arquivamento em vez de 500.
+    if (!delErr) {
+      void audit({
+        action: "channel.removed",
+        actorUserId: user.id,
+        organizationId: activeOrg.orgId,
+        resourceType: "channel_session",
+        resourceId: id,
+        requestId,
+        metadata: { waha_session_name: session.waha_session_name, modo: "apagado" },
+      });
+      return ok({ id, modo: "apagado" as const, rotulo }, { requestId });
+    }
+  }
+
+  const { error: arqErr } = await supabase
+    .from("channel_sessions")
+    .update({
+      archived_at: new Date().toISOString(),
+      status: "STOPPED",
+      status_reason: "removido pelo usuário",
+      last_status_change_at: new Date().toISOString(),
+      // Libera a unique (org, phone_number) para reconectar o mesmo número.
+      display_name: rotulo,
+      phone_number: null,
+    })
+    .eq("organization_id", activeOrg.orgId)
+    .eq("id", id);
+  if (arqErr) return fail("internal_error", arqErr.message, 500, { requestId });
+
+  void audit({
+    action: "channel.removed",
+    actorUserId: user.id,
+    organizationId: activeOrg.orgId,
+    resourceType: "channel_session",
+    resourceId: id,
+    requestId,
+    metadata: {
+      waha_session_name: session.waha_session_name,
+      modo: "arquivado",
+      conversas: convCount ?? 0,
+    },
+  });
+
+  return ok({ id, modo: "arquivado" as const, rotulo, conversas: convCount ?? 0 }, { requestId });
 }

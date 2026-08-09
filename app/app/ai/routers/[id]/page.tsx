@@ -47,7 +47,8 @@ export default async function RouterEditorPage({ params }: { params: Promise<{ i
       supabase
         .from("channel_sessions")
         .select("id, display_name, status, phone_number, waha_session_name")
-        .eq("organization_id", activeOrg.orgId),
+        .eq("organization_id", activeOrg.orgId)
+        .is("archived_at", null),
     ]);
 
   if (!routerRow) notFound();
