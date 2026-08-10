@@ -1,5 +1,5 @@
 "use client";
-import { useCallback, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { useAuth } from "@/hooks/auth/AuthProvider";
 import { useClaimConversation } from "@/hooks/inbox/useClaimConversation";
@@ -69,25 +69,80 @@ export function InboxLayout({ initialSelectedId = null }: InboxLayoutProps = {})
       ? "all"
       : "unassigned";
   const tab = parseFilterParam(searchParams.get("filter"), fallbackTab);
+  const channelParam = searchParams.get("channel") ?? undefined;
+  const tagParam = searchParams.get("tag") ?? undefined;
 
-  // tab vive na URL (?filter=); os demais filtros são estado local de sessão.
-  const [aux, setAux] = useState<Omit<InboxFiltersValue, "tab">>({
+  // tab/número/tag vivem na URL (?filter=&channel=&tag=) — sobrevivem ao botão
+  // voltar; busca e "não lidos" são estado local de sessão.
+  const [aux, setAux] = useState<Pick<InboxFiltersValue, "search" | "onlyUnread">>({
     search: "",
     onlyUnread: false,
   });
-  const filterValue: InboxFiltersValue = { tab, ...aux };
+  const filterValue: InboxFiltersValue = {
+    tab,
+    channel_session_id: channelParam,
+    tag: tagParam,
+    ...aux,
+  };
   const setFilterValue = useCallback(
     (next: InboxFiltersValue) => {
-      if (next.tab !== tab) {
+      if (
+        next.tab !== tab ||
+        next.channel_session_id !== channelParam ||
+        next.tag !== tagParam
+      ) {
         const params = new URLSearchParams(searchParams);
         params.set("filter", next.tab);
+        if (next.channel_session_id) params.set("channel", next.channel_session_id);
+        else params.delete("channel");
+        if (next.tag) params.set("tag", next.tag);
+        else params.delete("tag");
         router.replace(`${pathname}?${params.toString()}`, { scroll: false });
       }
-      const { tab: _t, ...rest } = next;
-      setAux(rest);
+      setAux({ search: next.search, onlyUnread: next.onlyUnread });
     },
-    [tab, searchParams, router, pathname],
+    [tab, channelParam, tagParam, searchParams, router, pathname],
   );
+
+  // Reentrada pelo menu chega em /app/inbox sem query — a URL só cobre o botão
+  // voltar, então a última seleção (por org) fica também em sessionStorage.
+  const restoredOrgRef = useRef<string | null>(null);
+  useEffect(() => {
+    if (!orgId || restoredOrgRef.current === orgId) return;
+    restoredOrgRef.current = orgId;
+    if (searchParams.get("filter") || searchParams.get("channel") || searchParams.get("tag"))
+      return; // URL já traz filtros explícitos (deep-link) — respeita
+    try {
+      const raw = sessionStorage.getItem(`inbox-filters:${orgId}`);
+      if (!raw) return;
+      const saved = JSON.parse(raw) as {
+        tab?: string;
+        channel?: string | null;
+        tag?: string | null;
+      };
+      const params = new URLSearchParams(searchParams);
+      if (saved.tab && FILTER_TABS.includes(saved.tab as InboxTab))
+        params.set("filter", saved.tab);
+      if (saved.channel) params.set("channel", saved.channel);
+      if (saved.tag) params.set("tag", saved.tag);
+      if (params.toString() !== searchParams.toString())
+        router.replace(`${pathname}?${params.toString()}`, { scroll: false });
+    } catch {
+      /* storage indisponível/corrompido — segue com defaults */
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [orgId]);
+  useEffect(() => {
+    if (!orgId || restoredOrgRef.current !== orgId) return;
+    try {
+      sessionStorage.setItem(
+        `inbox-filters:${orgId}`,
+        JSON.stringify({ tab, channel: channelParam ?? null, tag: tagParam ?? null }),
+      );
+    } catch {
+      /* sem persistência */
+    }
+  }, [orgId, tab, channelParam, tagParam]);
 
   const [selectedId, setSelectedId] = useState<string | null>(initialSelectedId);
   const [visibleIds, setVisibleIds] = useState<string[]>([]);
