@@ -1,4 +1,9 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
+
+// O worker importa @/lib/supabase/admin, que puxa `server-only` e mata o
+// vitest. Mesmo contorno do lib/waha/lid-alt.test.ts — aqui só se usa o
+// parseAnalysis, que é função pura; o client admin nunca é tocado.
+vi.mock("@/lib/supabase/admin", () => ({ createAdminClient: vi.fn() }));
 
 import {
   buildCallAnalysisPrompt,
