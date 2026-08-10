@@ -101,6 +101,13 @@ beforeAll(() => {
   // isoladamente é uma viagem no tempo que não volta sozinha — e o teste
   // seguinte mede o passado sem saber.
   psql(readFileSync("supabase/migrations/20260725020000_0072_activity_evidence_llm_call_ids.sql", "utf8"));
+  // Pelo MESMO motivo da 0072: a 0071 também redefine
+  // `fn_lgpd_cascade_redact_contact`, com o corpo daquela época — sem os blocos
+  // de reuniões (0098) e de ligações (0100). Sem restaurar, o invariante
+  // `ligacoes-lgpd-cascade` mede uma cascata do passado ou do presente ao sabor
+  // da ordem dos arquivos (flakiness real observada). A 0100 carrega o corpo
+  // vigente completo e é idempotente — reaplicá-la traz o banco de volta.
+  psql(readFileSync("supabase/migrations/20260810190000_0100_ligacoes_sdr.sql", "utf8"));
 });
 
 describe("0071 — o backfill não apaga o que já se sabia", () => {
