@@ -366,9 +366,15 @@ export async function sendMessageHandler(
         media_storage_path: input.media_storage_path,
         type: input.type,
       }),
-      // Responder encerra a espera: o badge conta mensagens do contato
-      // aguardando resposta, e a resposta acabou de sair.
-      unread_count_for_assignee: 0,
+      // Resposta HUMANA encerra a espera — o badge conta mensagens do contato
+      // aguardando resposta, e ela acabou de sair.
+      //
+      // Agente e automação NÃO zeram, de propósito: uma cadência de follow-up
+      // disparando sozinha apagaria o aviso de uma mensagem que ninguém leu, e
+      // o operador perderia o lead sem nunca ter visto o número azul. Quando a
+      // conversa é de fato do agente ela vive na aba IA, onde o badge não é o
+      // sinal que se olha.
+      ...(ctx.actor.type === "user" ? { unread_count_for_assignee: 0 } : {}),
     })
     .eq("id", c.id);
 

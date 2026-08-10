@@ -8929,3 +8929,46 @@ create policy tenant_isolation_crm_meeting_suggestions_all on public.crm_meeting
 
 create index if not exists idx_crm_meeting_suggestions_meeting
   on public.crm_meeting_suggestions (meeting_id, at_seconds);
+
+-- ---- unread zera ao responder (migration 0099) ----
+-- Ver supabase/migrations/20260810180000_0099_unread_zera_ao_responder.sql para
+-- o porquê completo. Resumo: o contador só somava (inbound) e nada o zerava do
+-- lado do banco, então o badge da lista virava acumulador vitalício e parecia
+-- contar a mensagem que o próprio operador tinha acabado de enviar.
+create or replace function public.fn_mark_conversation_message(
+  p_conv uuid,
+  p_direction text,
+  p_preview text,
+  p_at timestamptz
+) returns void
+language plpgsql
+security definer
+set search_path = public
+as $$
+begin
+  update public.conversations
+  set
+    last_message_at = p_at,
+    last_message_preview = p_preview,
+    last_inbound_at  = case when p_direction = 'inbound'  then p_at else last_inbound_at  end,
+    last_outbound_at = case when p_direction = 'outbound' then p_at else last_outbound_at end,
+    unread_count_for_assignee = case
+      when p_direction = 'inbound' then unread_count_for_assignee + 1
+      else 0
+    end,
+    updated_at = now()
+  where id = p_conv;
+end;
+$$;
+
+comment on function public.fn_mark_conversation_message is
+  'Atualiza agregados de timeline da conversa. Inbound incrementa o nao-lido; outbound (resposta digitada no aparelho do operador) zera — o badge conta mensagem do contato aguardando resposta.';
+
+revoke all on function public.fn_mark_conversation_message(uuid, text, text, timestamptz) from public;
+grant execute on function public.fn_mark_conversation_message(uuid, text, text, timestamptz) to service_role;
+
+update public.conversations
+set unread_count_for_assignee = 0
+where unread_count_for_assignee > 0
+  and last_outbound_at is not null
+  and (last_inbound_at is null or last_inbound_at <= last_outbound_at);

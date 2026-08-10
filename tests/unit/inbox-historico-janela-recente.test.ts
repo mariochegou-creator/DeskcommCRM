@@ -34,32 +34,49 @@ interface Registro {
   ordens: Array<{ coluna: string; ascendente: boolean | undefined }>;
   filtrosOr: string[];
   limite: number | null;
+  /** Payloads de `.update()` por tabela — é assim que se vê o zerar-não-lidas. */
+  updates: Array<{ tabela: string; valores: Record<string, unknown> }>;
 }
 
 /** Supabase de mentira: registra como a consulta foi montada e devolve `linhas`. */
 function supabaseFalso(linhas: Linha[]) {
-  const registro: Registro = { ordens: [], filtrosOr: [], limite: null };
+  const registro: Registro = { ordens: [], filtrosOr: [], limite: null, updates: [] };
 
-  const q: Record<string, unknown> = {};
-  const devolve = () => q;
-  q.select = devolve;
-  q.eq = devolve;
-  q.order = (coluna: string, opcoes?: { ascending?: boolean }) => {
-    registro.ordens.push({ coluna, ascendente: opcoes?.ascending });
-    return q;
+  const q = (tabela: string) => {
+    const alvo: Record<string, unknown> = {};
+    const devolve = () => alvo;
+    alvo.select = devolve;
+    alvo.eq = devolve;
+    alvo.gt = devolve;
+    alvo.update = (valores: Record<string, unknown>) => {
+      registro.updates.push({ tabela, valores });
+      return alvo;
+    };
+    alvo.order = (coluna: string, opcoes?: { ascending?: boolean }) => {
+      registro.ordens.push({ coluna, ascendente: opcoes?.ascending });
+      return alvo;
+    };
+    alvo.limit = (n: number) => {
+      registro.limite = n;
+      return alvo;
+    };
+    alvo.or = (expressao: string) => {
+      registro.filtrosOr.push(expressao);
+      return alvo;
+    };
+    alvo.then = (res: (v: unknown) => unknown, rej: (e: unknown) => unknown) =>
+      Promise.resolve({ data: linhas, error: null }).then(res, rej);
+    return alvo;
   };
-  q.limit = (n: number) => {
-    registro.limite = n;
-    return q;
-  };
-  q.or = (expressao: string) => {
-    registro.filtrosOr.push(expressao);
-    return q;
-  };
-  q.then = (res: (v: unknown) => unknown, rej: (e: unknown) => unknown) =>
-    Promise.resolve({ data: linhas, error: null }).then(res, rej);
 
-  return { supabase: { from: () => q }, registro };
+  return { supabase: { from: (tabela: string) => q(tabela) }, registro };
+}
+
+/** O UPDATE que zera o contador de não-lidas, se houve. */
+function zerouNaoLidas(registro: Registro): boolean {
+  return registro.updates.some(
+    (u) => u.tabela === "conversations" && u.valores.unread_count_for_assignee === 0,
+  );
 }
 
 const CTX = {
@@ -144,5 +161,54 @@ describe("histórico da conversa", () => {
     expect(r.has_more).toBe(false);
     expect(r.cursor).toBeNull();
     expect(r.messages.map((m) => m.id)).toEqual(["m3", "m4"]);
+  });
+});
+
+/**
+ * ABRIR A CONVERSA É LER A CONVERSA.
+ *
+ * O número azul da lista conta mensagem do contato AGUARDANDO RESPOSTA. Nada
+ * zerava esse contador, então ele só subia: conversa já respondida continuava
+ * marcada, e como a mensagem mais recente era a do próprio operador o badge
+ * passava a ser lido como "contei a mensagem que VOCÊ enviou" — o relato que
+ * abriu esta investigação. Buscar a janela mais recente é o sinal de leitura que
+ * o CRM já tinha em mãos e ignorava.
+ */
+describe("abrir a conversa zera o não-lido", () => {
+  it("primeira página (sem cursor) de um humano zera", async () => {
+    const { supabase, registro } = supabaseFalso(DESCENDENTE);
+
+    await listMessagesHandler(supabase as never, CTX, "conversa-1", { limit: 3 });
+
+    expect(zerouNaoLidas(registro)).toBe(true);
+  });
+
+  it("paginar o histórico NÃO zera", async () => {
+    // Ler o passado não é atender o presente: quem clica em "carregar mais
+    // antigas" pode estar procurando contexto sem ter respondido nada.
+    const { supabase, registro } = supabaseFalso(DESCENDENTE);
+    const cursor = Buffer.from(
+      JSON.stringify({ sent_at: "2026-08-04T10:02:00Z", id: "m2" }),
+      "utf8",
+    ).toString("base64url");
+
+    await listMessagesHandler(supabase as never, CTX, "conversa-1", { limit: 3, cursor });
+
+    expect(zerouNaoLidas(registro)).toBe(false);
+  });
+
+  it("agente de IA lendo o histórico NÃO zera", async () => {
+    // O mesmo handler serve o `crm_get_conversation_history` do MCP. Se a
+    // leitura do agente zerasse, toda conversa com bot ligado chegaria ao
+    // humano sem aviso — o agente teria "lido" por ele.
+    const { supabase, registro } = supabaseFalso(DESCENDENTE);
+    const ctxAgente = {
+      ...CTX,
+      actor: { type: "ai_agent" as const, id: "agente-1", role: "agent" },
+    };
+
+    await listMessagesHandler(supabase as never, ctxAgente, "conversa-1", { limit: 3 });
+
+    expect(zerouNaoLidas(registro)).toBe(false);
   });
 });
