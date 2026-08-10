@@ -12,6 +12,7 @@ import { useContact } from "@/hooks/contacts/useContact";
 import { useAuth } from "@/hooks/auth/AuthProvider";
 import { ROLE_RANK } from "@/lib/auth/types";
 import { TimelineView } from "@/components/contacts/TimelineView";
+import { ContactActions } from "@/components/contacts/ContactActions";
 import { EditContactDialog } from "@/components/contacts/EditContactDialog";
 import { AnonymizeDialog } from "@/components/contacts/AnonymizeDialog";
 
@@ -86,10 +87,18 @@ export function ContactDetailClient({ contactId }: Props) {
           </div>
         </div>
         {!contact.is_anonymized && (
-          <Button variant="outline" onClick={() => setEditOpen(true)}>
-            <PencilSimple size={16} weight="bold" aria-hidden />
-            <span>Editar</span>
-          </Button>
+          <div className="flex flex-col items-end gap-2">
+            <Button variant="outline" onClick={() => setEditOpen(true)}>
+              <PencilSimple size={16} weight="bold" aria-hidden />
+              <span>Editar</span>
+            </Button>
+            <ContactActions
+              contactId={contactId}
+              contactName={displayName}
+              phoneNumber={contact.phone_number}
+              origin="contact"
+            />
+          </div>
         )}
       </header>
 

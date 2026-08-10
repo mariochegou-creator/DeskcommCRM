@@ -329,6 +329,7 @@ declare
   v_already bool;
   v_counts jsonb := '{}'::jsonb;
   v_media_paths text[] := '{}';
+  v_call_paths text[] := '{}';
   v_anon_label text;
   v_count int;
 begin
@@ -355,6 +356,16 @@ begin
         select id from conversations
           where contact_id = p_contact_id and organization_id = p_organization_id
       );
+
+  -- Idem para as gravações de ligação (bucket call-recordings, migration 0100).
+  -- Array SEPARADO porque o bucket é outro: enfileirar tudo como 'whatsapp-media'
+  -- faria o worker de storage procurar o objeto no lugar errado, não achar, e
+  -- marcar como apagado. O áudio continuaria lá — e a auditoria diria que não.
+  select coalesce(array_agg(distinct storage_path) filter (where storage_path is not null), '{}')
+    into v_call_paths
+    from crm_call_recordings
+    where organization_id = p_organization_id
+      and contact_id = p_contact_id;
 
   -- 1. contacts (irreversible)
   update contacts set
@@ -488,6 +499,25 @@ begin
   get diagnostics v_count = row_count;
   v_counts := v_counts || jsonb_build_object('meeting_suggestions', v_count);
 
+  -- 4d. crm_call_recordings (migration 0100) — a transcrição é a conversa do
+  --     titular palavra por palavra, e `analysis` cita trechos dela no campo
+  --     `acertos`. Os dois saem. `status` e `outcome` FICAM: "houve uma ligação,
+  --     e ela agendou reunião" é fato operacional sobre a empresa, não dado
+  --     pessoal — mesmo critério que preserva valor e estágio do negócio no
+  --     passo 5. `storage_path` vira null só DEPOIS de o caminho já estar em
+  --     `v_call_paths` (coletado lá em cima); zerar antes perderia o ponteiro e
+  --     o áudio ficaria órfão no bucket, inalcançável e não apagado.
+  update crm_call_recordings set
+    transcript = null,
+    analysis = null,
+    error_detail = null,
+    storage_path = null,
+    updated_at = now()
+  where organization_id = p_organization_id
+    and contact_id = p_contact_id;
+  get diagnostics v_count = row_count;
+  v_counts := v_counts || jsonb_build_object('call_recordings', v_count);
+
   -- 5. crm_leads — strip title/description/custom_fields/source_metadata/tags but PRESERVE pipeline/stage/value
   update crm_leads set
     title = v_anon_label,
@@ -538,6 +568,14 @@ begin
     on conflict (bucket, object_path) do nothing;
   end if;
 
+  if array_length(v_call_paths, 1) > 0 then
+    insert into storage_redaction_queue (organization_id, request_id, bucket, object_path)
+    select p_organization_id, p_request_id, 'call-recordings', path
+      from unnest(v_call_paths) as path
+      where path is not null and length(path) > 0
+    on conflict (bucket, object_path) do nothing;
+  end if;
+
   -- 8. dense audit row
   insert into api_audit_log (organization_id, action, actor_user_id, resource_type, resource_id, metadata, bypassed_rls)
   values (
@@ -549,6 +587,7 @@ begin
     jsonb_build_object(
       'cascaded_to', v_counts,
       'media_queued', coalesce(array_length(v_media_paths, 1), 0),
+      'call_recordings_queued', coalesce(array_length(v_call_paths, 1), 0),
       'request_id', p_request_id
     ),
     true
@@ -557,7 +596,8 @@ begin
   return jsonb_build_object(
     'already_anonymized', false,
     'counts', v_counts,
-    'media_paths', v_media_paths
+    'media_paths', v_media_paths,
+    'call_recording_paths', v_call_paths
   );
 end;
 $$;
@@ -8972,3 +9012,114 @@ set unread_count_for_assignee = 0
 where unread_count_for_assignee > 0
   and last_outbound_at is not null
   and (last_inbound_at is null or last_inbound_at <= last_outbound_at);
+
+-- ---- ligações do SDR (migration 0100) ----
+-- Ver supabase/migrations/20260810190000_0100_ligacoes_sdr.sql para o porquê
+-- completo (tabela própria e FORA do realtime — o pulso que mente da 0075;
+-- transcrição é a PII mais densa do produto). A fn_lgpd_cascade_redact_contact
+-- vigente, definida no topo deste arquivo, já carrega os blocos de ligações
+-- (v_call_paths, bloco 4d e a fila do bucket call-recordings no passo 7).
+
+create table if not exists public.crm_call_recordings (
+  id uuid primary key default gen_random_uuid(),
+  organization_id uuid not null references public.organizations(id) on delete cascade,
+  contact_id uuid not null references public.contacts(id) on delete cascade,
+  lead_id uuid references public.crm_leads(id) on delete set null,
+  activity_id uuid references public.crm_lead_activities(id) on delete set null,
+  status text not null default 'pending',
+  outcome text,
+  score numeric(3, 1),
+  storage_path text,
+  mime_type text,
+  size_bytes bigint,
+  duration_seconds int,
+  transcript text,
+  analysis jsonb,
+  error_detail text,
+  created_by_user_id uuid references auth.users(id) on delete set null,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now()
+);
+
+comment on table public.crm_call_recordings is
+  'Gravacao de ligacao do SDR e a analise por IA dela. Tabela propria e FORA do realtime de proposito - ver o cabecalho da migration 0100. A atividade em crm_lead_activities e o acontecimento; esta linha e o artefato com ciclo de vida.';
+
+comment on column public.crm_call_recordings.status is
+  'Onde o pipeline esta. pending = tentativa registrada, audio ainda nao subiu (o SDR clicou em Ligar e pode nunca gravar - isso e historico de tentativa, nao erro). done_unformatted = a analise rodou mas o modelo nao devolveu JSON valido nem no retry: o texto cru fica em analysis->>raw e a pessoa le mesmo assim, em vez de perder a analise inteira por um problema de formatacao.';
+
+comment on column public.crm_call_recordings.outcome is
+  'O que a ligacao produziu, segundo a analise. Espelha resultado do prompt e RESULTADO_LIGACAO em lib/calls/analysis-schema.ts - o CHECK e o TypeScript tem de concordar (invariante de vocabulario).';
+
+comment on column public.crm_call_recordings.transcript is
+  'Transcricao integral da ligacao. PII DENSA: e a conversa do lead palavra por palavra. Zerada pela cascata LGPD (fn_lgpd_cascade_redact_contact) junto com analysis e error_detail.';
+
+comment on column public.crm_call_recordings.score is
+  'Nota geral 0-10 promovida de analysis para coluna porque e o que a lista de atividades ordena e agrega. numeric(3,1) aceita 10.0.';
+
+alter table public.crm_call_recordings
+  drop constraint if exists crm_call_recordings_status_check;
+
+alter table public.crm_call_recordings
+  add constraint crm_call_recordings_status_check check (
+    status = any (array[
+      'pending', 'uploading', 'transcribing', 'analyzing',
+      'done', 'done_unformatted', 'failed'
+    ]::text[])
+  );
+
+alter table public.crm_call_recordings
+  drop constraint if exists crm_call_recordings_outcome_check;
+
+alter table public.crm_call_recordings
+  add constraint crm_call_recordings_outcome_check check (
+    outcome is null
+    or outcome = any (array[
+      'agendou', 'nao_agendou', 'follow_up_marcado', 'nao_atendeu_ou_invalida'
+    ]::text[])
+  );
+
+alter table public.crm_call_recordings
+  drop constraint if exists crm_call_recordings_score_range;
+
+alter table public.crm_call_recordings
+  add constraint crm_call_recordings_score_range check (
+    score is null or (score >= 0 and score <= 10)
+  );
+
+alter table public.crm_call_recordings enable row level security;
+
+drop policy if exists tenant_isolation_crm_call_recordings_all on public.crm_call_recordings;
+create policy tenant_isolation_crm_call_recordings_all on public.crm_call_recordings
+  for all
+  using (organization_id in (select fn_user_org_ids()))
+  with check (organization_id in (select fn_user_org_ids()));
+
+create index if not exists idx_crm_call_recordings_org_created
+  on public.crm_call_recordings (organization_id, created_at desc);
+
+create index if not exists idx_crm_call_recordings_org_lead
+  on public.crm_call_recordings (organization_id, lead_id);
+
+create index if not exists idx_crm_call_recordings_org_contact
+  on public.crm_call_recordings (organization_id, contact_id);
+
+drop trigger if exists trg_crm_call_recordings_updated_at on public.crm_call_recordings;
+create trigger trg_crm_call_recordings_updated_at
+  before update on public.crm_call_recordings
+  for each row execute function public.fn_set_updated_at();
+
+do $$
+begin
+  if exists (
+    select 1 from pg_publication_tables
+     where pubname = 'supabase_realtime'
+       and schemaname = 'public'
+       and tablename = 'crm_call_recordings'
+  ) then
+    execute 'alter publication supabase_realtime drop table public.crm_call_recordings';
+  end if;
+end $$;
+
+insert into storage.buckets (id, name, public, file_size_limit)
+values ('call-recordings', 'call-recordings', false, 104857600)
+on conflict (id) do update set file_size_limit = excluded.file_size_limit;

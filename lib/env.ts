@@ -80,6 +80,13 @@ const schema = z.object({
   VERCEL_AI_GATEWAY_URL: z.string().optional().default(""),
   ANTHROPIC_API_KEY: z.string().optional().default(""),
   OPENAI_API_KEY: z.string().optional().default(""),
+  // Transcrição das ligações do SDR (Groq Whisper, migration 0100). Opcional
+  // pela mesma razão das de cima: numa instalação fresca em VPS ninguém tem
+  // conta no Groq ainda, e o produto INTEIRO não pode deixar de subir por causa
+  // de um módulo. Ausente, o worker de ligações pula com
+  // skip="groq_key_missing" e a atividade diz isso na tela — o SDR descobre que
+  // falta configurar, em vez de ver a análise nunca chegar em silêncio.
+  GROQ_API_KEY: z.string().optional().default(""),
 
   // Sala de Reuniões (0098) — origens EXTRAS autorizadas no CORS das rotas
   // /api/v1/meetings/* (lib/api/cors.ts), separadas por vírgula. O formato

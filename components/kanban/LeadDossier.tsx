@@ -1,6 +1,7 @@
 "use client";
 import { useRef } from "react";
 
+import { ContactActions } from "@/components/contacts/ContactActions";
 import { Sheet, SheetContent, SheetHeader, SheetTitle } from "@/components/ui/sheet";
 import Link from "next/link";
 import { Button } from "@/components/ui/button";
@@ -65,7 +66,6 @@ export function LeadDossier({
   const timeline = useLeadTimeline(open ? lead.id : null, lead.contact_id);
   const owner = resolveLeadOwner(lead, ownerNames);
   const score = lead.score ?? null;
-
   // Só busca quando o dossiê está aberto E existe contato: lead sem contato é
   // estado legítimo (prospecção importada antes de alguém atender), e disparar
   // uma requisição por card do board para descobrir isso seria caro à toa.
@@ -204,6 +204,21 @@ export function LeadDossier({
           <p className="pt-2 text-[11px] text-text-muted">
             Probabilidade recalculada automaticamente · {new Date(score.at).toLocaleString("pt-BR")}
           </p>
+        )}
+
+        {/* ① bis — falar com a pessoa. Fica ACIMA da timeline porque a pergunta
+            "como falo com este contato agora" é a que traz o SDR ao dossiê; a
+            timeline responde "o que já aconteceu", que vem depois. */}
+        {lead.contact_id && contato.data && !contato.data.data.is_anonymized && (
+          <div className="border-b border-border py-3">
+            <ContactActions
+              contactId={lead.contact_id}
+              contactName={contato.data.data.display_name ?? contato.data.data.name ?? lead.title}
+              phoneNumber={contato.data.data.phone_number}
+              company={lead.title}
+              origin="deal"
+            />
+          </div>
         )}
 
         {/* ② timeline */}

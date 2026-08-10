@@ -202,4 +202,14 @@ export type AuditAction =
   | "meeting.finished"
   // Contraparte do `conversation.closed`: fechar deixava de ser caminho sem
   // volta pela UI.
-  | "conversation.reopened";
+  | "conversation.reopened"
+  /**
+   * Ligações do SDR (migration 0100). `call.audio_uploaded` existe separado de
+   * `call.logged` porque é ele que registra a entrada de GRAVAÇÃO DE VOZ do
+   * lead no sistema — o dado mais sensível que este produto guarda. Quem
+   * responde a um pedido de LGPD precisa poder listar "quando um áudio deste
+   * titular entrou e por ordem de quem", e o momento do clique em "Ligar" não
+   * responde isso: muita tentativa nunca vira áudio.
+   */
+  | "call.logged"
+  | "call.audio_uploaded";

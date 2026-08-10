@@ -130,6 +130,23 @@ const PARES: Array<{
     arquivo: "lib/sala-reunioes/vocabulary.ts",
     simbolo: "MEETING_PHASES",
   },
+  {
+    tabela: "crm_call_recordings",
+    coluna: "status",
+    // lib/calls/analysis-schema.ts → CallStatus (migration 0100)
+    arquivo: "lib/calls/analysis-schema.ts",
+    simbolo: "CallStatus",
+  },
+  {
+    tabela: "crm_call_recordings",
+    coluna: "outcome",
+    // lib/calls/analysis-schema.ts → CallOutcome. Este é o par com o pior modo
+    // de falha do arquivo: `outcome` vem de um LLM, e o Zod que o valida lê o
+    // MESMO type. Divergir do banco só apareceria como 23514 no fim do
+    // pipeline, depois de a transcrição e a análise já terem sido pagas.
+    arquivo: "lib/calls/analysis-schema.ts",
+    simbolo: "CallOutcome",
+  },
 ];
 
 /** Tira um nível de parênteses externos, se ele envolver a expressão inteira. */

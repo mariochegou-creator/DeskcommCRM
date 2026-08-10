@@ -182,6 +182,14 @@ beforeAll(() => {
             select v_org, id, 42, 'problema', 'RLS invariant suggestion'
               from public.crm_meetings where organization_id = v_org limit 1;
         end if;
+
+        -- Gravações de ligação (migration 0100). A transcrição é a conversa do
+        -- titular palavra por palavra: se esta tabela vazar entre tenants, o
+        -- vazamento é de gravação de voz, não de metadado.
+        if not exists (select 1 from public.crm_call_recordings where organization_id = v_org) then
+          insert into public.crm_call_recordings (organization_id, contact_id, status, transcript)
+            values (v_org, v_contact, 'done', 'rls invariant transcript');
+        end if;
       end loop;
     end
     $seed$;
@@ -201,6 +209,7 @@ const TABLES = [
   "knowledge_searches",
   "crm_meetings",
   "crm_meeting_suggestions",
+  "crm_call_recordings",
 ] as const;
 
 describe("RLS tenant isolation (fn_user_org_ids pattern)", () => {

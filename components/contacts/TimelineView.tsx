@@ -2,10 +2,11 @@
 import { useMemo } from "react";
 import { format, isToday, isYesterday } from "date-fns";
 import { ptBR } from "date-fns/locale";
-import { ChatCircle, Users, Storefront, Robot, Gear } from "@/lib/ui/icons";
+import { ChatCircle, Users, Storefront, Robot, Gear, Phone } from "@/lib/ui/icons";
 import type { Icon as PhosphorIcon } from "@phosphor-icons/react";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
+import { CallAnalysisCard } from "@/components/calls/CallAnalysisCard";
 import { Skeleton } from "@/components/ui/skeleton";
 import { cn } from "@/lib/utils";
 import { useTimeline } from "@/hooks/contacts/useTimeline";
@@ -19,6 +20,7 @@ interface Props {
 
 const ICON_MAP: Record<string, PhosphorIcon> = {
   whatsapp: ChatCircle,
+  calls: Phone,
   crm: Users,
   nuvemshop: Storefront,
   ai: Robot,
@@ -112,6 +114,15 @@ export function TimelineView({ contactId, types }: Props) {
                   usuario: it.actor_user_name,
                 });
                 const time = format(new Date(it.performed_at), "HH:mm", { locale: ptBR });
+                // A ligação analisada é a única linha que abre um bloco inteiro
+                // aqui: a análise é o produto do módulo, e mandar o SDR clicar
+                // para chegar nela transformaria coaching em consulta.
+                // `call_id` vem do payload que o worker gravou; sem ele, a linha
+                // degrada para o resumo de texto como qualquer outra.
+                const callId =
+                  it.type === "call_analyzed" && typeof it.payload?.call_id === "string"
+                    ? it.payload.call_id
+                    : null;
                 return (
                   <li
                     key={it.id}
@@ -148,8 +159,19 @@ export function TimelineView({ contactId, types }: Props) {
                         <span className="text-xs text-muted-foreground">{time}</span>
                       </div>
                       {corpo && (
-                        <p className="mt-1 truncate text-sm text-muted-foreground">{corpo}</p>
+                        <p
+                          className={cn(
+                            "mt-1 text-sm text-muted-foreground",
+                            // A linha da análise não trunca: o resumo é "nota X,
+                            // a melhorar: <ponto>", e cortar no meio deixa
+                            // exatamente a parte acionável de fora.
+                            callId ? "whitespace-pre-wrap" : "truncate",
+                          )}
+                        >
+                          {corpo}
+                        </p>
                       )}
+                      {callId && <CallAnalysisCard callId={callId} />}
                     </div>
                   </li>
                 );

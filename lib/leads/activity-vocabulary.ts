@@ -31,7 +31,9 @@ export type ActivityType =
   | "reactivation_accepted"
   | "reactivation_dismissed"
   | "reactivation_expired"
-  | "reuniao_analisada";
+  | "reuniao_analisada"
+  | "call_logged"
+  | "call_analyzed";
 
 export const ACTIVITY_LABELS: Record<ActivityType, string> = {
   stage_changed: "Mudou de estágio",
@@ -65,6 +67,15 @@ export const ACTIVITY_LABELS: Record<ActivityType, string> = {
   // crm_meetings fica fora do realtime, e a linha nasce quando a análise
   // conclui, nunca a cada passo do pipeline (razão 2 da linhagem de ligações).
   reuniao_analisada: "Reunião analisada",
+  // DOIS tipos, não um. A tentativa e a análise são acontecimentos separados e o
+  // intervalo entre eles importa: "liguei" nasce no clique, "a ligação foi
+  // analisada" nasce minutos depois, e MUITA tentativa nunca vira a segunda —
+  // caiu na caixa postal, ninguém atendeu, o SDR desistiu de gravar. Um tipo só
+  // obrigaria a linha a mudar de significado depois de nascida, e o histórico de
+  // tentativas (que é o que mostra esforço de prospecção) sumiria dentro das
+  // que deram certo.
+  call_logged: "Ligação registrada",
+  call_analyzed: "Ligação analisada",
 };
 
 /** Quando o tipo é legado/desconhecido, a linha ainda é honesta — sem jargão. */

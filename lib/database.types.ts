@@ -2204,6 +2204,98 @@ export type Database = {
           },
         ]
       }
+      crm_call_recordings: {
+        Row: {
+          activity_id: string | null
+          analysis: Json | null
+          contact_id: string
+          created_at: string
+          created_by_user_id: string | null
+          duration_seconds: number | null
+          error_detail: string | null
+          id: string
+          lead_id: string | null
+          mime_type: string | null
+          organization_id: string
+          outcome: string | null
+          score: number | null
+          size_bytes: number | null
+          status: string
+          storage_path: string | null
+          transcript: string | null
+          updated_at: string
+        }
+        Insert: {
+          activity_id?: string | null
+          analysis?: Json | null
+          contact_id: string
+          created_at?: string
+          created_by_user_id?: string | null
+          duration_seconds?: number | null
+          error_detail?: string | null
+          id?: string
+          lead_id?: string | null
+          mime_type?: string | null
+          organization_id: string
+          outcome?: string | null
+          score?: number | null
+          size_bytes?: number | null
+          status?: string
+          storage_path?: string | null
+          transcript?: string | null
+          updated_at?: string
+        }
+        Update: {
+          activity_id?: string | null
+          analysis?: Json | null
+          contact_id?: string
+          created_at?: string
+          created_by_user_id?: string | null
+          duration_seconds?: number | null
+          error_detail?: string | null
+          id?: string
+          lead_id?: string | null
+          mime_type?: string | null
+          organization_id?: string
+          outcome?: string | null
+          score?: number | null
+          size_bytes?: number | null
+          status?: string
+          storage_path?: string | null
+          transcript?: string | null
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "crm_call_recordings_activity_id_fkey"
+            columns: ["activity_id"]
+            isOneToOne: false
+            referencedRelation: "crm_lead_activities"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "crm_call_recordings_contact_id_fkey"
+            columns: ["contact_id"]
+            isOneToOne: false
+            referencedRelation: "contacts"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "crm_call_recordings_lead_id_fkey"
+            columns: ["lead_id"]
+            isOneToOne: false
+            referencedRelation: "crm_leads"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "crm_call_recordings_organization_id_fkey"
+            columns: ["organization_id"]
+            isOneToOne: false
+            referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       crm_lead_activities: {
         Row: {
           actor_agent_id: string | null
