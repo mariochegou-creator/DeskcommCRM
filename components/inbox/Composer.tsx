@@ -23,14 +23,20 @@ export interface ComposerHandle {
 interface Props {
   conversationId: string;
   disabled?: boolean;
-  /** Set true when contact is blocked / anonymized — explanation shown. */
-  blockedReason?: string | null;
+  /**
+   * Por que não dá para escrever: contato bloqueado/anonimizado, conversa
+   * fechada. Preenchido → o composer sai do ar e o texto aparece no lugar dele.
+   *
+   * Desligar os botões calado é o que vira "não está clicando" — a barra fica
+   * inteira na tela, com aparência normal, e nada responde.
+   */
+  lockedReason?: string | null;
   /** Nome do contato da conversa, para interpolar {{nome}}/{{primeiro_nome}} do template escolhido. */
   contactName?: string | null;
 }
 
 export const Composer = forwardRef<ComposerHandle, Props>(function Composer(
-  { conversationId, disabled, blockedReason, contactName },
+  { conversationId, disabled, lockedReason, contactName },
   ref,
 ) {
   const [text, setText] = useState("");
@@ -50,7 +56,7 @@ export const Composer = forwardRef<ComposerHandle, Props>(function Composer(
   }));
 
   const isDisabled =
-    disabled || !!blockedReason || send.isPending || upload.isPending || createNote.isPending;
+    disabled || !!lockedReason || send.isPending || upload.isPending || createNote.isPending;
 
   function autoresize() {
     const ta = taRef.current;
@@ -121,10 +127,10 @@ export const Composer = forwardRef<ComposerHandle, Props>(function Composer(
     }
   }
 
-  if (blockedReason) {
+  if (lockedReason) {
     return (
       <div className="border-t border-border bg-muted/40 px-4 py-3 text-center text-xs text-muted-foreground">
-        {blockedReason}
+        {lockedReason}
       </div>
     );
   }

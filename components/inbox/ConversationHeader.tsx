@@ -8,6 +8,7 @@ import { useAuth } from "@/hooks/auth/AuthProvider";
 import { useClaimConversation } from "@/hooks/inbox/useClaimConversation";
 import { useReleaseConversation } from "@/hooks/inbox/useReleaseConversation";
 import { useCloseConversation } from "@/hooks/inbox/useCloseConversation";
+import { useReopenConversation } from "@/hooks/inbox/useReopenConversation";
 import { ReassignDialog } from "@/components/inbox/ReassignDialog";
 import { SnoozeButton } from "@/components/inbox/SnoozeButton";
 import type { ConversationWithContact } from "@/hooks/inbox/useConversationsRealtime";
@@ -29,6 +30,7 @@ export function ConversationHeader({ conversation }: Props) {
   const claim = useClaimConversation();
   const release = useReleaseConversation();
   const close = useCloseConversation();
+  const reopen = useReopenConversation();
   const [reassignOpen, setReassignOpen] = useState(false);
 
   const c = conversation.contacts ?? null;
@@ -36,7 +38,10 @@ export function ConversationHeader({ conversation }: Props) {
   const phone = c?.phone_number ?? null;
   const status = conversation.status;
   const isMineAssigned = conversation.assigned_to_user_id === user.id;
-  const isOpen = status === "open" || conversation.assigned_to_user_id == null;
+  const isClosed = status === "closed";
+  // Conversa fechada não entra na fila: "Assumir" daria a impressão de que dá
+  // para responder, e o composer continua desligado até reabrir.
+  const isOpen = !isClosed && (status === "open" || conversation.assigned_to_user_id == null);
 
   return (
     <div className="flex items-center justify-between gap-3 border-b border-border bg-background px-4 py-3">
@@ -55,6 +60,16 @@ export function ConversationHeader({ conversation }: Props) {
       </div>
 
       <div className="flex shrink-0 items-center gap-1.5">
+        {isClosed && (
+          <Button
+            size="sm"
+            variant="default"
+            disabled={reopen.isPending}
+            onClick={() => reopen.mutate({ conversation_id: conversation.id })}
+          >
+            Reabrir
+          </Button>
+        )}
         {isOpen && (
           <Button
             size="sm"

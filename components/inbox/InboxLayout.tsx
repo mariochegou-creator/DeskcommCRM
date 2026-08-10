@@ -147,11 +147,13 @@ export function InboxLayout({ initialSelectedId = null }: InboxLayoutProps = {})
     close.mutate({ conversation_id: selectedConversation.id });
   }, [close, selectedConversation]);
 
-  const blockedReason = selectedConversation?.contacts?.is_blocked
+  const lockedReason = selectedConversation?.contacts?.is_blocked
     ? "Contato bloqueado — envio de mensagens desabilitado."
     : selectedConversation?.contacts?.is_anonymized
       ? "Contato anonimizado — não é possível enviar mensagens."
-      : null;
+      : selectedConversation?.status === "closed"
+        ? "Conversa fechada — clique em Reabrir, no topo, para voltar a escrever."
+        : null;
 
   return (
     <div className="grid h-[calc(100vh-3.5rem)] w-full grid-cols-1 md:grid-cols-[300px_1fr] xl:grid-cols-[300px_1fr_320px]">
@@ -180,8 +182,7 @@ export function InboxLayout({ initialSelectedId = null }: InboxLayoutProps = {})
             <Composer
               ref={composerRef}
               conversationId={selectedConversation.id}
-              blockedReason={blockedReason}
-              disabled={selectedConversation.status === "closed"}
+              lockedReason={lockedReason}
               contactName={selectedConversation.contacts?.name ?? null}
             />
           </>

@@ -189,5 +189,17 @@ export type AuditAction =
   | "pipeline.stage_created"
   | "pipeline.stage_updated"
   | "pipeline.stage_archived"
+  // Excluir funil é arquivar (a FK dos negócios é RESTRICT), e por isso existe
+  // o par: `restored` é o "Desfazer" da tela do Kanban, não uma ação separada.
+  | "pipeline.archived"
+  | "pipeline.restored"
   | "plan.task_status_changed"
-  | "plan.morning_brief_run";
+  | "plan.morning_brief_run"
+  | "lead.meeting_scheduled"
+  | "meetings.reminders_run"
+  // Sala de Reuniões (0098) — o copiloto do Meet
+  | "meeting.started"
+  | "meeting.finished"
+  // Contraparte do `conversation.closed`: fechar deixava de ser caminho sem
+  // volta pela UI.
+  | "conversation.reopened";
