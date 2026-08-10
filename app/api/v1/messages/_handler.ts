@@ -131,6 +131,19 @@ export async function listMessagesHandler(
       ? encodeMsgCursor({ sent_at: maisAntiga.sent_at, id: maisAntiga.id })
       : null;
 
+  // Humano abrindo a conversa (fetch sem cursor = janela mais recente) =
+  // leitura: zera o não-lido. Paginar histórico (cursor) e leitores
+  // não-humanos não zeram. `.gt(0)` evita UPDATE no-op (e churn de realtime)
+  // a cada refetch.
+  if (!q.cursor && ctx.actor.type === "user") {
+    await supabase
+      .from("conversations")
+      .update({ unread_count_for_assignee: 0 })
+      .eq("id", conversationId)
+      .eq("organization_id", ctx.organization_id)
+      .gt("unread_count_for_assignee", 0);
+  }
+
   return { messages: page.reverse(), cursor, has_more: hasMore };
 }
 
@@ -353,6 +366,9 @@ export async function sendMessageHandler(
         media_storage_path: input.media_storage_path,
         type: input.type,
       }),
+      // Responder encerra a espera: o badge conta mensagens do contato
+      // aguardando resposta, e a resposta acabou de sair.
+      unread_count_for_assignee: 0,
     })
     .eq("id", c.id);
 

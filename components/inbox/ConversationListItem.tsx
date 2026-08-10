@@ -152,7 +152,9 @@ export function ConversationListItem({
               Anonimizado
             </Badge>
           )}
-          {unread > 0 && (
+          {/* Conversa aberta na tela já está lida — o servidor zera no fetch,
+              mas esconder aqui evita o badge fantasma até o refetch chegar. */}
+          {unread > 0 && !isSelected && (
             <Badge className="ml-auto h-4 min-w-4 px-1.5 text-[10px]">{unread}</Badge>
           )}
         </div>
