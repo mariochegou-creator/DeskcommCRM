@@ -11,6 +11,8 @@
  * Only model strings via the gateway-shaped `ai` SDK calls.
  */
 
+import { createAnthropic } from "@ai-sdk/anthropic";
+
 import { env } from "@/lib/env";
 
 export type ModelId =
@@ -58,4 +60,25 @@ export function gatewayConfig(): { apiKey: string; baseURL?: string } | null {
     apiKey: env.AI_GATEWAY_API_KEY,
     baseURL: env.AI_GATEWAY_BASE_URL || undefined,
   };
+}
+
+/**
+ * O modelo que o `generateText` deve receber, dado o ambiente.
+ *
+ * String `"anthropic/..."` só autentica quando `AI_GATEWAY_API_KEY` existe —
+ * o "fallback" para `ANTHROPIC_API_KEY` que `isAiGatewayConfigured()` promete
+ * não acontecia de fato: sem a chave do gateway, a chamada morria com
+ * "Unauthenticated request to AI Gateway" (medido na análise de reunião, dev
+ * local com só a chave da Anthropic). Aqui o fallback vira real: sem gateway,
+ * o model id vira instância do provider direto da Anthropic (mesmo caminho do
+ * registry do agent-engine — `createAnthropic` do AI SDK, nunca
+ * `@anthropic-ai/sdk`, que é o anti-pattern nomeado no topo deste arquivo).
+ */
+export function resolveModel(model: ModelId) {
+  if (env.AI_GATEWAY_API_KEY) return model;
+  if (env.ANTHROPIC_API_KEY && model.startsWith("anthropic/")) {
+    const anthropic = createAnthropic({ apiKey: env.ANTHROPIC_API_KEY });
+    return anthropic(model.slice("anthropic/".length));
+  }
+  return model;
 }

@@ -76,16 +76,24 @@ export interface Escrita {
   filtros: Array<[string, unknown]>;
 }
 
+type Linha = Record<string, unknown>;
+
 export interface DbOpts {
   /** Org dona do pipeline — troque para simular funil de outro tenant. */
   pipelineOrg?: string;
+  /**
+   * Substitui a tabela de funis inteira. As rotas de ETAPA se contentam com o
+   * funil solto do padrão; as rotas de FUNIL precisam de vários (o sucessor do
+   * padrão, o "é o último?") e de `is_archived`/`is_default`/`position`.
+   */
+  pipelines?: Linha[];
+  /** Formulários (`webhook_sources`) que despejam lead num funil. */
+  webhooks?: Linha[];
   stages?: StageRow[];
   leads?: LeadRow[];
   /** Erro do banco na n-ésima escrita (1-based), como o PostgREST devolveria. */
   writeError?: (n: number, table: string) => { code: string; message: string } | null;
 }
-
-type Linha = Record<string, unknown>;
 
 export interface Registro {
   escritas: Escrita[];
@@ -97,6 +105,7 @@ export interface Registro {
     crm_stages: Linha[];
     crm_leads: Linha[];
     crm_lead_activities: Linha[];
+    webhook_sources: Linha[];
   };
 }
 
@@ -106,10 +115,13 @@ export function makeDb(opts: DbOpts = {}): Registro {
     eventos: [],
     rpcs: [],
     tabelas: {
-      crm_pipelines: [{ id: PIPE, name: "Pedidos", organization_id: opts.pipelineOrg ?? ORG_ID }],
+      crm_pipelines: opts.pipelines ?? [
+        { id: PIPE, name: "Pedidos", organization_id: opts.pipelineOrg ?? ORG_ID },
+      ],
       crm_stages: (opts.stages ?? []) as unknown as Linha[],
       crm_leads: (opts.leads ?? []) as unknown as Linha[],
       crm_lead_activities: [],
+      webhook_sources: opts.webhooks ?? [],
     },
   };
   const tables = registro.tabelas as unknown as Record<string, Linha[] | undefined>;
@@ -123,13 +135,17 @@ export function makeDb(opts: DbOpts = {}): Registro {
     let ordem: string | null = null;
     let contar = false;
     let head = false;
+    let limite: number | null = null;
 
     const casam = () => (tables[table] ?? []).filter((r) => filtros.every(([c, v]) => r[c] === v));
 
-    /** Ordena e projeta como o PostgREST faria. */
+    /** Ordena, corta e projeta como o PostgREST faria. */
     const lidos = () => {
-      const rows = [...casam()];
+      let rows = [...casam()];
       if (ordem) rows.sort((a, b) => Number(a[ordem!]) - Number(b[ordem!]));
+      // `limit` corta a LEITURA, não a contagem — é o que o PostgREST faz, e é
+      // por isso que `select(count).limit(1)` continua dizendo quantos existem.
+      if (limite !== null) rows = rows.slice(0, limite);
       if (!colunas) return rows;
       return rows.map((r) => Object.fromEntries(colunas!.map((c) => [c, r[c]])));
     };
@@ -203,6 +219,10 @@ export function makeDb(opts: DbOpts = {}): Registro {
       },
       order: (col: string) => {
         ordem = col;
+        return b;
+      },
+      limit: (n: number) => {
+        limite = n;
         return b;
       },
       maybeSingle: async () => {

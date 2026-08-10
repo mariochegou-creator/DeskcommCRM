@@ -1,0 +1,67 @@
+<!doctype html>
+<html lang="pt-BR">
+  <head>
+    <meta charset="utf-8" />
+    <title>Copiloto Nexo — Opções</title>
+    <style>
+      body {
+        font-family: system-ui, -apple-system, "Segoe UI", sans-serif;
+        background: #0b1b2b;
+        color: #f2f6fa;
+        max-width: 560px;
+        margin: 40px auto;
+        padding: 0 20px;
+      }
+      h1 { font-size: 22px; }
+      p.hint { color: #9db2c4; font-size: 14px; line-height: 1.5; }
+      label { display: block; font-weight: 700; margin: 18px 0 6px; font-size: 15px; }
+      input {
+        width: 100%;
+        box-sizing: border-box;
+        padding: 12px;
+        font-size: 15px;
+        border-radius: 10px;
+        border: 1px solid #2ec5d3;
+        background: #081422;
+        color: #f2f6fa;
+      }
+      button {
+        margin-top: 20px;
+        padding: 12px 24px;
+        font-size: 16px;
+        font-weight: 800;
+        border: none;
+        border-radius: 10px;
+        background: #2ec5d3;
+        color: #06121f;
+        cursor: pointer;
+      }
+      #result { margin-top: 16px; font-size: 16px; font-weight: 700; }
+      #result.ok { color: #2ee59d; }
+      #result.bad { color: #ff5d5d; }
+      ol { color: #cfe7f2; font-size: 14px; line-height: 1.7; }
+    </style>
+  </head>
+  <body>
+    <h1>Copiloto Nexo — Conexão com o CRM</h1>
+    <p class="hint">Só precisa fazer isto UMA vez por computador.</p>
+
+    <label for="crmUrl">Endereço do CRM</label>
+    <input id="crmUrl" placeholder="http://localhost:3000 ou https://seu-crm.com.br" />
+
+    <label for="apiToken">Token de acesso</label>
+    <input id="apiToken" type="password" placeholder="dsk_..." />
+
+    <button id="save">Salvar e testar conexão</button>
+    <div id="result"></div>
+
+    <h2 style="font-size:16px;margin-top:32px">Onde pego o token?</h2>
+    <ol>
+      <li>Abra o CRM e vá em <b>Configurações → API Tokens</b>.</li>
+      <li>Crie um token com o escopo <b>meetings:write</b>.</li>
+      <li>Copie e cole aqui. Pronto.</li>
+    </ol>
+
+    <script src="options.js"></script>
+  </body>
+</html>

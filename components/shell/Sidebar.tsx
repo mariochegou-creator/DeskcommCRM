@@ -2,7 +2,7 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useTransition } from "react";
-import { Kanban, Users, UsersThree, Gear, CaretDoubleLeft, CaretDoubleRight, Inbox, ScalesSimple, Robot, Brain, PlugsConnected, ChartBar, ChartLineUp, WebhooksLogo, FlowArrow, FileText, ClockCountdown, PuzzlePiece, Signpost, Sparkle, Gauge, Target } from "@/lib/ui/icons";
+import { Kanban, Users, UsersThree, Gear, CaretDoubleLeft, CaretDoubleRight, Inbox, ScalesSimple, Robot, Brain, PlugsConnected, ChartBar, ChartLineUp, WebhooksLogo, FlowArrow, FileText, ClockCountdown, PuzzlePiece, Signpost, Sparkle, Gauge, Target, VideoCamera } from "@/lib/ui/icons";
 import type { Icon as PhosphorIcon } from "@phosphor-icons/react";
 import { cn } from "@/lib/utils";
 import { toggleSidebar } from "@/app/actions/shell/toggleSidebar";
@@ -26,6 +26,9 @@ export const NAV_ITEMS: NavItem[] = [
   { href: "/app/demo-nexo", label: "Demonstração", icon: Sparkle },
   { href: "/app/inbox", label: "Inbox", icon: Inbox },
   { href: "/app/leads", label: "Negócios", icon: Target },
+  // Sala de Reuniões (0098) — transcrições, coaching e métricas do copiloto do
+  // Meet. Perto de Negócios de propósito: reunião é o momento decisivo do funil.
+  { href: "/app/sala-de-reunioes", label: "Sala de Reuniões", icon: VideoCamera },
   { href: "/app/radar", label: "Radar", icon: ClockCountdown },
   { href: "/app/connections", label: "Conexões", icon: PlugsConnected, healthDot: true },
   { href: "/app/kanban", label: "Kanban", icon: Kanban },

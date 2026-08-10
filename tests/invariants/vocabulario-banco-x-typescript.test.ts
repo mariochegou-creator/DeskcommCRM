@@ -102,6 +102,34 @@ const PARES: Array<{
     arquivo: "lib/agent-engine/db/repository.ts",
     simbolo: "InboxKind",
   },
+  // --- Sala de Reuniões (0098) — os quatro CHECKs nasceram COM os pares, como
+  // o cabeçalho da migration promete. Os símbolos são `const ... as const`
+  // (a UI precisa iterar os valores, não só tipá-los), e o extrator foi
+  // ensinado a ler essa forma no mesmo commit — ver literaisDoUnionType.
+  {
+    tabela: "crm_meetings",
+    coluna: "meeting_type",
+    arquivo: "lib/sala-reunioes/vocabulary.ts",
+    simbolo: "MEETING_TYPES",
+  },
+  {
+    tabela: "crm_meetings",
+    coluna: "status",
+    arquivo: "lib/sala-reunioes/vocabulary.ts",
+    simbolo: "MEETING_STATUSES",
+  },
+  {
+    tabela: "crm_meetings",
+    coluna: "outcome",
+    arquivo: "lib/sala-reunioes/vocabulary.ts",
+    simbolo: "MEETING_OUTCOMES",
+  },
+  {
+    tabela: "crm_meeting_suggestions",
+    coluna: "phase_detected",
+    arquivo: "lib/sala-reunioes/vocabulary.ts",
+    simbolo: "MEETING_PHASES",
+  },
 ];
 
 /** Tira um nível de parênteses externos, se ele envolver a expressão inteira. */
@@ -225,11 +253,20 @@ function literaisDoUnionType(arquivo: string, simbolo: string): string[] {
     );
   }
 
-  const decl = new RegExp(`type\\s+${simbolo}\\s*=([^;]*);`, "s").exec(fonte);
+  // Duas formas de declarar vocabulário em TS, as duas lidas do arquivo:
+  //   type X = "a" | "b";                       — união de literais
+  //   const X = ["a", "b"] as const;            — array as const (quando a UI
+  //                                               precisa ITERAR os valores)
+  // A segunda entrou com a Sala de Reuniões (0098), obedecendo à instrução do
+  // erro abaixo: ensinar o extrator, nunca deixar o par de fora.
+  const decl =
+    new RegExp(`type\\s+${simbolo}\\s*=([^;]*);`, "s").exec(fonte) ??
+    new RegExp(`const\\s+${simbolo}\\s*=\\s*\\[([^\\]]*)\\]\\s*as\\s+const`, "s").exec(fonte);
   if (!decl) {
     throw new Error(
-      `extrator de vocabulário: não achei \`type ${simbolo} = ...;\` em ${arquivo}. ` +
-        `Se o tipo virou \`const ... as const\` ou mudou de nome, ENSINE O EXTRATOR — ` +
+      `extrator de vocabulário: não achei \`type ${simbolo} = ...;\` nem ` +
+        `\`const ${simbolo} = [...] as const\` em ${arquivo}. ` +
+        `Se a declaração mudou de forma ou de nome, ENSINE O EXTRATOR — ` +
         `deixar isto falhar em silêncio devolveria lista vazia e o par passaria sem ler nada.`,
     );
   }

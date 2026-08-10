@@ -170,6 +170,18 @@ beforeAll(() => {
           insert into public.knowledge_searches (organization_id, hits, top_score, threshold)
             values (v_org, 1, 0.81, 0.72);
         end if;
+
+        -- Sala de Reuniões (0098): reunião + uma sugestão do copiloto
+        if not exists (select 1 from public.crm_meetings where organization_id = v_org) then
+          insert into public.crm_meetings (organization_id, meeting_type)
+            values (v_org, 'r1');
+        end if;
+
+        if not exists (select 1 from public.crm_meeting_suggestions where organization_id = v_org) then
+          insert into public.crm_meeting_suggestions (organization_id, meeting_id, at_seconds, phase_detected, suggestion)
+            select v_org, id, 42, 'problema', 'RLS invariant suggestion'
+              from public.crm_meetings where organization_id = v_org limit 1;
+        end if;
       end loop;
     end
     $seed$;
@@ -187,6 +199,8 @@ const TABLES = [
   "ai_routers",
   "ai_router_decisions",
   "knowledge_searches",
+  "crm_meetings",
+  "crm_meeting_suggestions",
 ] as const;
 
 describe("RLS tenant isolation (fn_user_org_ids pattern)", () => {

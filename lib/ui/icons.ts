@@ -10,6 +10,8 @@
 export {
   // navigation (inbox icon = Tray in Phosphor)
   Tray as Inbox,
+  // sala de reuniões — a câmera é o Meet; o copiloto mora lá
+  VideoCamera,
   PlugsConnected,
   QrCode,
   Kanban,

@@ -429,6 +429,65 @@ begin
   get diagnostics v_count = row_count;
   v_counts := v_counts || jsonb_build_object('activities', v_count);
 
+  -- 4b. crm_meetings (migration 0098) — a transcrição é a conversa do titular
+  --     palavra por palavra; `summary`, `spin_scores` e `coaching` citam trechos
+  --     dela; `notes` é texto livre do usuário sobre a pessoa. Tudo sai.
+  --     `status`, `outcome`, `score`, `turn_count` e as datas FICAM: fato
+  --     operacional sobre o funil, não dado pessoal.
+  update crm_meetings set
+    transcript = '[]'::jsonb,
+    turn_count = 0,
+    summary = null,
+    notes = null,
+    spin_scores = null,
+    coaching = null,
+    live_state = '{}'::jsonb,
+    analysis_error = null,
+    updated_at = now()
+  where organization_id = p_organization_id
+    and (
+      contact_id = p_contact_id
+      or lead_id in (
+        select id from crm_leads
+          where contact_id = p_contact_id and organization_id = p_organization_id
+      )
+      or lead_id in (
+        select lead_id from crm_lead_links
+          where target_kind = 'contact'
+            and target_id = p_contact_id
+            and organization_id = p_organization_id
+      )
+    );
+  get diagnostics v_count = row_count;
+  v_counts := v_counts || jsonb_build_object('meetings', v_count);
+
+  -- 4c. crm_meeting_suggestions — a sugestão cita dados reais da conversa.
+  --     O texto sai; phase_detected/at_seconds/was_followed ficam (esqueleto da
+  --     métrica de coaching, sem uma palavra do titular).
+  update crm_meeting_suggestions set
+    suggestion = '[sugestão anonimizada]',
+    alert = null
+  where organization_id = p_organization_id
+    and meeting_id in (
+      select id from crm_meetings
+        where organization_id = p_organization_id
+          and (
+            contact_id = p_contact_id
+            or lead_id in (
+              select id from crm_leads
+                where contact_id = p_contact_id and organization_id = p_organization_id
+            )
+            or lead_id in (
+              select lead_id from crm_lead_links
+                where target_kind = 'contact'
+                  and target_id = p_contact_id
+                  and organization_id = p_organization_id
+            )
+          )
+    );
+  get diagnostics v_count = row_count;
+  v_counts := v_counts || jsonb_build_object('meeting_suggestions', v_count);
+
   -- 5. crm_leads — strip title/description/custom_fields/source_metadata/tags but PRESERVE pipeline/stage/value
   update crm_leads set
     title = v_anon_label,
@@ -8739,3 +8798,134 @@ create trigger trg_saved_audios_carimbo
   before insert or update on public.saved_audios
   for each row
   execute function public.fn_carimba_saved_audio();
+
+
+-- ---- Sala de Reuniões: crm_meetings + crm_meeting_suggestions (migration 0098) ----
+-- Copiloto SPIN do Google Meet (extensao Chrome). Transcricao vem das legendas
+-- do Meet (sem audio, sem bucket). Duas tabelas FORA do realtime; a analise
+-- pos-reuniao vira atividade `reuniao_analisada` na timeline. A cascata LGPD
+-- (blocos 4b/4c da funcao acima) zera transcript/summary/notes/scores/coaching.
+
+create table if not exists public.crm_meetings (
+  id uuid primary key default gen_random_uuid(),
+  organization_id uuid not null references public.organizations(id) on delete cascade,
+  lead_id uuid references public.crm_leads(id) on delete set null,
+  contact_id uuid references public.contacts(id) on delete set null,
+  meeting_type text not null,
+  status text not null default 'ao_vivo',
+  started_at timestamptz not null default now(),
+  ended_at timestamptz,
+  meet_code text,
+  transcript jsonb not null default '[]'::jsonb,
+  turn_count int not null default 0,
+  summary text,
+  notes text,
+  outcome text,
+  score numeric(3, 1),
+  spin_scores jsonb,
+  coaching jsonb,
+  live_state jsonb not null default '{}'::jsonb,
+  analysis_error text,
+  created_by_user_id uuid references auth.users(id) on delete set null,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now()
+);
+
+alter table public.crm_meetings drop constraint if exists crm_meetings_type_check;
+alter table public.crm_meetings add constraint crm_meetings_type_check
+  check (meeting_type = any (array['r1', 'r2']::text[]));
+
+alter table public.crm_meetings drop constraint if exists crm_meetings_status_check;
+alter table public.crm_meetings add constraint crm_meetings_status_check
+  check (status = any (array[
+    'ao_vivo', 'encerrada', 'analisando',
+    'concluida', 'concluida_sem_formato', 'falhou'
+  ]::text[]));
+
+alter table public.crm_meetings drop constraint if exists crm_meetings_outcome_check;
+alter table public.crm_meetings add constraint crm_meetings_outcome_check
+  check (
+    outcome is null
+    or outcome = any (array['pedido', 'avanco', 'continuacao', 'nao_venda']::text[])
+  );
+
+alter table public.crm_meetings drop constraint if exists crm_meetings_score_range;
+alter table public.crm_meetings add constraint crm_meetings_score_range
+  check (score is null or (score >= 0 and score <= 10));
+
+alter table public.crm_meetings drop constraint if exists crm_meetings_encerramento_datado;
+alter table public.crm_meetings add constraint crm_meetings_encerramento_datado
+  check (status = 'ao_vivo' or ended_at is not null);
+
+alter table public.crm_meetings enable row level security;
+
+drop policy if exists tenant_isolation_crm_meetings_all on public.crm_meetings;
+create policy tenant_isolation_crm_meetings_all on public.crm_meetings
+  for all
+  using (organization_id in (select fn_user_org_ids()))
+  with check (organization_id in (select fn_user_org_ids()));
+
+create index if not exists idx_crm_meetings_org_started
+  on public.crm_meetings (organization_id, started_at desc);
+
+create index if not exists idx_crm_meetings_org_lead
+  on public.crm_meetings (organization_id, lead_id);
+
+create index if not exists idx_crm_meetings_ao_vivo
+  on public.crm_meetings (organization_id, meet_code)
+  where status = 'ao_vivo';
+
+create or replace function public.fn_carimba_meeting()
+  returns trigger
+  language plpgsql
+  set search_path to 'public', 'pg_temp'
+as $function$
+begin
+  if tg_op = 'INSERT' then
+    new.created_at := now();
+  end if;
+  new.updated_at := now();
+  return new;
+end$function$;
+
+drop trigger if exists trg_crm_meetings_carimbo on public.crm_meetings;
+create trigger trg_crm_meetings_carimbo
+  before insert or update on public.crm_meetings
+  for each row
+  execute function public.fn_carimba_meeting();
+
+create table if not exists public.crm_meeting_suggestions (
+  id uuid primary key default gen_random_uuid(),
+  organization_id uuid not null references public.organizations(id) on delete cascade,
+  meeting_id uuid not null references public.crm_meetings(id) on delete cascade,
+  at_seconds numeric not null,
+  phase_detected text not null,
+  suggestion text not null,
+  alert text,
+  was_followed boolean,
+  created_at timestamptz not null default now()
+);
+
+alter table public.crm_meeting_suggestions drop constraint if exists crm_meeting_suggestions_phase_check;
+alter table public.crm_meeting_suggestions add constraint crm_meeting_suggestions_phase_check
+  check (phase_detected = any (array[
+    'abertura',
+    'situacao', 'problema', 'implicacao', 'necessidade',
+    'diagnostico', 'objecoes', 'pit1', 'extracao', 'pit2',
+    'fechamento'
+  ]::text[]));
+
+alter table public.crm_meeting_suggestions drop constraint if exists crm_meeting_suggestions_at_seconds_nao_negativo;
+alter table public.crm_meeting_suggestions add constraint crm_meeting_suggestions_at_seconds_nao_negativo
+  check (at_seconds >= 0);
+
+alter table public.crm_meeting_suggestions enable row level security;
+
+drop policy if exists tenant_isolation_crm_meeting_suggestions_all on public.crm_meeting_suggestions;
+create policy tenant_isolation_crm_meeting_suggestions_all on public.crm_meeting_suggestions
+  for all
+  using (organization_id in (select fn_user_org_ids()))
+  with check (organization_id in (select fn_user_org_ids()));
+
+create index if not exists idx_crm_meeting_suggestions_meeting
+  on public.crm_meeting_suggestions (meeting_id, at_seconds);

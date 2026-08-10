@@ -1,0 +1,19 @@
+{
+  "manifest_version": 3,
+  "name": "Copiloto de Reunião — Nexo IA",
+  "version": "0.1.0",
+  "description": "Guia SPIN ao vivo no Google Meet: mostra a fase da conversa, sugere a próxima pergunta e manda a transcrição para o CRM.",
+  "permissions": ["storage"],
+  "host_permissions": ["http://localhost:3000/*", "https://*/*"],
+  "background": {
+    "service_worker": "background/service-worker.js"
+  },
+  "content_scripts": [
+    {
+      "matches": ["https://meet.google.com/*"],
+      "js": ["content/meet-captions.js", "content/overlay.js", "content/live.js"],
+      "run_at": "document_idle"
+    }
+  ],
+  "options_page": "options/options.html"
+}

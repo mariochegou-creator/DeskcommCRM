@@ -11,7 +11,10 @@ export default defineConfig([
   // `node_modules/` próprios) — nunca fonte deste repo; lintá-los explode o eslint
   // com dezenas de milhares de falsos positivos em JS gerado. (Na CI, checkout
   // limpo, o diretório nem existe.)
-  globalIgnores([".next/", "node_modules/", "dist/", "supabase/", "next-env.d.ts", ".claude/worktrees/"]),
+  // `extension/` é a extensão Chrome do copiloto (Sala de Reuniões, 0098):
+  // vanilla JS Manifest V3, sem build, com globals `chrome.*` que o eslint do
+  // app não conhece — fora do bundle Next e fora do lint dele.
+  globalIgnores([".next/", "node_modules/", "dist/", "supabase/", "next-env.d.ts", ".claude/worktrees/", "extension/"]),
   nextPlugin.configs["core-web-vitals"],
   reactHooks.configs.flat.recommended,
   ...tseslint.configs.recommended,

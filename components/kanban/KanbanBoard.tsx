@@ -9,10 +9,13 @@ import { useAssignableMembers } from "@/hooks/inbox/useAssignableMembers";
 import { useAtRiskLeads } from "@/hooks/leads/useAtRiskLeads";
 import { useReactivations } from "@/hooks/leads/useReactivations";
 import { midpoint } from "@/lib/kanban/fractional-indexing";
+import { tipoDeReuniaoDaEtapa } from "@/lib/agendamento/etapa";
+import { lerReuniao, type Reuniao, type TipoDeReuniao } from "@/lib/agendamento/reuniao";
 import type { Lead } from "@/lib/types/leads";
 import type { Pipeline, Stage } from "@/lib/kanban/types";
 import { StageColumn } from "./StageColumn";
 import { LeadDossier } from "./LeadDossier";
+import { AgendarReuniaoDialog } from "./AgendarReuniaoDialog";
 
 interface KanbanBoardProps {
   pipelineId: string;
@@ -114,6 +117,16 @@ export function KanbanBoard({
   // O dossiê é do BOARD e não da página: ele precisa do lead inteiro e do nome
   // do estágio, que só existem aqui depois do agrupamento.
   const [dossieId, setDossieId] = useState<string | null>(null);
+  /**
+   * O agendamento que o último arrasto abriu. Fica aqui, e não no card, porque
+   * o gatilho é a COLUNA DE DESTINO — informação que só existe no drop.
+   */
+  const [agendar, setAgendar] = useState<{
+    leadId: string;
+    titulo: string;
+    tipo: TipoDeReuniao;
+    atual: Reuniao | null;
+  } | null>(null);
   const [internalSelected, setInternalSelected] = useState<Set<string>>(new Set());
   const selectedLeadIds = useMemo(
     () => (selectedIds ? new Set(selectedIds) : internalSelected),
@@ -181,9 +194,16 @@ export function KanbanBoard({
         (l) => l.id !== draggableId,
       );
 
-      const before = destination.index > 0 ? destList[destination.index - 1] : null;
-      const after =
-        destination.index < destList.length ? destList[destination.index] : null;
+      // Trocar de coluna manda o card para o TOPO, não para a altura em que o
+      // cursor soltou. Numa coluna de 140 cards o lugar do drop é acidente do
+      // scroll, e o card que acabou de se mover é justamente o que precisa
+      // ficar à vista. Reordenar DENTRO da mesma coluna continua obedecendo o
+      // drop — ali a altura é intenção, não acidente.
+      const mudouDeColuna = source.droppableId !== destStageId;
+      const alvo = mudouDeColuna ? 0 : destination.index;
+
+      const before = alvo > 0 ? destList[alvo - 1] : null;
+      const after = alvo < destList.length ? destList[alvo] : null;
 
       const newPosition = midpoint(
         before?.position_in_stage ?? null,
@@ -195,12 +215,31 @@ export function KanbanBoard({
         return;
       }
 
-      moveCard.mutate({
-        leadId: lead.id,
-        stageId: destStageId,
-        positionInStage: newPosition,
-        expectedUpdatedAt: lead.updated_at,
-      });
+      // Só depois do move confirmado: o dialog que pede dia e hora não pode
+      // aparecer sobre um arrasto que o servidor vai rejeitar (409 de edição
+      // concorrente devolve o card para a coluna de origem).
+      const destStage = data.stages.find((s) => s.id === destStageId);
+      const tipo = destStage ? tipoDeReuniaoDaEtapa(destStage) : null;
+
+      moveCard.mutate(
+        {
+          leadId: lead.id,
+          stageId: destStageId,
+          positionInStage: newPosition,
+          expectedUpdatedAt: lead.updated_at,
+        },
+        {
+          onSuccess: () => {
+            if (!tipo) return;
+            setAgendar({
+              leadId: lead.id,
+              titulo: lead.title,
+              tipo,
+              atual: lerReuniao(lead.custom_fields),
+            });
+          },
+        },
+      );
     },
     [data, grouped, moveCard],
   );
@@ -260,6 +299,17 @@ export function KanbanBoard({
             data.stages.find((s) => s.id === leadDoDossie.stage_id)?.name ?? "—"
           }
           ownerNames={ownerNames}
+        />
+      )}
+      {agendar && (
+        <AgendarReuniaoDialog
+          open
+          onOpenChange={(v) => !v && setAgendar(null)}
+          leadId={agendar.leadId}
+          leadTitulo={agendar.titulo}
+          pipelineId={pipelineId}
+          tipo={agendar.tipo}
+          reuniaoAtual={agendar.atual}
         />
       )}
     </DragDropContext>

@@ -11,7 +11,9 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { Button } from "@/components/ui/button";
-import { DotsThree, PencilSimple, Users } from "@/lib/ui/icons";
+import { CalendarBlank, DotsThree, PencilSimple, Users } from "@/lib/ui/icons";
+import { lerReuniao } from "@/lib/agendamento/reuniao";
+import { AgendarReuniaoDialog } from "./AgendarReuniaoDialog";
 import { useWinLead, useEditLead } from "@/hooks/kanban/useUpdateLead";
 import { useAssignableMembers } from "@/hooks/inbox/useAssignableMembers";
 import { useAssignableAgents } from "@/hooks/kanban/useAssignableAgents";
@@ -28,6 +30,11 @@ interface KanbanCardActionsProps {
 export function KanbanCardActions({ lead, pipelineId }: KanbanCardActionsProps) {
   const [loseOpen, setLoseOpen] = useState(false);
   const [editOpen, setEditOpen] = useState(false);
+  // Segunda porta para o agendamento. A primeira é arrastar o card para a
+  // coluna de reunião marcada — mas quem fecha aquele dialog sem preencher
+  // ficaria sem nenhuma forma de voltar, e um card na coluna certa SEM hora é
+  // exatamente a reunião que ninguém lembra de confirmar.
+  const [agendarOpen, setAgendarOpen] = useState(false);
   const winMutation = useWinLead(pipelineId);
   const editMutation = useEditLead(pipelineId);
   // spec 13 §4: escrita no funil é agent+ — viewer não reatribui (a rota
@@ -125,6 +132,13 @@ export function KanbanCardActions({ lead, pipelineId }: KanbanCardActionsProps) 
             </DropdownMenuSub>
           )}
           <DropdownMenuItem
+            onSelect={() => {
+              setAgendarOpen(true);
+            }}
+          >
+            <CalendarBlank size={14} className="mr-2" /> Marcar reunião
+          </DropdownMenuItem>
+          <DropdownMenuItem
             disabled={winMutation.isPending}
             onSelect={() => {
               winMutation.mutate({ leadId: lead.id });
@@ -154,6 +168,16 @@ export function KanbanCardActions({ lead, pipelineId }: KanbanCardActionsProps) 
         lead={lead}
         pipelineId={pipelineId}
       />
+      {agendarOpen && (
+        <AgendarReuniaoDialog
+          open
+          onOpenChange={setAgendarOpen}
+          leadId={lead.id}
+          leadTitulo={lead.title}
+          pipelineId={pipelineId}
+          reuniaoAtual={lerReuniao(lead.custom_fields)}
+        />
+      )}
     </>
   );
 }

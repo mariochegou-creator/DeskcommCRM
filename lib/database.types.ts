@@ -2470,6 +2470,154 @@ export type Database = {
           },
         ]
       }
+      crm_meeting_suggestions: {
+        Row: {
+          alert: string | null
+          at_seconds: number
+          created_at: string
+          id: string
+          meeting_id: string
+          organization_id: string
+          phase_detected: string
+          suggestion: string
+          was_followed: boolean | null
+        }
+        Insert: {
+          alert?: string | null
+          at_seconds: number
+          created_at?: string
+          id?: string
+          meeting_id: string
+          organization_id: string
+          phase_detected: string
+          suggestion: string
+          was_followed?: boolean | null
+        }
+        Update: {
+          alert?: string | null
+          at_seconds?: number
+          created_at?: string
+          id?: string
+          meeting_id?: string
+          organization_id?: string
+          phase_detected?: string
+          suggestion?: string
+          was_followed?: boolean | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "crm_meeting_suggestions_meeting_id_fkey"
+            columns: ["meeting_id"]
+            isOneToOne: false
+            referencedRelation: "crm_meetings"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "crm_meeting_suggestions_organization_id_fkey"
+            columns: ["organization_id"]
+            isOneToOne: false
+            referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      crm_meetings: {
+        Row: {
+          analysis_error: string | null
+          coaching: Json | null
+          contact_id: string | null
+          created_at: string
+          created_by_user_id: string | null
+          ended_at: string | null
+          id: string
+          lead_id: string | null
+          live_state: Json
+          meet_code: string | null
+          meeting_type: string
+          notes: string | null
+          organization_id: string
+          outcome: string | null
+          score: number | null
+          spin_scores: Json | null
+          started_at: string
+          status: string
+          summary: string | null
+          transcript: Json
+          turn_count: number
+          updated_at: string
+        }
+        Insert: {
+          analysis_error?: string | null
+          coaching?: Json | null
+          contact_id?: string | null
+          created_at?: string
+          created_by_user_id?: string | null
+          ended_at?: string | null
+          id?: string
+          lead_id?: string | null
+          live_state?: Json
+          meet_code?: string | null
+          meeting_type: string
+          notes?: string | null
+          organization_id: string
+          outcome?: string | null
+          score?: number | null
+          spin_scores?: Json | null
+          started_at?: string
+          status?: string
+          summary?: string | null
+          transcript?: Json
+          turn_count?: number
+          updated_at?: string
+        }
+        Update: {
+          analysis_error?: string | null
+          coaching?: Json | null
+          contact_id?: string | null
+          created_at?: string
+          created_by_user_id?: string | null
+          ended_at?: string | null
+          id?: string
+          lead_id?: string | null
+          live_state?: Json
+          meet_code?: string | null
+          meeting_type?: string
+          notes?: string | null
+          organization_id?: string
+          outcome?: string | null
+          score?: number | null
+          spin_scores?: Json | null
+          started_at?: string
+          status?: string
+          summary?: string | null
+          transcript?: Json
+          turn_count?: number
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "crm_meetings_contact_id_fkey"
+            columns: ["contact_id"]
+            isOneToOne: false
+            referencedRelation: "contacts"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "crm_meetings_lead_id_fkey"
+            columns: ["lead_id"]
+            isOneToOne: false
+            referencedRelation: "crm_leads"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "crm_meetings_organization_id_fkey"
+            columns: ["organization_id"]
+            isOneToOne: false
+            referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       crm_pipelines: {
         Row: {
           created_at: string

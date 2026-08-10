@@ -81,6 +81,13 @@ const schema = z.object({
   ANTHROPIC_API_KEY: z.string().optional().default(""),
   OPENAI_API_KEY: z.string().optional().default(""),
 
+  // Sala de Reuniões (0098) — origens EXTRAS autorizadas no CORS das rotas
+  // /api/v1/meetings/* (lib/api/cors.ts), separadas por vírgula. O formato
+  // chrome-extension://<id> já é aceito por padrão (o id muda a cada máquina
+  // que carrega a extensão sem compactação); esta var é para origens web
+  // explícitas, se um dia existirem. Vazio = só extensões.
+  EXTENSION_ALLOWED_ORIGINS: z.string().optional().default(""),
+
   // Fusão (Fase 4): DONO ÚNICO dos eventos ai_agent.dispatch_requested.
   // 'engine' (default) = o worker agent-engine é o único consumidor (o cron
   // agent-dispatcher vira no-op mecânico); 'native' = o dispatcher EPIC-13
@@ -127,6 +134,16 @@ const schema = z.object({
     .optional()
     .default("false")
     .transform((v) => v === "true"),
+
+  // Google Agenda — opcional. Com as três primeiras preenchidas, agendar uma
+  // reunião no Kanban cria o evento na agenda; sem elas o CRM devolve o link
+  // "adicionar na agenda" de um clique e nada quebra (lib/meetings/
+  // google-calendar.ts). GOOGLE_CALENDAR_ID vazio = agenda principal da conta
+  // que autorizou.
+  GOOGLE_CALENDAR_CLIENT_ID: z.string().optional().default(""),
+  GOOGLE_CALENDAR_CLIENT_SECRET: z.string().optional().default(""),
+  GOOGLE_CALENDAR_REFRESH_TOKEN: z.string().optional().default(""),
+  GOOGLE_CALENDAR_ID: z.string().optional().default(""),
 
   // App URLs
   NEXT_PUBLIC_APP_URL: z

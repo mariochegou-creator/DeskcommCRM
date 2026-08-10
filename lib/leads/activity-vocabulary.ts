@@ -30,7 +30,8 @@ export type ActivityType =
   | "lead_reactivated"
   | "reactivation_accepted"
   | "reactivation_dismissed"
-  | "reactivation_expired";
+  | "reactivation_expired"
+  | "reuniao_analisada";
 
 export const ACTIVITY_LABELS: Record<ActivityType, string> = {
   stage_changed: "Mudou de estágio",
@@ -60,6 +61,10 @@ export const ACTIVITY_LABELS: Record<ActivityType, string> = {
   reactivation_accepted: "Retomada de contato aprovada",
   reactivation_dismissed: "Retomada de contato descartada",
   reactivation_expired: "Sugestão de retomada venceu sem decisão",
+  // Sala de Reuniões (0098): o ÚNICO pulso da reunião na timeline — a tabela
+  // crm_meetings fica fora do realtime, e a linha nasce quando a análise
+  // conclui, nunca a cada passo do pipeline (razão 2 da linhagem de ligações).
+  reuniao_analisada: "Reunião analisada",
 };
 
 /** Quando o tipo é legado/desconhecido, a linha ainda é honesta — sem jargão. */

@@ -38,6 +38,9 @@ const COMMON_SCOPES = [
   "messages:read",
   "messages:write",
   "audit:read",
+  // Sala de Reuniões (0098): o token que a extensão do copiloto cola nas
+  // opções dela — dá acesso SÓ às rotas /api/v1/meetings/*.
+  "meetings:write",
 ];
 
 export function ApiTokensClient() {

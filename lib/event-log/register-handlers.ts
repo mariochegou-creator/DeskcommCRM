@@ -15,6 +15,7 @@ import { automationRulesHandler } from "@/lib/automation/engine.handler";
 import { followupReactivityHandler } from "@/lib/followup/reactivity.handler";
 import { mediaPersistHandler } from "@/workers/media-persist-worker.handler";
 import { mediaDeriveHandler } from "@/workers/media-derive-worker.handler";
+import { meetingAnalysisHandler } from "@/workers/meeting-analysis-worker.handler";
 import { registerHandler } from "@/lib/event-log/dispatcher";
 
 let _registered = false;
@@ -31,5 +32,6 @@ export function ensureHandlersRegistered(): void {
   registerHandler(followupReactivityHandler);
   registerHandler(mediaPersistHandler);
   registerHandler(mediaDeriveHandler);
+  registerHandler(meetingAnalysisHandler);
   _registered = true;
 }
