@@ -28,6 +28,9 @@ vi.mock("@/hooks/inbox/useConversationTags", () => ({
 vi.mock("@/hooks/inbox/useConversationCounts", () => ({
   useConversationCounts: () => ({ data: { unassigned: 3, mine: 2, all: 5 } }),
 }));
+vi.mock("@/hooks/pipelines/useOrgStages", () => ({
+  useOrgStages: () => ({ data: [] }),
+}));
 
 const VALUE: InboxFiltersValue = { tab: "unassigned", search: "", onlyUnread: false };
 

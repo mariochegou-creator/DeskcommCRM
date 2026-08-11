@@ -16,14 +16,37 @@ import type { Conversation } from "@/lib/types/messaging";
 
 type SB = SupabaseClient;
 
-const SELECT_COLS = `
+const BASE_COLS = `
   id, organization_id, contact_id, channel_session_id, channel, status,
   status_changed_at, assigned_to_user_id, assignee_kind, assigned_at, last_inbound_at,
   last_outbound_at, last_message_at, last_message_preview,
   unread_count_for_assignee, is_group, group_chat_id, tags, metadata,
-  snooze_until, created_at, updated_at,
-  contacts:contact_id (id, display_name, name, phone_number, is_anonymized, tags, is_blocked)
+  snooze_until, created_at, updated_at
 `;
+
+const CONTACT_COLS = "id, display_name, name, phone_number, is_anonymized, tags, is_blocked";
+
+/**
+ * O mesmo SELECT, com ou sem o negócio do Kanban costurado junto.
+ *
+ * Filtrar por etapa é a pergunta "quem já está em R1 marcada?" — e a conversa
+ * não tem etapa: quem tem é o negócio, ligado à conversa pelo CONTATO. Com
+ * `!inner` nos dois níveis o recorte acontece no banco e o cursor continua
+ * valendo. A alternativa (ler os contatos da etapa e mandar `in.(...)`) põe a
+ * lista inteira de uuids na URL — 260 leads de uma importação já chegam perto
+ * do teto de 16 KB do cliente HTTP, e o que passar do teto sai como resultado
+ * a menos, calado.
+ *
+ * O `crm_leads` embutido é subproduto do join, não contrato: sai da resposta
+ * antes de devolver (ver `listConversationsHandler`).
+ */
+function selectCols(comEtapa: boolean): string {
+  return comEtapa
+    ? `${BASE_COLS}, contacts:contact_id!inner (${CONTACT_COLS}, crm_leads!inner (stage_id))`
+    : `${BASE_COLS}, contacts:contact_id (${CONTACT_COLS})`;
+}
+
+const SELECT_COLS = selectCols(false);
 
 interface CursorPayload {
   sort: string | null;
@@ -91,7 +114,7 @@ export async function listConversationsHandler(
 
   let query = supabase
     .from("conversations")
-    .select(SELECT_COLS)
+    .select(selectCols(!!q.stage_id))
     .eq("organization_id", ctx.organization_id)
     .order(sortCol, { ascending: asc, nullsFirst: false })
     .order("id", { ascending: asc })
@@ -100,6 +123,8 @@ export async function listConversationsHandler(
   if (q.status) query = query.eq("status", q.status);
   if (q.channel_session_id) query = query.eq("channel_session_id", q.channel_session_id);
   if (q.contact_id) query = query.eq("contact_id", q.contact_id);
+  // O caminho é o do embed: alias do contato → tabela do negócio → coluna.
+  if (q.stage_id) query = query.eq("contacts.crm_leads.stage_id", q.stage_id);
   if (q.tag) query = query.contains("tags", [q.tag]); // tags @> array[tag] (GIN)
 
   if (q.assigned_to === "me") {
@@ -152,6 +177,14 @@ export async function listConversationsHandler(
   }
 
   const rows = (data ?? []) as unknown as Conversation[];
+  if (q.stage_id) {
+    // O join fez seu trabalho; o `crm_leads` pendurado no contato só faria a
+    // resposta mudar de forma conforme o filtro em uso.
+    for (const row of rows) {
+      const contato = (row as { contacts?: Record<string, unknown> | null }).contacts;
+      if (contato) delete contato.crm_leads;
+    }
+  }
   const hasMore = rows.length > q.limit;
   const page = hasMore ? rows.slice(0, q.limit) : rows;
   const last = page[page.length - 1];

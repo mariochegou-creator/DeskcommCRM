@@ -71,9 +71,10 @@ export function InboxLayout({ initialSelectedId = null }: InboxLayoutProps = {})
   const tab = parseFilterParam(searchParams.get("filter"), fallbackTab);
   const channelParam = searchParams.get("channel") ?? undefined;
   const tagParam = searchParams.get("tag") ?? undefined;
+  const stageParam = searchParams.get("stage") ?? undefined;
 
-  // tab/número/tag vivem na URL (?filter=&channel=&tag=) — sobrevivem ao botão
-  // voltar; busca e "não lidos" são estado local de sessão.
+  // tab/número/tag/etapa vivem na URL (?filter=&channel=&tag=&stage=) —
+  // sobrevivem ao botão voltar; busca e "não lidos" são estado local de sessão.
   const [aux, setAux] = useState<Pick<InboxFiltersValue, "search" | "onlyUnread">>({
     search: "",
     onlyUnread: false,
@@ -82,6 +83,7 @@ export function InboxLayout({ initialSelectedId = null }: InboxLayoutProps = {})
     tab,
     channel_session_id: channelParam,
     tag: tagParam,
+    stage_id: stageParam,
     ...aux,
   };
   const setFilterValue = useCallback(
@@ -89,7 +91,8 @@ export function InboxLayout({ initialSelectedId = null }: InboxLayoutProps = {})
       if (
         next.tab !== tab ||
         next.channel_session_id !== channelParam ||
-        next.tag !== tagParam
+        next.tag !== tagParam ||
+        next.stage_id !== stageParam
       ) {
         const params = new URLSearchParams(searchParams);
         params.set("filter", next.tab);
@@ -97,11 +100,13 @@ export function InboxLayout({ initialSelectedId = null }: InboxLayoutProps = {})
         else params.delete("channel");
         if (next.tag) params.set("tag", next.tag);
         else params.delete("tag");
+        if (next.stage_id) params.set("stage", next.stage_id);
+        else params.delete("stage");
         router.replace(`${pathname}?${params.toString()}`, { scroll: false });
       }
       setAux({ search: next.search, onlyUnread: next.onlyUnread });
     },
-    [tab, channelParam, tagParam, searchParams, router, pathname],
+    [tab, channelParam, tagParam, stageParam, searchParams, router, pathname],
   );
 
   // Reentrada pelo menu chega em /app/inbox sem query — a URL só cobre o botão
@@ -110,7 +115,12 @@ export function InboxLayout({ initialSelectedId = null }: InboxLayoutProps = {})
   useEffect(() => {
     if (!orgId || restoredOrgRef.current === orgId) return;
     restoredOrgRef.current = orgId;
-    if (searchParams.get("filter") || searchParams.get("channel") || searchParams.get("tag"))
+    if (
+      searchParams.get("filter") ||
+      searchParams.get("channel") ||
+      searchParams.get("tag") ||
+      searchParams.get("stage")
+    )
       return; // URL já traz filtros explícitos (deep-link) — respeita
     try {
       const raw = sessionStorage.getItem(`inbox-filters:${orgId}`);
@@ -119,12 +129,14 @@ export function InboxLayout({ initialSelectedId = null }: InboxLayoutProps = {})
         tab?: string;
         channel?: string | null;
         tag?: string | null;
+        stage?: string | null;
       };
       const params = new URLSearchParams(searchParams);
       if (saved.tab && FILTER_TABS.includes(saved.tab as InboxTab))
         params.set("filter", saved.tab);
       if (saved.channel) params.set("channel", saved.channel);
       if (saved.tag) params.set("tag", saved.tag);
+      if (saved.stage) params.set("stage", saved.stage);
       if (params.toString() !== searchParams.toString())
         router.replace(`${pathname}?${params.toString()}`, { scroll: false });
     } catch {
@@ -137,12 +149,17 @@ export function InboxLayout({ initialSelectedId = null }: InboxLayoutProps = {})
     try {
       sessionStorage.setItem(
         `inbox-filters:${orgId}`,
-        JSON.stringify({ tab, channel: channelParam ?? null, tag: tagParam ?? null }),
+        JSON.stringify({
+          tab,
+          channel: channelParam ?? null,
+          tag: tagParam ?? null,
+          stage: stageParam ?? null,
+        }),
       );
     } catch {
       /* sem persistência */
     }
-  }, [orgId, tab, channelParam, tagParam]);
+  }, [orgId, tab, channelParam, tagParam, stageParam]);
 
   const [selectedId, setSelectedId] = useState<string | null>(initialSelectedId);
   const [visibleIds, setVisibleIds] = useState<string[]>([]);
@@ -154,9 +171,16 @@ export function InboxLayout({ initialSelectedId = null }: InboxLayoutProps = {})
       ...tabToFilter(filterValue.tab),
       search: filterValue.search || undefined,
       channel_session_id: filterValue.channel_session_id,
+      stage_id: filterValue.stage_id,
       tag: filterValue.tag,
     }),
-    [filterValue.tab, filterValue.search, filterValue.channel_session_id, filterValue.tag],
+    [
+      filterValue.tab,
+      filterValue.search,
+      filterValue.channel_session_id,
+      filterValue.stage_id,
+      filterValue.tag,
+    ],
   );
 
   const clientFilter = useMemo(

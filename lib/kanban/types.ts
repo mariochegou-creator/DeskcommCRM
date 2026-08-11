@@ -46,6 +46,19 @@ export interface StageComTopo extends Stage {
   top_position: number | null;
 }
 
+/**
+ * Uma etapa reduzida ao que um seletor precisa: o nome, e de qual funil ele é.
+ *
+ * O funil viaja junto porque nome de etapa NÃO é único na org — "Pago" existe
+ * em mais de um quadro, e uma lista só de nomes obrigaria a escolher no escuro.
+ */
+export interface OrgStage {
+  id: string;
+  name: string;
+  pipeline_id: string;
+  pipeline_name: string;
+}
+
 export interface BoardData {
   pipeline: Pipeline;
   stages: Stage[];

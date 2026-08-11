@@ -108,6 +108,14 @@ export const listConversationsQuerySchema = z.object({
   // Responde "este contato já tem conversa?" — a pergunta que o dossiê do lead
   // precisa fazer para decidir se manda o SDR para o inbox ou para o WhatsApp.
   contact_id: z.string().uuid().optional(),
+  /**
+   * Etapa do funil (crm_stages.id) — "só quem já está em R1 marcada".
+   *
+   * A conversa NÃO tem coluna de etapa: quem tem etapa é o negócio do Kanban, e
+   * a ponte entre os dois é o contato. O recorte sai por join no `_handler.ts`;
+   * aqui só entra o id.
+   */
+  stage_id: z.string().uuid().optional(),
   tag: conversationTagSchema.optional(),
   search: z.string().optional(),
   cursor: z.string().optional(),

@@ -26,6 +26,8 @@ export interface ConversationsFilters {
   assigned_to?: "me" | "unassigned" | string;
   search?: string;
   channel_session_id?: string;
+  /** Etapa do Kanban: só conversas cujo contato tem negócio nela. */
+  stage_id?: string;
   tag?: string;
 }
 
@@ -51,6 +53,7 @@ export function useConversationsRealtime(
       if (filters.assigned_to) qs.set("assigned_to", filters.assigned_to);
       if (filters.search) qs.set("search", filters.search);
       if (filters.channel_session_id) qs.set("channel_session_id", filters.channel_session_id);
+      if (filters.stage_id) qs.set("stage_id", filters.stage_id);
       if (filters.tag) qs.set("tag", filters.tag);
       if (pageParam) qs.set("cursor", pageParam);
       qs.set("limit", "50");

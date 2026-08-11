@@ -22,6 +22,8 @@ import { listConversationsHandler } from "@/app/api/v1/conversations/_handler";
 
 interface Registro {
   ordens: Array<{ coluna: string; ascendente: boolean | undefined; nullsFirst: boolean | undefined }>;
+  colunas: string[];
+  filtrosEq: Array<{ coluna: string; valor: unknown }>;
   filtrosOr: string[];
   filtrosIs: Array<{ coluna: string; valor: unknown }>;
   filtrosGt: Array<{ coluna: string; valor: unknown }>;
@@ -34,6 +36,8 @@ interface Registro {
 function supabaseFalso(linhas: Array<Record<string, unknown>>) {
   const registro: Registro = {
     ordens: [],
+    colunas: [],
+    filtrosEq: [],
     filtrosOr: [],
     filtrosIs: [],
     filtrosGt: [],
@@ -44,8 +48,14 @@ function supabaseFalso(linhas: Array<Record<string, unknown>>) {
 
   const q: Record<string, unknown> = {};
   const devolve = () => q;
-  q.select = devolve;
-  q.eq = devolve;
+  q.select = (colunas: string) => {
+    registro.colunas.push(colunas);
+    return q;
+  };
+  q.eq = (coluna: string, valor: unknown) => {
+    registro.filtrosEq.push({ coluna, valor });
+    return q;
+  };
   q.ilike = devolve;
   q.order = (coluna: string, opcoes?: { ascending?: boolean; nullsFirst?: boolean }) => {
     registro.ordens.push({
@@ -168,6 +178,57 @@ describe("cursor keyset alcança as linhas NULL", () => {
     expect(registro.filtrosOr).toHaveLength(0);
     expect(registro.filtrosIs).toContainEqual({ coluna: "last_inbound_at", valor: null });
     expect(registro.filtrosGt).toContainEqual({ coluna: "id", valor: "conv-null-7" });
+  });
+});
+
+describe("filtro por etapa do funil", () => {
+  const ETAPA = "999af389-c481-408a-a142-671589a48522";
+
+  it("costura o negócio por INNER JOIN e filtra pela etapa — não por lista de contatos", async () => {
+    const { supabase, registro } = supabaseFalso([]);
+
+    await listConversationsHandler(supabase as never, CTX, { limit: 50, stage_id: ETAPA });
+
+    expect(registro.colunas[0]).toContain("contacts:contact_id!inner");
+    expect(
+      registro.colunas[0],
+      "sem !inner no negócio, conversa sem card entraria no resultado",
+    ).toContain("crm_leads!inner");
+    expect(registro.filtrosEq).toContainEqual({
+      coluna: "contacts.crm_leads.stage_id",
+      valor: ETAPA,
+    });
+  });
+
+  it("sem etapa escolhida o contato NÃO vira inner join — conversa órfã continua na lista", async () => {
+    const { supabase, registro } = supabaseFalso([]);
+
+    await listConversationsHandler(supabase as never, CTX, { limit: 50 });
+
+    expect(registro.colunas[0]).not.toContain("!inner");
+    expect(registro.filtrosEq.map((f) => f.coluna)).not.toContain(
+      "contacts.crm_leads.stage_id",
+    );
+  });
+
+  it("o negócio embutido sai da resposta — o join é meio, não contrato", async () => {
+    const { supabase } = supabaseFalso([
+      {
+        id: "conv-1",
+        last_message_at: "2026-08-11T10:00:00Z",
+        contacts: { id: "c-1", name: "Show Motos", crm_leads: [{ stage_id: ETAPA }] },
+      },
+    ]);
+
+    const r = await listConversationsHandler(supabase as never, CTX, {
+      limit: 50,
+      stage_id: ETAPA,
+    });
+
+    // `contacts` é embed, não coluna de Conversation — daí a leitura solta.
+    const contato = (r.conversations[0] as unknown as Record<string, unknown>).contacts;
+    expect(contato).toBeDefined();
+    expect(contato).not.toHaveProperty("crm_leads");
   });
 });
 

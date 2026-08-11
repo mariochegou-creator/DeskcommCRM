@@ -8,7 +8,9 @@ import { Label } from "@/components/ui/label";
 import {
   Select,
   SelectContent,
+  SelectGroup,
   SelectItem,
+  SelectLabel,
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
@@ -16,7 +18,9 @@ import { useChannelSessions } from "@/hooks/channels/useChannelSessions";
 import { useAuth } from "@/hooks/auth/AuthProvider";
 import { useConversationTagVocabulary } from "@/hooks/inbox/useConversationTags";
 import { useConversationCounts } from "@/hooks/inbox/useConversationCounts";
+import { useOrgStages } from "@/hooks/pipelines/useOrgStages";
 import type { Role, VisibilityMode } from "@/lib/auth/types";
+import type { OrgStage } from "@/lib/kanban/types";
 
 export type InboxTab = "unassigned" | "mine" | "all" | "closed" | "ai";
 
@@ -44,6 +48,23 @@ export interface InboxFiltersValue {
   onlyUnread: boolean;
   channel_session_id?: string;
   tag?: string;
+  /** Etapa do Kanban (crm_stages.id) — ver o join em conversations/_handler.ts. */
+  stage_id?: string;
+}
+
+/**
+ * Agrupa as etapas por funil PRESERVANDO a ordem em que chegaram — a rota já
+ * devolve funil por funil, coluna por coluna. Reordenar aqui (por nome, por
+ * exemplo) desalinharia o select do quadro que o usuário tem na cabeça.
+ */
+function porFunil(stages: OrgStage[]): Array<{ id: string; nome: string; etapas: OrgStage[] }> {
+  const grupos: Array<{ id: string; nome: string; etapas: OrgStage[] }> = [];
+  for (const s of stages) {
+    const ultimo = grupos[grupos.length - 1];
+    if (ultimo && ultimo.id === s.pipeline_id) ultimo.etapas.push(s);
+    else grupos.push({ id: s.pipeline_id, nome: s.pipeline_name, etapas: [s] });
+  }
+  return grupos;
 }
 
 interface Props {
@@ -57,6 +78,8 @@ export function InboxFilters({ value, onChange }: Props) {
   const { activeOrg } = useAuth();
   const { data: tagVocabulary } = useConversationTagVocabulary(activeOrg?.orgId ?? null);
   const { data: counts } = useConversationCounts(activeOrg?.orgId ?? null);
+  const { data: stages } = useOrgStages(activeOrg?.orgId ?? null);
+  const gruposDeEtapa = porFunil(stages ?? []);
 
   const tabs = activeOrg
     ? visibleInboxTabs(activeOrg.role, activeOrg.visibility_mode)
@@ -133,6 +156,32 @@ export function InboxFilters({ value, onChange }: Props) {
               <SelectItem key={t} value={t}>
                 {t}
               </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+      )}
+
+      {gruposDeEtapa.length > 0 && (
+        <Select
+          value={value.stage_id ?? "all"}
+          onValueChange={(v) => onChange({ ...value, stage_id: v === "all" ? undefined : v })}
+        >
+          <SelectTrigger className="h-8 text-sm" aria-label="Filtrar por etapa do funil">
+            <SelectValue placeholder="Todas as etapas" />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="all">Todas as etapas</SelectItem>
+            {gruposDeEtapa.map((g) => (
+              <SelectGroup key={g.id}>
+                {/* O nome do funil só aparece quando há mais de um — com um só
+                    ele é ruído, e é o caso da maioria das orgs. */}
+                {gruposDeEtapa.length > 1 && <SelectLabel>{g.nome}</SelectLabel>}
+                {g.etapas.map((s) => (
+                  <SelectItem key={s.id} value={s.id}>
+                    {s.name}
+                  </SelectItem>
+                ))}
+              </SelectGroup>
             ))}
           </SelectContent>
         </Select>
