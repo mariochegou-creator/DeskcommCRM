@@ -82,3 +82,47 @@ export function toWhatsAppNumber(e164: string | null | undefined): string | null
   const normalizado = toE164BR(e164);
   return normalizado ? normalizado.slice(1) : null;
 }
+
+/**
+ * O NONO DÍGITO. Para DDD >= 31 o WhatsApp trata o celular SEM ele
+ * (+55 73 9981-8151), enquanto o resto do mundo — Google Maps, cartão, a boca
+ * do dono — usa COM (+55 73 9 9981-8151). O CRM guarda a forma do WhatsApp,
+ * porque é dela que sai o endereço do chat (`resolveWahaChatId`); a tela
+ * reconstrói a forma da operadora na hora de discar.
+ *
+ * O par abaixo é o mesmo `fn_telefone_wa` da migration 0102, do lado do
+ * TypeScript. Se um dos dois mudar, o outro muda junto — senão a importação
+ * volta a criar contato duplicado sem ninguém perceber.
+ *
+ * DDD 11–28 fica INTACTO nos dois sentidos: lá o WhatsApp usa o 9 mesmo, e
+ * mexer criaria o problema que estas funções existem para acabar.
+ */
+const CELULAR_COM_NONO = /^\+55([3-9][0-9])9([6-9][0-9]{7})$/;
+const CELULAR_SEM_NONO = /^\+55([3-9][0-9])([6-9][0-9]{7})$/;
+
+/**
+ * A identidade: `+5573999818151` → `+557399818151`.
+ *
+ * Número que não bate com o formato de celular de DDD >= 31 volta como está —
+ * fixo, número curto e DDD 11–28 não têm nono dígito para perder.
+ */
+export function chaveWhatsAppBR(e164: string | null | undefined): string | null {
+  const normalizado = toE164BR(e164);
+  if (!normalizado) return null;
+  const m = CELULAR_COM_NONO.exec(normalizado);
+  return m ? `+55${m[1]}${m[2]}` : normalizado;
+}
+
+/**
+ * O discável: `+557399818151` → `+5573999818151`.
+ *
+ * Só devolve o 9 quando é seguro: oito dígitos começando em 6–9 depois do DDD
+ * só pode ser celular, porque fixo começa em 2–5. Fora desse caso o número
+ * volta intacto — mesma promessa do resto do arquivo, não adivinhar.
+ */
+export function paraDiscarBR(e164: string | null | undefined): string | null {
+  const normalizado = toE164BR(e164);
+  if (!normalizado) return null;
+  const m = CELULAR_SEM_NONO.exec(normalizado);
+  return m ? `+55${m[1]}9${m[2]}` : normalizado;
+}

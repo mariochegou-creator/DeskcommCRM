@@ -24,7 +24,7 @@ import {
   MAX_CALL_AUDIO_BYTES,
   isAllowedCallMime,
 } from "@/lib/calls/storage";
-import { toE164BR, toWhatsAppNumber } from "@/lib/calls/phone";
+import { paraDiscarBR, toWhatsAppNumber } from "@/lib/calls/phone";
 import { ChatCircle, Phone, UploadSimple, CircleNotch } from "@/lib/ui/icons";
 
 interface Props {
@@ -61,7 +61,9 @@ export function ContactActions({
   const fileRef = useRef<HTMLInputElement>(null);
   const startCall = useStartCall(contactId);
 
-  const phone = toE164BR(phoneNumber);
+  // Discar pede o número da OPERADORA (com o nono dígito); o wa.me pede o do
+  // WhatsApp, que é o que está gravado. Ver `paraDiscarBR` — migration 0102.
+  const phone = paraDiscarBR(phoneNumber);
   const whatsapp = toWhatsAppNumber(phoneNumber);
 
   const handleLigar = () => {

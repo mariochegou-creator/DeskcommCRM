@@ -9,10 +9,19 @@
  *
  * Só linha ATIVA conta: contato mesclado (`is_merged_into`) não volta — mesmo
  * predicado do webhook de captação.
+ *
+ * A busca é pela IDENTIDADE, não pelo texto do número. O Google Maps entrega
+ * +55 73 9 9981-8151 e o WhatsApp fala pelo mesmo celular como +55 73 9981-8151:
+ * comparar texto com texto criava DOIS contatos, um com o card e outro com a
+ * conversa, e nada os aproximava (168 pares nesta base até a migration 0102).
+ * `wa_identity` é a coluna que já resolve os dois para a mesma chave — e é a
+ * mesma que a unique da tabela usa, então achar por ela é achar exatamente o
+ * que um insert derrubaria.
  */
 import type { SupabaseClient } from "@supabase/supabase-js";
 
 import { ApiError } from "@/lib/api/types";
+import { chaveWhatsAppBR } from "@/lib/calls/phone";
 
 export interface ContatoPorTelefoneInput {
   organizationId: string;
@@ -37,12 +46,19 @@ export async function contatoPorTelefone(
   supabase: SupabaseClient,
   input: ContatoPorTelefoneInput,
 ): Promise<ContatoPorTelefone> {
+  // Número que não normaliza não tem identidade — cai no texto cru, que é o
+  // comportamento anterior e continua correto para fixo e número estrangeiro.
+  const identidade = chaveWhatsAppBR(input.phone);
+
+  const coluna = identidade ? "wa_identity" : "phone_number";
+  const valor = identidade ? `phone:${identidade}` : input.phone;
+
   const selectAtivoPorTelefone = () =>
     supabase
       .from("contacts")
       .select("id")
       .eq("organization_id", input.organizationId)
-      .eq("phone_number", input.phone)
+      .eq(coluna, valor)
       .is("is_merged_into", null)
       .maybeSingle();
 
