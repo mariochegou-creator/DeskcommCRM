@@ -21,7 +21,13 @@
  */
 import { generateText } from "ai";
 
-import { DEFAULT_BOT_MODEL, gatewayConfig, gatewayHeaders, isAiGatewayConfigured } from "@/lib/ai/gateway";
+import {
+  DEFAULT_BOT_MODEL,
+  gatewayConfig,
+  gatewayHeaders,
+  isAiGatewayConfigured,
+  resolveModel,
+} from "@/lib/ai/gateway";
 import { buildCallAnalysisPrompt } from "@/lib/calls/analysis-prompt";
 import { CallAnalysisSchema, type CallAnalysis } from "@/lib/calls/analysis-schema";
 import { CALL_BUCKET } from "@/lib/calls/storage";
@@ -208,7 +214,12 @@ async function runAnalysis(
   let ultimoTexto = "";
   for (const p of tentativas) {
     const res = await generateText({
-      model: DEFAULT_BOT_MODEL,
+      // `resolveModel` e não a string crua: sem `AI_GATEWAY_API_KEY` no
+      // servidor, `"anthropic/..."` morre com "Unauthenticated request to AI
+      // Gateway" mesmo havendo `ANTHROPIC_API_KEY` — foi o que engoliu as
+      // primeiras análises reais em 11/08/2026 (transcrição pronta, avaliação
+      // nunca). O worker de reuniões já passa por aqui; este ficou de fora.
+      model: resolveModel(DEFAULT_BOT_MODEL),
       messages: [{ role: "user", content: p }],
       headers,
     });
