@@ -2,6 +2,8 @@
 import { Droppable } from "@hello-pangea/dnd";
 import type { CSSProperties } from "react";
 import { cn } from "@/lib/utils";
+import { Button } from "@/components/ui/button";
+import { Plus } from "@/lib/ui/icons";
 import type { Lead } from "@/lib/types/leads";
 import type { Stage } from "@/lib/kanban/types";
 import { buildCardInput } from "@/lib/kanban/card-state";
@@ -25,6 +27,13 @@ interface StageColumnProps {
   onSelect?: (leadId: string, additive: boolean) => void;
   /** Abrir o dossiê — atravessa o board até o card, como `pulses`. */
   onOpen?: (leadId: string) => void;
+  /**
+   * Criar um card JÁ nesta etapa. Quando ausente, a coluna não mostra botão —
+   * quem decide em quais colunas ele aparece é o board, não a coluna.
+   */
+  onAdd?: () => void;
+  /** Texto do botão de criar (o board fala "empresa" na primeira coluna). */
+  addLabel?: string;
 }
 
 function formatBRL(cents: number): string {
@@ -51,6 +60,8 @@ export function StageColumn({
   pulses,
   onSelect,
   onOpen,
+  onAdd,
+  addLabel = "Adicionar empresa",
 }: StageColumnProps) {
   const totalCents = leads.reduce((sum, l) => sum + (l.value_cents ?? 0), 0);
   const accentStyle: CSSProperties | undefined = stage.color
@@ -79,6 +90,24 @@ export function StageColumn({
       {totalCents > 0 && (
         <div className="border-b border-border px-3 py-1.5 text-[11px] tabular-nums text-text-muted">
           {formatBRL(totalCents)}
+        </div>
+      )}
+
+      {/* FORA do Droppable de propósito: um elemento não-arrastável no meio da
+          lista bagunça o índice que o dnd usa para calcular onde o card cai. */}
+      {onAdd && (
+        <div className="border-b border-border p-2">
+          <Button
+            type="button"
+            variant="ghost"
+            size="sm"
+            onClick={onAdd}
+            className="w-full justify-start border border-dashed border-border"
+            title={`${addLabel} em ${stage.name}`}
+          >
+            <Plus size={14} aria-hidden />
+            {addLabel}
+          </Button>
         </div>
       )}
 

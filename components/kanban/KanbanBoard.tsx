@@ -16,6 +16,7 @@ import type { Pipeline, Stage } from "@/lib/kanban/types";
 import { StageColumn } from "./StageColumn";
 import { LeadDossier } from "./LeadDossier";
 import { AgendarReuniaoDialog } from "./AgendarReuniaoDialog";
+import { NewLeadDialog } from "./NewLeadDialog";
 
 interface KanbanBoardProps {
   pipelineId: string;
@@ -127,6 +128,12 @@ export function KanbanBoard({
     tipo: TipoDeReuniao;
     atual: Reuniao | null;
   } | null>(null);
+  /**
+   * A etapa onde o "Adicionar empresa" foi clicado. Guarda o id, e não um
+   * booleano, porque é ele que abre o formulário já na etapa certa — o botão
+   * mora na coluna, então a etapa é a própria coluna clicada.
+   */
+  const [novoEmStage, setNovoEmStage] = useState<string | null>(null);
   const [internalSelected, setInternalSelected] = useState<Set<string>>(new Set());
   const selectedLeadIds = useMemo(
     () => (selectedIds ? new Set(selectedIds) : internalSelected),
@@ -272,12 +279,16 @@ export function KanbanBoard({
   return (
     <DragDropContext onDragEnd={handleDragEnd}>
       <div className="flex h-full gap-3 overflow-x-auto p-4">
-        {data.stages.map((stage) => (
+        {data.stages.map((stage, index) => (
           <StageColumn
             key={stage.id}
             stage={stage}
             leads={grouped.get(stage.id) ?? []}
             pipelineId={pipelineId}
+            // Só na PRIMEIRA coluna: é onde a empresa entra no funil. Nas
+            // outras, o card chega arrastado — criar direto ali seria pular
+            // as etapas que dão sentido à posição.
+            onAdd={index === 0 ? () => setNovoEmStage(stage.id) : undefined}
             ownerNames={ownerNames}
             coolingIds={coolingIds}
             reactivations={reactivations}
@@ -299,6 +310,21 @@ export function KanbanBoard({
             data.stages.find((s) => s.id === leadDoDossie.stage_id)?.name ?? "—"
           }
           ownerNames={ownerNames}
+        />
+      )}
+      {novoEmStage && (
+        <NewLeadDialog
+          open
+          onOpenChange={(v) => !v && setNovoEmStage(null)}
+          pipelineId={pipelineId}
+          stages={data.stages}
+          initialStageId={novoEmStage}
+          titulo="Adicionar empresa"
+          descricao={`A empresa entra em «${
+            data.stages.find((s) => s.id === novoEmStage)?.name ?? "—"
+          }».`}
+          nomeLabel="Nome da empresa"
+          nomePlaceholder="Ex: Auto Peças São Jorge"
         />
       )}
       {agendar && (

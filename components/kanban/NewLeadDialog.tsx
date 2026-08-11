@@ -41,6 +41,17 @@ interface Props {
   onOpenChange: (v: boolean) => void;
   pipelineId: string;
   stages: Stage[];
+  /**
+   * Etapa já escolhida por quem abriu — é o caso do botão que mora DENTRO da
+   * coluna: ali o clique já disse em qual etapa o card nasce, e reabrir a
+   * pergunta no seletor seria repetir o que a mão acabou de responder.
+   */
+  initialStageId?: string;
+  /** Copy de quem abriu (o botão da coluna fala "empresa", não "lead"). */
+  titulo?: string;
+  descricao?: string;
+  nomeLabel?: string;
+  nomePlaceholder?: string;
 }
 
 function defaultStageId(stages: Stage[]): string {
@@ -48,9 +59,22 @@ function defaultStageId(stages: Stage[]): string {
   return open?.id ?? stages[0]?.id ?? "";
 }
 
-export function NewLeadDialog({ open, onOpenChange, pipelineId, stages }: Props) {
+export function NewLeadDialog({
+  open,
+  onOpenChange,
+  pipelineId,
+  stages,
+  initialStageId,
+  titulo = "Novo Lead",
+  descricao = "Crie um lead manualmente neste pipeline.",
+  nomeLabel = "Título",
+  nomePlaceholder = "Ex: Pedido Maria — combo presente",
+}: Props) {
   const create = useCreateLead(pipelineId);
-  const initialStage = useMemo(() => defaultStageId(stages), [stages]);
+  const initialStage = useMemo(
+    () => initialStageId ?? defaultStageId(stages),
+    [initialStageId, stages],
+  );
 
   const form = useForm<FormShape>({
     defaultValues: {
@@ -128,17 +152,15 @@ export function NewLeadDialog({ open, onOpenChange, pipelineId, stages }: Props)
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent>
         <DialogHeader>
-          <DialogTitle>Novo Lead</DialogTitle>
-          <DialogDescription>
-            Crie um lead manualmente neste pipeline.
-          </DialogDescription>
+          <DialogTitle>{titulo}</DialogTitle>
+          <DialogDescription>{descricao}</DialogDescription>
         </DialogHeader>
         <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-4">
           <div className="space-y-2">
-            <Label htmlFor="title">Título</Label>
+            <Label htmlFor="title">{nomeLabel}</Label>
             <Input
               id="title"
-              placeholder="Ex: Pedido Maria — combo presente"
+              placeholder={nomePlaceholder}
               {...form.register("title", { required: true, minLength: 2 })}
             />
           </div>
