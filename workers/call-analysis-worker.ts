@@ -1,6 +1,7 @@
 /**
  * Consome `call.transcribe_requested`: baixa o áudio da ligação, transcreve
- * (Groq Whisper) e analisa contra a rubrica de coaching (Claude via AI Gateway).
+ * (Groq Whisper) e analisa contra a rubrica de coaching (o modelo de
+ * `AI_ANALYSIS_MODEL`, padrão `DEFAULT_BOT_MODEL`).
  *
  * Retry/backoff são do drain (`lib/event-log/drain.ts`), não daqui — este
  * handler só devolve `status:"error"` e, na última tentativa que o drain ainda
@@ -22,11 +23,12 @@
 import { generateText } from "ai";
 
 import {
-  DEFAULT_BOT_MODEL,
+  analysisModel,
   gatewayConfig,
   gatewayHeaders,
-  isAiGatewayConfigured,
+  isModelConfigured,
   resolveModel,
+  type ModelId,
 } from "@/lib/ai/gateway";
 import { buildCallAnalysisPrompt } from "@/lib/calls/analysis-prompt";
 import { CallAnalysisSchema, type CallAnalysis } from "@/lib/calls/analysis-schema";
@@ -95,11 +97,12 @@ export async function analyzeCallRecording(row: EventRow): Promise<HandlerResult
     );
     return { consumer_key, status: "skipped", detail: "groq_key_missing" };
   }
-  if (!isAiGatewayConfigured()) {
+  const modelo = analysisModel();
+  if (!isModelConfigured(modelo)) {
     await markFailed(
-      "Análise indisponível: falta configurar AI_GATEWAY_API_KEY (ou ANTHROPIC_API_KEY) no servidor.",
+      `Análise indisponível: falta configurar no servidor a chave do provedor de "${modelo}".`,
     );
-    return { consumer_key, status: "skipped", detail: "ai_gateway_key_missing" };
+    return { consumer_key, status: "skipped", detail: "analysis_model_key_missing" };
   }
 
   try {
@@ -148,7 +151,7 @@ export async function analyzeCallRecording(row: EventRow): Promise<HandlerResult
     }
 
     // ---- 2. análise ----
-    const { analysis, raw } = await runAnalysis(transcript, call.organization_id);
+    const { analysis, raw } = await runAnalysis(transcript, call.organization_id, modelo);
 
     if (!analysis) {
       // Nem o retry produziu JSON. Guarda a prosa: o coach lê e o SDR aproveita
@@ -201,6 +204,7 @@ export async function analyzeCallRecording(row: EventRow): Promise<HandlerResult
 async function runAnalysis(
   transcript: string,
   organizationId: string,
+  modelo: ModelId,
 ): Promise<{ analysis: CallAnalysis | null; raw: string }> {
   const cfg = gatewayConfig();
   const headers = cfg ? gatewayHeaders({ organizationId }) : undefined;
@@ -219,7 +223,7 @@ async function runAnalysis(
       // Gateway" mesmo havendo `ANTHROPIC_API_KEY` — foi o que engoliu as
       // primeiras análises reais em 11/08/2026 (transcrição pronta, avaliação
       // nunca). O worker de reuniões já passa por aqui; este ficou de fora.
-      model: resolveModel(DEFAULT_BOT_MODEL),
+      model: resolveModel(modelo),
       messages: [{ role: "user", content: p }],
       headers,
     });

@@ -12,6 +12,7 @@
  */
 
 import { createAnthropic } from "@ai-sdk/anthropic";
+import { createOpenAI } from "@ai-sdk/openai";
 
 import { env } from "@/lib/env";
 
@@ -80,5 +81,36 @@ export function resolveModel(model: ModelId) {
     const anthropic = createAnthropic({ apiKey: env.ANTHROPIC_API_KEY });
     return anthropic(model.slice("anthropic/".length));
   }
+  if (env.OPENAI_API_KEY && model.startsWith("openai/")) {
+    const openai = createOpenAI({ apiKey: env.OPENAI_API_KEY });
+    return openai(model.slice("openai/".length));
+  }
   return model;
+}
+
+/**
+ * O avaliador das análises (ligação do SDR), configurável por `.env`.
+ *
+ * Sem `AI_ANALYSIS_MODEL`, nada muda: continua o modelo padrão. A saída existe
+ * porque saldo é de conta, não de código — em 11/08/2026 a conta da Anthropic
+ * secou com o pipeline de ligações já provado até a última etapa, e trocar o
+ * avaliador para um provedor com saldo não deveria exigir mexer no worker.
+ */
+export function analysisModel(): ModelId {
+  return env.AI_ANALYSIS_MODEL || DEFAULT_BOT_MODEL;
+}
+
+/**
+ * Existe credencial para ESTE modelo?
+ *
+ * `isAiGatewayConfigured()` responde "há alguma chave de IA configurada?", que
+ * não é a mesma pergunta: com `AI_ANALYSIS_MODEL=openai/...` e só a chave da
+ * Anthropic no servidor, aquela diria que sim e a chamada morreria depois de já
+ * ter pago a transcrição.
+ */
+export function isModelConfigured(model: ModelId): boolean {
+  if (env.AI_GATEWAY_API_KEY) return true;
+  if (model.startsWith("anthropic/")) return Boolean(env.ANTHROPIC_API_KEY);
+  if (model.startsWith("openai/")) return Boolean(env.OPENAI_API_KEY);
+  return false;
 }

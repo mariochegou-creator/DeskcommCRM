@@ -87,6 +87,13 @@ const schema = z.object({
   // skip="groq_key_missing" e a atividade diz isso na tela — o SDR descobre que
   // falta configurar, em vez de ver a análise nunca chegar em silêncio.
   GROQ_API_KEY: z.string().optional().default(""),
+  // Quem avalia a ligação do SDR, no formato `<provedor>/<modelo>` (ex.
+  // `openai/gpt-5.4-mini`). Vazio = `DEFAULT_BOT_MODEL`. Existe porque o dono da
+  // instalação pode ter saldo num provedor e não no outro — trocar o avaliador
+  // vira uma linha no `.env` e um restart, não um build. A credencial do
+  // provedor escolhido é conferida antes de gastar a transcrição
+  // (`isModelConfigured`), então errar aqui falha com recado na tela.
+  AI_ANALYSIS_MODEL: z.string().optional().default(""),
 
   // Sala de Reuniões (0098) — origens EXTRAS autorizadas no CORS das rotas
   // /api/v1/meetings/* (lib/api/cors.ts), separadas por vírgula. O formato
