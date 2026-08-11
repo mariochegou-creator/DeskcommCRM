@@ -1,6 +1,6 @@
 "use client";
 import Link from "next/link";
-import { useEffect, useMemo, useState } from "react";
+import { useMemo, useState } from "react";
 import { format } from "date-fns";
 import { ptBR } from "date-fns/locale";
 import { Card } from "@/components/ui/card";
@@ -8,48 +8,18 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Separator } from "@/components/ui/separator";
-import { Tag, Receipt, Users, ArrowRight } from "@/lib/ui/icons";
-import { apiClient } from "@/lib/api/client";
+import { Receipt, ArrowRight } from "@/lib/ui/icons";
+import { useCrmSummary } from "@/hooks/inbox/useCrmSummary";
 import type { ConversationWithContact } from "@/hooks/inbox/useConversationsRealtime";
 import { activityLabel, actorLabel, actorShape } from "@/lib/leads/activity-vocabulary";
 import { extractExtras, extractGanchos } from "@/lib/leads/ganchos";
 import { LeadExtrasList } from "@/components/leads/LeadExtrasList";
 import { ConversationTagsEditor } from "./ConversationTagsEditor";
+import { NegocioDoContato } from "./NegocioDoContato";
 import { cn } from "@/lib/utils";
 
 interface Props {
   conversation: ConversationWithContact | null;
-}
-
-interface LeadRow {
-  id: string;
-  title: string;
-  status: string;
-  value_cents: number | null;
-  currency: string | null;
-  updated_at: string;
-  /** Ganchos de abertura da prospecção moram aqui (chaves gancho_*). */
-  custom_fields: Record<string, unknown> | null;
-}
-
-interface OrderRow {
-  id: string;
-  external_id: string | null;
-  status: string | null;
-  total_cents: number | null;
-  currency: string | null;
-  created_at: string;
-}
-
-interface ActivityRow {
-  id: string;
-  type: string;
-  source_module: string;
-  performed_at: string;
-  payload: Record<string, unknown> | null;
-  /** 0071 — o porquê legível e quem agiu. */
-  reason: string | null;
-  actor_kind: string | null;
 }
 
 function formatMoney(cents: number | null, currency: string | null): string {
@@ -71,7 +41,7 @@ function shortDate(iso: string): string {
 /**
  * O que cada seção mostra quando não tem lista para mostrar.
  *
- * Peça única porque são TRÊS seções tomando a MESMA decisão — e foi por essa
+ * Peça única porque são VÁRIAS seções tomando a MESMA decisão — e foi por essa
  * decisão viver repetida em três lugares que as três mentiam juntas.
  *
  * Fora do componente de propósito: declarada dentro do corpo, ela vira um tipo
@@ -104,79 +74,41 @@ export function CRMSidePanel({ conversation }: Props) {
   const contact = conversation?.contacts ?? null;
   const contactId = contact?.id ?? null;
 
-  const [leads, setLeads] = useState<LeadRow[] | null>(null);
-  const [orders, setOrders] = useState<OrderRow[] | null>(null);
-  const [activities, setActivities] = useState<ActivityRow[] | null>(null);
-  const [loading, setLoading] = useState(false);
   /**
-   * O TERCEIRO ESTADO. Antes existiam dois — carregando e "tem N itens" — e a
-   * falha era traduzida para lista vazia, virando "Sem leads.": uma afirmação
-   * sobre o NEGÓCIO feita em cima de um erro de leitura. Distinguir "não tem"
-   * de "não consegui ler" é a diferença entre informar e mentir.
+   * A leitura vive em react-query (ver o hook): mover a etapa ou trocar uma tag
+   * pelo painel precisa REFAZER esta busca, e quem muta invalida pela chave.
+   *
+   * `isError` é o TERCEIRO ESTADO, e ele é o motivo de este painel existir do
+   * jeito que existe: antes a falha de leitura era traduzida para lista vazia,
+   * virando "Sem leads." — uma afirmação sobre o NEGÓCIO feita em cima de um
+   * erro de permissão. Distinguir "não tem" de "não consegui ler" é a diferença
+   * entre informar e mentir.
    */
-  const [erro, setErro] = useState(false);
-  const [tentativa, setTentativa] = useState(0);
+  const resumo = useCrmSummary(contactId);
+  const erro = resumo.isError;
+  const carregando = !!contactId && resumo.isPending;
 
-  useEffect(() => {
-    if (!contactId) {
-      setLeads(null);
-      setOrders(null);
-      setActivities(null);
-      return;
-    }
-    let cancelled = false;
-    setLoading(true);
-    setErro(false);
+  const leads = useMemo(() => resumo.data?.leads ?? [], [resumo.data]);
 
-    // Pela ROTA, não pelo cliente de navegador: o cookie de sessão é httpOnly,
-    // então o supabase-js do browser não vê a sessão e consultava como `anon`
-    // (medido: role=anon com gerente logado). Ver o cabeçalho da rota.
-    async function load() {
-      try {
-        const r = await apiClient.get<{
-          data: { leads: LeadRow[]; orders: OrderRow[]; activities: ActivityRow[] };
-        }>(`/api/v1/contacts/${contactId}/crm-summary`);
-        if (cancelled) return;
-        setLeads(r.data.leads);
-        setOrders(r.data.orders);
-        setActivities(r.data.activities);
-      } catch {
-        if (cancelled) return;
-        // Falha NÃO vira lista vazia. Os dados ficam `null` e o painel diz que
-        // não conseguiu ler — nunca que não há.
-        setErro(true);
-        setLeads(null);
-        setOrders(null);
-        setActivities(null);
-      } finally {
-        if (!cancelled) setLoading(false);
-      }
-    }
-
-    void load();
-    return () => {
-      cancelled = true;
-    };
-  }, [contactId, tentativa]);
+  /**
+   * Qual negócio o painel está mostrando. O padrão é o mais recente (a rota
+   * ordena por `updated_at`).
+   *
+   * A escolha guarda DE QUEM ela é, e não só o id do negócio: sem o contato
+   * junto, trocar de conversa herdaria a escolha da anterior e — no instante
+   * entre a nova lista chegar e o efeito de limpeza rodar — o painel mostraria
+   * o negócio de outra pessoa. Comparar aqui resolve na renderização, sem
+   * efeito nenhum.
+   */
+  const [escolha, setEscolha] = useState<{ contato: string; lead: string } | null>(null);
+  const escolhidoId = escolha?.contato === contactId ? escolha.lead : null;
+  const lead = leads.find((l) => l.id === escolhidoId) ?? leads[0] ?? null;
 
   // O que o atendente precisa ler ANTES de responder: os ganchos vêm da lista
-  // de prospecção importada e vivem nos custom_fields dos leads do contato.
-  const ganchos = useMemo(
-    () => [...new Set((leads ?? []).flatMap((l) => extractGanchos(l.custom_fields)))],
-    [leads],
-  );
-
-  // O resto do dossiê (Dores, Score, Nota Google…) vem do lead mais recente
-  // que tiver algum — os leads chegam ordenados por updated_at desc, e juntar
-  // extras de leads diferentes misturaria scores e dores de negócios distintos
-  // sob os mesmos rótulos.
-  const extras = useMemo(() => {
-    for (const l of leads ?? []) {
-      const e = extractExtras(l.custom_fields);
-      if (e.length > 0) return e;
-    }
-    return [];
-  }, [leads]);
+  // de prospecção importada e vivem nos custom_fields DO NEGÓCIO escolhido —
+  // juntar os de vários leads misturaria a abertura de negócios distintos.
+  const ganchos = useMemo(() => extractGanchos(lead?.custom_fields ?? null), [lead]);
+  const extras = useMemo(() => extractExtras(lead?.custom_fields ?? null), [lead]);
 
   const tags = contact?.tags ?? [];
   const displayName =
@@ -184,16 +116,6 @@ export function CRMSidePanel({ conversation }: Props) {
     contact?.name?.trim() ||
     contact?.phone_number ||
     "—";
-
-  // `erro` PRIMEIRO, e não é detalhe: as três listas voltam a `null` quando a
-  // leitura falha, e este derivado lê `null` como "ainda não chegou". Sem esta
-  // guarda o painel mostraria esqueleto para sempre e o estado de falha nunca
-  // apareceria — o mesmo colapso de significados que criou o defeito original,
-  // só que trocando "erro→vazio" por "erro→carregando".
-  const sectionsLoading = useMemo(
-    () => !erro && (loading || (leads === null && orders === null && activities === null)),
-    [erro, loading, leads, orders, activities],
-  );
 
   if (!conversation) {
     return (
@@ -223,23 +145,55 @@ export function CRMSidePanel({ conversation }: Props) {
               ))}
             </div>
           )}
-          <div className="flex flex-wrap gap-2 pt-1">
-            <Button size="sm" variant="outline" className="h-7 px-2 text-xs">
-              <Tag size={12} className="mr-1" weight="regular" aria-hidden /> Tag
-            </Button>
-            <Button size="sm" variant="outline" className="h-7 px-2 text-xs">
-              <Users size={12} className="mr-1" weight="regular" aria-hidden /> Lead
-            </Button>
-            {contactId && (
+          {contactId && (
+            <div className="pt-1">
               <Button asChild size="sm" variant="ghost" className="h-7 px-2 text-xs">
                 <Link href={`/app/contacts/${contactId}`}>
                   Ver contato
                   <ArrowRight size={12} className="ml-1" weight="regular" aria-hidden />
                 </Link>
               </Button>
-            )}
-          </div>
+            </div>
+          )}
         </Card>
+      </section>
+
+      <Separator />
+
+      {/* O NEGÓCIO — etapa, valor, dono, probabilidade e tags, mexíveis daqui.
+          Antes o painel mostrava título e status e nada mais, o que é menos do
+          que o card do Kanban entrega de longe: manter o funil em dia custava
+          trocar de tela no meio da conversa. */}
+      <section>
+        {carregando ? (
+          <>
+            <h3 className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+              Negócio
+            </h3>
+            <Skeleton className="mt-2 h-40 w-full" />
+          </>
+        ) : lead ? (
+          <NegocioDoContato
+            leads={leads}
+            lead={lead}
+            onEscolher={(leadId) =>
+              setEscolha(contactId ? { contato: contactId, lead: leadId } : null)
+            }
+            stages={resumo.data?.stages ?? []}
+            pipelines={resumo.data?.pipelines ?? []}
+          />
+        ) : (
+          <>
+            <h3 className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+              Negócio
+            </h3>
+            <SemLista
+              vazio="Este contato não tem negócio no funil."
+              erro={erro}
+              onTentarDeNovo={() => void resumo.refetch()}
+            />
+          </>
+        )}
       </section>
 
       {ganchos.length > 0 && (
@@ -295,42 +249,13 @@ export function CRMSidePanel({ conversation }: Props) {
 
       <section>
         <h3 className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
-          Leads recentes
-        </h3>
-        {sectionsLoading ? (
-          <Skeleton className="mt-2 h-14 w-full" />
-        ) : leads && leads.length > 0 ? (
-          <ul className="mt-2 space-y-1.5">
-            {leads.map((l) => (
-              <li
-                key={l.id}
-                className="flex items-center justify-between rounded-md border border-border p-2 text-xs"
-              >
-                <div className="min-w-0">
-                  <div className="truncate font-medium">{l.title}</div>
-                  <div className="text-muted-foreground">
-                    {l.status} · {formatMoney(l.value_cents, l.currency)}
-                  </div>
-                </div>
-              </li>
-            ))}
-          </ul>
-        ) : (
-          <SemLista vazio="Sem leads." erro={erro} onTentarDeNovo={() => setTentativa((n) => n + 1)} />
-        )}
-      </section>
-
-      <Separator />
-
-      <section>
-        <h3 className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
           Pedidos recentes
         </h3>
-        {sectionsLoading ? (
+        {carregando ? (
           <Skeleton className="mt-2 h-14 w-full" />
-        ) : orders && orders.length > 0 ? (
+        ) : resumo.data && resumo.data.orders.length > 0 ? (
           <ul className="mt-2 space-y-1.5">
-            {orders.map((o) => (
+            {resumo.data.orders.map((o) => (
               <li
                 key={o.id}
                 className="flex items-center justify-between rounded-md border border-border p-2 text-xs"
@@ -348,7 +273,11 @@ export function CRMSidePanel({ conversation }: Props) {
             ))}
           </ul>
         ) : (
-          <SemLista vazio="Sem pedidos." erro={erro} onTentarDeNovo={() => setTentativa((n) => n + 1)} />
+          <SemLista
+            vazio="Sem pedidos."
+            erro={erro}
+            onTentarDeNovo={() => void resumo.refetch()}
+          />
         )}
       </section>
 
@@ -358,11 +287,11 @@ export function CRMSidePanel({ conversation }: Props) {
         <h3 className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
           Atividade
         </h3>
-        {sectionsLoading ? (
+        {carregando ? (
           <Skeleton className="mt-2 h-14 w-full" />
-        ) : activities && activities.length > 0 ? (
+        ) : resumo.data && resumo.data.activities.length > 0 ? (
           <ul className="mt-2 space-y-1.5">
-            {activities.map((a) => (
+            {resumo.data.activities.map((a) => (
               <li key={a.id} className="rounded-md border border-border p-2 text-xs">
                 {/* Rótulo do vocabulário único (activity-vocabulary), nunca o
                     tipo cru: a tela e o banco divergiram justamente por manter
@@ -389,7 +318,11 @@ export function CRMSidePanel({ conversation }: Props) {
             ))}
           </ul>
         ) : (
-          <SemLista vazio="Sem atividade." erro={erro} onTentarDeNovo={() => setTentativa((n) => n + 1)} />
+          <SemLista
+            vazio="Sem atividade."
+            erro={erro}
+            onTentarDeNovo={() => void resumo.refetch()}
+          />
         )}
       </section>
     </aside>

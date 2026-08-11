@@ -2,6 +2,7 @@
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { apiClient } from "@/lib/api/client";
 import { liberarEcoLocal, marcarEcoLocal } from "@/lib/kanban/local-echo";
+import { invalidaLeitoresDeLead } from "@/lib/leads/invalidar";
 import { ApiError } from "@/lib/api/types";
 import { showApiError } from "@/components/feedback/ApiErrorToast";
 import type { Lead } from "@/lib/types/leads";
@@ -55,7 +56,7 @@ export function useMoveCard(pipelineId: string) {
       // A marca fecha com a AÇÃO, não com o relógio: daqui em diante só a folga
       // curta do último evento da cascata (ver lib/kanban/local-echo.ts).
       liberarEcoLocal(args.leadId);
-      qc.invalidateQueries({ queryKey });
+      invalidaLeitoresDeLead(qc, pipelineId);
     },
   });
 }

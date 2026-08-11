@@ -2,6 +2,7 @@
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { apiClient } from "@/lib/api/client";
 import { liberarEcoLocal, marcarEcoLocal } from "@/lib/kanban/local-echo";
+import { invalidaLeitoresDeLead } from "@/lib/leads/invalidar";
 import { showApiError } from "@/components/feedback/ApiErrorToast";
 import type { Lead } from "@/lib/types/leads";
 import type { UpdateLeadInput } from "@/lib/schemas/leads";
@@ -24,7 +25,7 @@ export function useWinLead(pipelineId: string) {
     onError: showApiError,
     onSettled: (_data, _err, { leadId }) => {
       liberarEcoLocal(leadId);
-      qc.invalidateQueries({ queryKey: ["board", pipelineId] });
+      invalidaLeitoresDeLead(qc, pipelineId);
     },
   });
 }
@@ -41,7 +42,7 @@ export function useLoseLead(pipelineId: string) {
     onError: showApiError,
     onSettled: (_data, _err, { leadId }) => {
       liberarEcoLocal(leadId);
-      qc.invalidateQueries({ queryKey: ["board", pipelineId] });
+      invalidaLeitoresDeLead(qc, pipelineId);
     },
   });
 }
@@ -62,7 +63,7 @@ export function useEditLead(pipelineId: string) {
     onError: showApiError,
     onSettled: (_data, _err, { leadId }) => {
       liberarEcoLocal(leadId);
-      qc.invalidateQueries({ queryKey: ["board", pipelineId] });
+      invalidaLeitoresDeLead(qc, pipelineId);
     },
   });
 }

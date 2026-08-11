@@ -34,6 +34,18 @@ export interface Stage {
   expected_duration_hours: number | null;
 }
 
+/**
+ * Etapa mais o topo da coluna — a menor `position_in_stage` ocupada nela.
+ *
+ * Existe para quem move um negócio SEM ter o board na tela (o painel do inbox):
+ * ir para o topo é a mesma decisão do arrasto entre colunas, e sem este número
+ * não há como calcular o `midpoint` — só chutar uma posição. `null` = coluna
+ * vazia.
+ */
+export interface StageComTopo extends Stage {
+  top_position: number | null;
+}
+
 export interface BoardData {
   pipeline: Pipeline;
   stages: Stage[];

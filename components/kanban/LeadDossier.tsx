@@ -26,6 +26,15 @@ interface Props {
   pipelineId: string;
   stageName: string;
   ownerNames?: Map<string, string | null>;
+  /**
+   * Some com o atalho "abrir conversa no inbox".
+   *
+   * Existe porque o dossiê passou a ser usado DE DENTRO do inbox (painel
+   * lateral): oferecer ali um botão que leva à conversa já aberta é um caminho
+   * que não vai a lugar nenhum — e quem clica e não sai do lugar aprende a
+   * desconfiar do botão, inclusive no board, onde ele presta.
+   */
+  esconderAtalhoDeConversa?: boolean;
 }
 
 function formatBRL(cents: number | null, currency: string | null): string {
@@ -61,6 +70,7 @@ export function LeadDossier({
   pipelineId,
   stageName,
   ownerNames,
+  esconderAtalhoDeConversa = false,
 }: Props) {
   const campos = useRef<HTMLDivElement | null>(null);
   const timeline = useLeadTimeline(open ? lead.id : null, lead.contact_id);
@@ -115,12 +125,14 @@ export function LeadDossier({
             visível que às vezes não funciona treina o SDR a desconfiar dele, e
             aí ele para de usar o atalho justamente nos casos em que presta. */}
         {conversa.data ? (
-          <Button asChild variant="primary" size="sm" className="mb-3 w-full gap-2">
-            <Link href={`/app/inbox?id=${conversa.data.id}`}>
-              <ChatCircle size={16} weight="fill" />
-              Abrir conversa no inbox
-            </Link>
-          </Button>
+          !esconderAtalhoDeConversa && (
+            <Button asChild variant="primary" size="sm" className="mb-3 w-full gap-2">
+              <Link href={`/app/inbox?id=${conversa.data.id}`}>
+                <ChatCircle size={16} weight="fill" />
+                Abrir conversa no inbox
+              </Link>
+            </Button>
+          )
         ) : (
           whatsapp && (
             <Button asChild variant="primary" size="sm" className="mb-3 w-full gap-2">
