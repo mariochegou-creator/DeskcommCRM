@@ -147,6 +147,22 @@ const PARES: Array<{
     arquivo: "lib/calls/analysis-schema.ts",
     simbolo: "CallOutcome",
   },
+  // --- Tarefas do time (0101). Os dois CHECKs nasceram com os pares, como o
+  // cabeçalho da migration promete. `kind` é lido pela UI para desenhar os
+  // botões de tipo, e é essa iteração que faz um valor novo no banco sem par no
+  // TypeScript virar botão que não existe — em vez de 23514 no INSERT.
+  {
+    tabela: "crm_tasks",
+    coluna: "kind",
+    arquivo: "lib/tarefas/tarefa.ts",
+    simbolo: "TipoDeTarefa",
+  },
+  {
+    tabela: "crm_tasks",
+    coluna: "status",
+    arquivo: "lib/tarefas/tarefa.ts",
+    simbolo: "StatusDaTarefa",
+  },
 ];
 
 /** Tira um nível de parênteses externos, se ele envolver a expressão inteira. */

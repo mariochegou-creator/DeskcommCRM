@@ -2763,6 +2763,92 @@ export type Database = {
           },
         ]
       }
+      crm_tasks: {
+        Row: {
+          assigned_to_user_id: string
+          contact_id: string | null
+          conversation_id: string | null
+          created_at: string
+          created_by_user_id: string | null
+          due_at: string
+          id: string
+          kind: string
+          lead_id: string | null
+          notes: string | null
+          organization_id: string
+          resolved_at: string | null
+          resolved_by_user_id: string | null
+          status: string
+          title: string
+          updated_at: string
+        }
+        Insert: {
+          assigned_to_user_id: string
+          contact_id?: string | null
+          conversation_id?: string | null
+          created_at?: string
+          created_by_user_id?: string | null
+          due_at: string
+          id?: string
+          kind?: string
+          lead_id?: string | null
+          notes?: string | null
+          organization_id: string
+          resolved_at?: string | null
+          resolved_by_user_id?: string | null
+          status?: string
+          title: string
+          updated_at?: string
+        }
+        Update: {
+          assigned_to_user_id?: string
+          contact_id?: string | null
+          conversation_id?: string | null
+          created_at?: string
+          created_by_user_id?: string | null
+          due_at?: string
+          id?: string
+          kind?: string
+          lead_id?: string | null
+          notes?: string | null
+          organization_id?: string
+          resolved_at?: string | null
+          resolved_by_user_id?: string | null
+          status?: string
+          title?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "crm_tasks_contact_id_fkey"
+            columns: ["contact_id"]
+            isOneToOne: false
+            referencedRelation: "contacts"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "crm_tasks_conversation_id_fkey"
+            columns: ["conversation_id"]
+            isOneToOne: false
+            referencedRelation: "conversations"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "crm_tasks_lead_id_fkey"
+            columns: ["lead_id"]
+            isOneToOne: false
+            referencedRelation: "crm_leads"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "crm_tasks_organization_id_fkey"
+            columns: ["organization_id"]
+            isOneToOne: false
+            referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       crm_stages: {
         Row: {
           agent_stage_hint: string | null

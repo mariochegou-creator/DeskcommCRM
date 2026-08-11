@@ -195,6 +195,12 @@ export type AuditAction =
   | "pipeline.restored"
   | "plan.task_status_changed"
   | "plan.morning_brief_run"
+  // Tarefas do time (0101). `task.created` guarda `delegada` no metadata: tarefa
+  // para si mesmo é lembrete, tarefa para outro é combinado entre duas pessoas —
+  // e é o segundo caso que alguém vai querer reconstituir depois ("quem pediu
+  // isso, e quando?").
+  | "task.created"
+  | "task.updated"
   | "lead.meeting_scheduled"
   | "meetings.reminders_run"
   // Sala de Reuniões (0098) — o copiloto do Meet

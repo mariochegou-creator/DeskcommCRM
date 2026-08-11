@@ -2,12 +2,13 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useTransition } from "react";
-import { Kanban, Users, UsersThree, Gear, CaretDoubleLeft, CaretDoubleRight, Inbox, ScalesSimple, Robot, Brain, PlugsConnected, ChartBar, ChartLineUp, WebhooksLogo, FlowArrow, FileText, ClockCountdown, PuzzlePiece, Signpost, Sparkle, Gauge, Target, VideoCamera } from "@/lib/ui/icons";
+import { Kanban, Users, UsersThree, Gear, CaretDoubleLeft, CaretDoubleRight, Inbox, ScalesSimple, Robot, Brain, PlugsConnected, ChartBar, ChartLineUp, WebhooksLogo, FlowArrow, FileText, ClockCountdown, PuzzlePiece, Signpost, Sparkle, Gauge, Target, VideoCamera, Checks } from "@/lib/ui/icons";
 import type { Icon as PhosphorIcon } from "@phosphor-icons/react";
 import { cn } from "@/lib/utils";
 import { toggleSidebar } from "@/app/actions/shell/toggleSidebar";
 import { usePermission } from "@/hooks/auth/AuthProvider";
 import { ConnectionHealthDot } from "@/components/connections/ConnectionHealthDot";
+import { TarefasBadge } from "@/components/tarefas/TarefasBadge";
 import { branding } from "@/lib/branding";
 
 interface NavItem {
@@ -16,6 +17,8 @@ interface NavItem {
   icon: PhosphorIcon;
   permission?: string;
   healthDot?: boolean;
+  /** Contador de tarefas vencidas (0101) — ver components/tarefas/TarefasBadge. */
+  tarefasBadge?: boolean;
 }
 
 export const NAV_ITEMS: NavItem[] = [
@@ -25,6 +28,10 @@ export const NAV_ITEMS: NavItem[] = [
   // com app/app/demo-nexo/ e lib/nexo-demo/ quando não precisar mais.
   { href: "/app/demo-nexo", label: "Demonstração", icon: Sparkle },
   { href: "/app/inbox", label: "Inbox", icon: Inbox },
+  // Tarefas (0101) logo abaixo do Inbox porque é de lá que quase toda tarefa
+  // nasce — o relógio do cabeçalho da conversa — e é aqui que se confere se o
+  // combinado aconteceu.
+  { href: "/app/tarefas", label: "Tarefas", icon: Checks, tarefasBadge: true },
   { href: "/app/leads", label: "Negócios", icon: Target },
   // Sala de Reuniões (0098) — transcrições, coaching e métricas do copiloto do
   // Meet. Perto de Negócios de propósito: reunião é o momento decisivo do funil.
@@ -181,6 +188,11 @@ export function Sidebar({ collapsed }: { collapsed: boolean }) {
               {item.healthDot && (
                 <ConnectionHealthDot
                   className={cn(collapsed ? "absolute right-1 top-1" : "ml-auto")}
+                />
+              )}
+              {item.tarefasBadge && (
+                <TarefasBadge
+                  className={cn(collapsed ? "absolute -right-0.5 -top-0.5" : "ml-auto")}
                 />
               )}
             </Link>

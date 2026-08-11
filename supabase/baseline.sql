@@ -518,6 +518,38 @@ begin
   get diagnostics v_count = row_count;
   v_counts := v_counts || jsonb_build_object('call_recordings', v_count);
 
+  -- 4e. crm_tasks (migration 0101) — `title` costuma trazer o nome da pessoa
+  --     ("Ligar para João da Silva") e `notes` é o recado do time sobre ela
+  --     ("só atende depois das 18h"). Os dois saem. O ESQUELETO fica de pé:
+  --     tipo, prazo, dono, autor e status — "havia uma ligação combinada para
+  --     terça e ela não foi feita" é fato operacional sobre o funil, mesmo
+  --     critério do 4d. Título vira rótulo em vez de null: a coluna é NOT NULL
+  --     com CHECK de tamanho, e a lista precisa mostrar alguma coisa na linha.
+  update crm_tasks set
+    title = '[tarefa anonimizada]',
+    notes = null,
+    updated_at = now()
+  where organization_id = p_organization_id
+    and (
+      contact_id = p_contact_id
+      or conversation_id in (
+        select id from conversations
+          where contact_id = p_contact_id and organization_id = p_organization_id
+      )
+      or lead_id in (
+        select id from crm_leads
+          where contact_id = p_contact_id and organization_id = p_organization_id
+      )
+      or lead_id in (
+        select lead_id from crm_lead_links
+          where target_kind = 'contact'
+            and target_id = p_contact_id
+            and organization_id = p_organization_id
+      )
+    );
+  get diagnostics v_count = row_count;
+  v_counts := v_counts || jsonb_build_object('tasks', v_count);
+
   -- 5. crm_leads — strip title/description/custom_fields/source_metadata/tags but PRESERVE pipeline/stage/value
   update crm_leads set
     title = v_anon_label,
@@ -9123,3 +9155,111 @@ end $$;
 insert into storage.buckets (id, name, public, file_size_limit)
 values ('call-recordings', 'call-recordings', false, 104857600)
 on conflict (id) do update set file_size_limit = excluded.file_size_limit;
+
+-- ---- tarefas do lead (migration 0101) ----
+-- Ver supabase/migrations/20260811200000_0101_tarefas_do_lead.sql para o porquê
+-- completo (sucede o snooze da 0062; prazo é INSTANTE, oposto deliberado do
+-- date civil de plan_tasks; o alerta É a linha pendente vencida, sem tabela de
+-- notificação paralela). A fn_lgpd_cascade_redact_contact vigente, definida no
+-- topo deste arquivo, já carrega o bloco 4e de tarefas.
+
+create table if not exists public.crm_tasks (
+  id uuid primary key default gen_random_uuid(),
+  organization_id uuid not null references public.organizations(id) on delete cascade,
+  title text not null,
+  kind text not null default 'outro',
+  notes text,
+  due_at timestamptz not null,
+  assigned_to_user_id uuid not null references auth.users(id) on delete cascade,
+  created_by_user_id uuid references auth.users(id) on delete set null,
+  conversation_id uuid references public.conversations(id) on delete set null,
+  contact_id uuid references public.contacts(id) on delete set null,
+  lead_id uuid references public.crm_leads(id) on delete set null,
+  status text not null default 'pending',
+  resolved_at timestamptz,
+  resolved_by_user_id uuid references auth.users(id) on delete set null,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now()
+);
+
+comment on table public.crm_tasks is
+  'Tarefas do time presas a um lead/conversa (0101): o que fazer, para quem, ate quando, com a informacao junto. Sucede o snooze da 0062 - aquele adia a conversa, esta cria trabalho com dono e hora. O alerta do CRM E esta linha pendente e vencida (assigned_to_user_id e created_by_user_id veem os dois), sem tabela de notificacao paralela.';
+
+comment on column public.crm_tasks.due_at is
+  'Instante do vencimento. timestamptz e nao date (oposto de plan_tasks.due_date): "ligar 2h antes da R1" e relogio, nao calendario.';
+
+comment on column public.crm_tasks.notes is
+  'Texto livre do time sobre o lead (o recado para o SDR/closer). PII: zerado pela cascata LGPD.';
+
+alter table public.crm_tasks drop constraint if exists crm_tasks_kind_check;
+alter table public.crm_tasks add constraint crm_tasks_kind_check
+  check (kind = any (array['ligar', 'mensagem', 'nota', 'reuniao', 'outro']::text[]));
+
+alter table public.crm_tasks drop constraint if exists crm_tasks_status_check;
+alter table public.crm_tasks add constraint crm_tasks_status_check
+  check (status = any (array['pending', 'done', 'canceled']::text[]));
+
+alter table public.crm_tasks drop constraint if exists crm_tasks_resolucao_datada;
+alter table public.crm_tasks add constraint crm_tasks_resolucao_datada check (
+  (status = 'pending' and resolved_at is null)
+  or (status <> 'pending' and resolved_at is not null)
+);
+
+alter table public.crm_tasks drop constraint if exists crm_tasks_title_check;
+alter table public.crm_tasks add constraint crm_tasks_title_check
+  check (length(btrim(title)) between 1 and 200);
+
+alter table public.crm_tasks drop constraint if exists crm_tasks_notes_check;
+alter table public.crm_tasks add constraint crm_tasks_notes_check
+  check (notes is null or length(notes) <= 2000);
+
+create index if not exists idx_crm_tasks_dono_pendentes
+  on public.crm_tasks (organization_id, assigned_to_user_id, due_at)
+  where status = 'pending';
+
+create index if not exists idx_crm_tasks_autor_pendentes
+  on public.crm_tasks (organization_id, created_by_user_id, due_at)
+  where status = 'pending';
+
+create index if not exists idx_crm_tasks_conversa
+  on public.crm_tasks (conversation_id, due_at)
+  where conversation_id is not null;
+
+alter table public.crm_tasks enable row level security;
+
+drop policy if exists tenant_isolation_crm_tasks_all on public.crm_tasks;
+create policy tenant_isolation_crm_tasks_all on public.crm_tasks
+  for all
+  using (organization_id in (select fn_user_org_ids()))
+  with check (organization_id in (select fn_user_org_ids()));
+
+create or replace function public.fn_carimba_crm_task()
+  returns trigger
+  language plpgsql
+  set search_path to 'public', 'pg_temp'
+as $function$
+begin
+  if tg_op = 'INSERT' then
+    new.created_at := now();
+  end if;
+  new.updated_at := now();
+  return new;
+end$function$;
+
+drop trigger if exists trg_crm_tasks_carimbo on public.crm_tasks;
+create trigger trg_crm_tasks_carimbo
+  before insert or update on public.crm_tasks
+  for each row
+  execute function public.fn_carimba_crm_task();
+
+do $$
+begin
+  if exists (
+    select 1 from pg_publication_tables
+     where pubname = 'supabase_realtime'
+       and schemaname = 'public'
+       and tablename = 'crm_tasks'
+  ) then
+    execute 'alter publication supabase_realtime drop table public.crm_tasks';
+  end if;
+end $$;

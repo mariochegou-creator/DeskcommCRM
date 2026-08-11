@@ -13,6 +13,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { useAgendarReuniao, type RespostaDoAgendamento } from "@/hooks/kanban/useAgendarReuniao";
+import { useCriarTarefa } from "@/hooks/tarefas/useTarefas";
 import {
   dataCivilBahia,
   formatarReuniao,
@@ -118,7 +119,7 @@ export function AgendarReuniaoDialog({
         </DialogHeader>
 
         {resultado ? (
-          <Resultado resposta={resultado} />
+          <Resultado resposta={resultado} leadId={leadId} leadTitulo={leadTitulo} />
         ) : (
           <div className="grid gap-4">
             {jaMarcada && (
@@ -198,9 +199,30 @@ export function AgendarReuniaoDialog({
   );
 }
 
+/** As antecedências oferecidas na hora de marcar. Só o que se faz de véspera. */
+const PREPARACAO: Array<{ id: string; rotulo: string; horas: number }> = [
+  { id: "5h", rotulo: "Ligar 5h antes", horas: 5 },
+  { id: "2h", rotulo: "Ligar 2h antes", horas: 2 },
+];
+
 /** O que realmente aconteceu — WhatsApp e agenda, cada um com o seu recado. */
-function Resultado({ resposta }: { resposta: RespostaDoAgendamento }) {
+function Resultado({
+  resposta,
+  leadId,
+  leadTitulo,
+}: {
+  resposta: RespostaDoAgendamento;
+  leadId: string;
+  leadTitulo: string;
+}) {
   const q = formatarReuniao(new Date(resposta.reuniao.em));
+  const emReuniao = new Date(resposta.reuniao.em);
+  const criar = useCriarTarefa();
+  const [criadas, setCriadas] = useState<string[]>([]);
+  // Instante congelado: relógio lido a cada render faria um botão desabilitar
+  // sozinho no meio da leitura (e a regra de pureza do React proíbe).
+  const [agora] = useState(() => new Date());
+
   return (
     <div className="grid gap-3 text-sm">
       <p className="font-medium">
@@ -243,6 +265,54 @@ function Resultado({ resposta }: { resposta: RespostaDoAgendamento }) {
           </a>
         </p>
       )}
+
+      {/* A preparação nasce AQUI, e não numa segunda visita ao card: o momento
+          em que se marca a reunião é o único em que a pessoa já sabe o horário
+          e ainda está pensando nele. Os lembretes automáticos são do LEAD; isto
+          é o lembrete de QUEM VAI ATENDER — as duas coisas se confundiam, e a
+          segunda simplesmente não existia. Cria para si mesmo; delegar e deixar
+          recado é no relógio da conversa (dialog de tarefas). */}
+      <div className="grid gap-2 border-t border-border pt-3">
+        <p className="text-xs font-medium text-text">Sua preparação</p>
+        <div className="flex flex-wrap gap-2">
+          {PREPARACAO.map((p) => {
+            const em = new Date(emReuniao.getTime() - p.horas * 60 * 60 * 1000);
+            const passou = em.getTime() <= agora.getTime();
+            const feita = criadas.includes(p.id);
+            return (
+              <Button
+                key={p.id}
+                type="button"
+                size="sm"
+                variant={feita ? "secondary" : "outline"}
+                // Antecedência que já passou não vira botão morto na tela: ela
+                // fica desabilitada dizendo o porquê, senão o clique criaria
+                // uma tarefa nascida atrasada.
+                disabled={feita || passou || criar.isPending}
+                title={passou ? "Esse horário já passou" : undefined}
+                onClick={() =>
+                  criar.mutate(
+                    {
+                      title: `${p.rotulo.replace(" antes", "")} — ${leadTitulo}`,
+                      kind: "ligar",
+                      due_at: em.toISOString(),
+                      lead_id: leadId,
+                    },
+                    { onSuccess: () => setCriadas((c) => [...c, p.id]) },
+                  )
+                }
+              >
+                {feita ? `${p.rotulo} ✓` : p.rotulo}
+              </Button>
+            );
+          })}
+        </div>
+        <p className="text-xs text-muted-foreground">
+          {criadas.length > 0
+            ? "Aparecem em Tarefas e avisam você quando a hora chegar."
+            : "Vira tarefa sua, com aviso no CRM na hora certa."}
+        </p>
+      </div>
     </div>
   );
 }

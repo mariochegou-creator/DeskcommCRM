@@ -104,6 +104,8 @@ export function ConversationHeader({ conversation }: Props) {
           <SnoozeButton
             conversationId={conversation.id}
             snoozeUntil={conversation.snooze_until ?? null}
+            contactId={c?.id ?? null}
+            nomeDoLead={displayName}
           />
         )}
         {status !== "closed" && status !== "archived" && (

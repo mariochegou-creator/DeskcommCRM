@@ -14,6 +14,7 @@ import { DonutChart } from "@/components/charts/DonutChart";
 import { EmptyPipeline } from "@/components/empty";
 import { ProspectingSection } from "./ProspectingSection";
 import { SixtyDayPlanSection } from "./SixtyDayPlanSection";
+import { TarefasDeHojeSection } from "./TarefasDeHojeSection";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -123,6 +124,11 @@ export function DashboardClient({
           (dados próprios) e fora do regime do seletor de período — as janelas
           do plano são fixas (hoje/semana/60 dias), o dropdown não as governa. */}
       <SixtyDayPlanSection prospectingPipelineId={prospectingPipelineId} now={now} />
+
+      {/* Logo abaixo do plano, e antes do funil, pela mesma lógica: o combinado
+          com hora marcada é mais urgente que a fotografia do funil. Some sozinha
+          nos dias em que não há nada vencendo. */}
+      <TarefasDeHojeSection now={now} />
 
       {board.isLoading || !metrics ? (
         <DashboardSkeleton />

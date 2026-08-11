@@ -28,11 +28,14 @@ import { useVisibleNavItems, isNavItemActive } from "./Sidebar";
  * O item ativo repete o quadrado ciano do rail, para o "você está aqui" ser o
  * mesmo desenho nos dois tamanhos de tela.
  */
+// Tarefas (0101) entrou no lugar de Contatos: no celular o que se faz é
+// executar o combinado do dia — a busca de um contato específico continua a um
+// toque, dentro do "Mais". Continuam sendo QUATRO pela razão acima.
 const PRIMARY_HREFS = [
   "/app/dashboard",
   "/app/inbox",
+  "/app/tarefas",
   "/app/leads",
-  "/app/contacts",
 ] as const;
 
 export function MobileNav() {
