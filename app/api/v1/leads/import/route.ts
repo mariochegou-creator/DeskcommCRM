@@ -24,6 +24,7 @@ import { type NextRequest } from "next/server";
 import { ApiError } from "@/lib/api/types";
 import { fail, ok } from "@/lib/api/wrappers";
 import { requireRole } from "@/lib/auth/require-role";
+import { contatoPorTelefone } from "@/lib/contacts/contato-por-telefone";
 import { createClient } from "@/lib/supabase/server";
 import { normalizePhoneBR } from "@/lib/webhooks/inbound";
 import { importLeadsSchema, type ImportRow } from "@/lib/schemas/lead-import";
@@ -111,24 +112,23 @@ export async function POST(req: NextRequest): Promise<Response> {
     try {
       const phone = normalizePhoneBR(row.telefone ?? null);
 
-      // Contato: upsert por telefone, só linha ativa (contato mesclado não
-      // volta — mesmo predicado do webhook de captação).
+      // Contato: acha ou cria por telefone (regra compartilhada com o
+      // formulário de novo lead do quadro — lib/contacts/contato-por-telefone).
       let contactId: string | undefined;
       if (phone) {
-        const selectAtivoPorTelefone = () =>
-          supabase
-            .from("contacts")
-            .select("id")
-            .eq("organization_id", org.orgId)
-            .eq("phone_number", phone)
-            .is("is_merged_into", null)
-            .maybeSingle();
+        const contato = await contatoPorTelefone(supabase, {
+          organizationId: org.orgId,
+          createdByUserId: user.id,
+          phone,
+          name: row.dono?.trim() || row.negocio,
+          email: row.email ?? null,
+          source: "import",
+          sourceMetadata,
+          requestId,
+        });
+        contactId = contato.id;
 
-        const { data: existente, error: selErr } = await selectAtivoPorTelefone();
-        if (selErr) throw new ApiError(500, "internal_error", undefined, requestId, selErr.message);
-
-        if (existente) {
-          contactId = existente.id as string;
+        if (contato.jaExistia) {
           // Dedupe: mesmo arquivo subido de novo → o lead já existe.
           // Mas se ESTA subida traz dado que o lead não tem, ele entra:
           // é o caminho de enriquecer uma leva que subiu incompleta.
@@ -179,32 +179,6 @@ export async function POST(req: NextRequest): Promise<Response> {
               motivo: "Já existe lead deste negócio para este telefone.",
             });
             continue;
-          }
-        } else {
-          const { data: criado, error: insErr } = await supabase
-            .from("contacts")
-            .insert({
-              organization_id: org.orgId,
-              created_by_user_id: user.id,
-              name: row.dono?.trim() || row.negocio,
-              phone_number: phone,
-              email: row.email ?? null,
-              source: "import",
-              source_metadata: sourceMetadata,
-            })
-            .select("id")
-            .maybeSingle();
-          if (insErr) {
-            if (insErr.code === "23505") {
-              // Corrida com outro lote/aba: o índice único por telefone
-              // derrubou este insert — reusa o vencedor.
-              const { data: vencedor } = await selectAtivoPorTelefone();
-              contactId = (vencedor?.id as string | undefined) ?? undefined;
-            } else {
-              throw new ApiError(500, "internal_error", undefined, requestId, insErr.message);
-            }
-          } else {
-            contactId = (criado?.id as string | undefined) ?? undefined;
           }
         }
       }

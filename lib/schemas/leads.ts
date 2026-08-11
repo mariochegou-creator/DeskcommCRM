@@ -65,6 +65,19 @@ export const createLeadSchema = z.object({
   title: z.string().min(2).max(200),
   description: z.string().max(2000).nullable().optional(),
   contact_id: z.string().uuid().nullable().optional(),
+  /**
+   * O WhatsApp de quem se vai falar, como a pessoa digitou.
+   *
+   * Quem cria um lead à mão tem o NÚMERO, não o `contact_id` — e não tem como
+   * saber se aquele número já é contato da organização. Então o número entra
+   * por aqui e o servidor resolve: acha o contato existente ou cria um novo, e
+   * é ELE que vira o `contact_id` do lead. Sem isso o card nascia sem botão de
+   * conversa, que é um card sem serventia num CRM de prospecção.
+   *
+   * Ignorado quando `contact_id` já vem preenchido — quem sabe o contato não
+   * precisa que a gente adivinhe pelo telefone.
+   */
+  contact_phone: z.string().trim().max(30).nullable().optional(),
   value_cents: z.coerce.number().int().nonnegative().nullable().optional(),
   currency: z.string().length(3).default("BRL"),
   owner_user_id: z.string().uuid().nullable().optional(),

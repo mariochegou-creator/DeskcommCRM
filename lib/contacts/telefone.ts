@@ -1,4 +1,37 @@
 /**
+ * O telefone em E.164 (`+5573991346237`) — a forma que a coluna `phone_number`
+ * guarda e a única que o WhatsApp entende.
+ *
+ * Mora aqui, e não no parser do webhook, porque agora QUEM DIGITA também passa
+ * por esta regra: o formulário de novo lead do quadro precisa do mesmo
+ * entendimento de "(73) 99134-6237" que a importação de lista tem — dois
+ * entendimentos diferentes fariam o mesmo número virar dois contatos. Este
+ * módulo é puro (roda no navegador); `normalizePhoneBR`, em lib/webhooks, é
+ * o mesmo código sob o nome antigo.
+ *
+ * `null` quando não dá para confiar: sem DDD não se sabe a cidade, e acima de
+ * 13 dígitos é digitação errada.
+ */
+export function telefoneE164(raw: string | null | undefined): string | null {
+  if (typeof raw !== "string" || !raw.trim()) return null;
+
+  const digitos = raw.replace(/\D/g, "");
+
+  if (raw.trim().startsWith("+")) {
+    return /^\d{8,15}$/.test(digitos) ? `+${digitos}` : null;
+  }
+  if (digitos.length === 12 || digitos.length === 13) {
+    // 55 + DDD + número
+    return digitos.startsWith("55") ? `+${digitos}` : null;
+  }
+  if (digitos.length === 10 || digitos.length === 11) {
+    // DDD + número (fixo ou celular) — assume Brasil.
+    return `+55${digitos}`;
+  }
+  return null;
+}
+
+/**
  * Link de discagem (`tel:`) e formatação de exibição do telefone do contato.
  *
  * A regra aqui é DELIBERADAMENTE mais permissiva que a do `whatsappLink`, e a

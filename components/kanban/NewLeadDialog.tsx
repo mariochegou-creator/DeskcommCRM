@@ -25,10 +25,20 @@ import { useCreateLead } from "@/hooks/kanban/useCreateLead";
 import type { Stage } from "@/lib/kanban/types";
 import { createLeadSchema, type CreateLeadInput } from "@/lib/schemas/leads";
 import { parseReaisToCents } from "@/lib/money";
+import { telefoneE164 } from "@/lib/contacts/telefone";
+import { whatsappLink } from "@/lib/contacts/whatsapp";
 import { EcoDoValor } from "./EcoDoValor";
+import { EcoDoWhatsApp } from "./EcoDoWhatsApp";
 
 interface FormShape {
   title: string;
+  /**
+   * OBRIGATÓRIO, e não é excesso de zelo: um lead que entra no funil sem
+   * WhatsApp é um card que ninguém consegue trabalhar — sem botão de conversa,
+   * sem cadência, sem primeiro toque. Melhor barrar no formulário do que
+   * descobrir na hora de chamar.
+   */
+  whatsapp: string;
   description: string;
   stage_id: string;
   valueReais: string;
@@ -79,6 +89,7 @@ export function NewLeadDialog({
   const form = useForm<FormShape>({
     defaultValues: {
       title: "",
+      whatsapp: "",
       description: "",
       stage_id: initialStage,
       valueReais: "",
@@ -95,6 +106,20 @@ export function NewLeadDialog({
   }, [initialStage, form]);
 
   async function onSubmit(values: FormShape) {
+    // O número é conferido AQUI, antes de sair do navegador, porque a resposta
+    // do servidor chegaria como um toast solto — e a pessoa já teria perdido o
+    // contexto de qual campo consertar. A mesma regra roda lá também: o
+    // formulário não é a única porta de criação de lead.
+    const whatsapp = telefoneE164(values.whatsapp);
+    if (!whatsapp || !whatsappLink(whatsapp)) {
+      form.setError("whatsapp", {
+        message: values.whatsapp.trim()
+          ? "Número não abre WhatsApp. Confira o DDD — ex: (73) 99134-6237."
+          : "Sem WhatsApp não dá pra falar com o lead.",
+      });
+      return;
+    }
+
     const tags = values.tagsRaw
       .split(",")
       .map((s) => s.trim())
@@ -114,6 +139,7 @@ export function NewLeadDialog({
       pipeline_id: pipelineId,
       stage_id: values.stage_id,
       title: values.title.trim(),
+      contact_phone: whatsapp,
       currency: "BRL",
       source: "manual",
       tags,
@@ -134,6 +160,7 @@ export function NewLeadDialog({
       toast.success("Lead criado");
       form.reset({
         title: "",
+        whatsapp: "",
         description: "",
         stage_id: initialStage,
         valueReais: "",
@@ -163,6 +190,24 @@ export function NewLeadDialog({
               placeholder={nomePlaceholder}
               {...form.register("title", { required: true, minLength: 2 })}
             />
+          </div>
+
+          <div className="space-y-2">
+            <Label htmlFor="whatsapp">WhatsApp</Label>
+            <Input
+              id="whatsapp"
+              type="tel"
+              inputMode="tel"
+              autoComplete="tel"
+              placeholder="(73) 99134-6237"
+              aria-required="true"
+              {...form.register("whatsapp")}
+            />
+            {form.formState.errors.whatsapp ? (
+              <p className="text-xs text-error-fg">{form.formState.errors.whatsapp.message}</p>
+            ) : (
+              <EcoDoWhatsApp control={form.control} />
+            )}
           </div>
 
           <div className="space-y-2">

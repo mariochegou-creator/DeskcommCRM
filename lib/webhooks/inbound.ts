@@ -4,6 +4,8 @@
  */
 import { createHmac, timingSafeEqual } from "node:crypto";
 
+import { telefoneE164 } from "@/lib/contacts/telefone";
+
 export interface FieldMap {
   name?: string[];
   phone?: string[];
@@ -24,22 +26,17 @@ export interface MappedLead {
   source_metadata: Record<string, string>;
 }
 
-/** Normaliza telefone BR para E.164. ponytail: heurística BR-only (público-alvo); internacional entra quando houver demanda. */
+/**
+ * Normaliza telefone BR para E.164. ponytail: heurística BR-only (público-alvo);
+ * internacional entra quando houver demanda.
+ *
+ * A regra em si mudou de casa para `lib/contacts/telefone.ts` quando o
+ * formulário de novo lead (código de navegador) passou a precisar dela — este
+ * arquivo importa `node:crypto` e não pode ser importado de lá. O nome fica
+ * porque é por ele que o webhook e a importação chamam.
+ */
 export function normalizePhoneBR(raw: unknown): string | null {
-  if (typeof raw !== "string" || !raw.trim()) return null;
-  const digits = raw.replace(/\D/g, "");
-  if (raw.trim().startsWith("+")) {
-    return /^\d{8,15}$/.test(digits) ? `+${digits}` : null;
-  }
-  if (digits.length === 12 || digits.length === 13) {
-    // 55 + DDD + numero
-    return digits.startsWith("55") ? `+${digits}` : null;
-  }
-  if (digits.length === 10 || digits.length === 11) {
-    // DDD + numero (fixo ou celular)
-    return `+55${digits}`;
-  }
-  return null;
+  return typeof raw === "string" ? telefoneE164(raw) : null;
 }
 
 function firstMatch(payload: Record<string, unknown>, aliases: string[]): { key: string; value: string } | null {
