@@ -18,8 +18,24 @@ import { moveLeadSchema, validateRequest } from "@/lib/schemas";
 import { createClient } from "@/lib/supabase/server";
 import { emitLeadActivity, stageChangeReason } from "@/lib/leads/activity-emitter";
 import { registraFalhaDeAtividade } from "@/lib/leads/activity-write-failure";
+import { etapaMarcaContatoFeito } from "@/lib/leads/etapa-de-contato";
+import { resolveOwnerPatch } from "@/lib/leads/owner-patch";
 
 export const dynamic = "force-dynamic";
+
+/**
+ * O trio de posse (0070) + o carimbo, para quem assume o negócio ao movê-lo.
+ *
+ * A regra continua sendo a de `owner-patch.ts` — montar `owner_kind` na mão aqui
+ * é exatamente o drift que aquele helper existe para impedir.
+ */
+function donoHumano(userId: string, agora: string) {
+  const resultado = resolveOwnerPatch({ owner_user_id: userId });
+  // Com um dono humano nomeado o helper sempre devolve patch; a guarda é para o
+  // compilador, não para o runtime.
+  if (!resultado.ok || !resultado.patch) return null;
+  return { ...resultado.patch, assigned_at: agora };
+}
 
 export async function POST(
   req: NextRequest,
@@ -83,13 +99,35 @@ export async function POST(
     );
   }
 
+  // QUEM ARRASTA PARA «CONTATADO» É QUEM CONTATOU — e passa a ser o responsável.
+  //
+  // Sem isto, a coluna «Contatado» enche de card sem dono e o funil não responde
+  // "quem falou com essa empresa?" — a informação existia no momento do arrasto
+  // e se perdia ali.
+  //
+  // Duas guardas, as duas deliberadas:
+  //  · só quando o negócio NÃO tem dono. Card de outra pessoa não muda de mão
+  //    porque alguém organizou o quadro — reatribuir é ação explícita (o menu do
+  //    card, ou o bulk assign, que é ≥manager de propósito).
+  //  · dono AGENTE também conta como dono: tomar o negócio da IA aqui desligaria
+  //    a cadência automática em silêncio.
+  //
+  // Vai no MESMO update do estágio, não num segundo: uma escrita, um
+  // `updated_at`, e nenhum estado intermediário em que o card mudou de coluna e
+  // ficou sem dono se a segunda falhasse.
+  const agora = new Date().toISOString();
+  const assumeODono =
+    !lead.owner_user_id && !lead.owner_agent_id && etapaMarcaContatoFeito(stage);
+  const patchDeDono = assumeODono ? donoHumano(user.id, agora) : null;
+
   // OCC update (Pattern B / Spec 09 §7.2).
   const { data: updated, error: updErr } = await supabase
     .from("crm_leads")
     .update({
       stage_id: input.stage_id,
       position_in_stage: input.position_in_stage,
-      updated_at: new Date().toISOString(),
+      updated_at: agora,
+      ...(patchDeDono ?? {}),
     })
     .eq("id", leadId)
     .eq("updated_at", input.expected_updated_at)
@@ -165,6 +203,34 @@ export async function POST(
     });
   }
 
+  // DUAS linhas na timeline, não uma: mudar de etapa e ganhar dono são dois
+  // acontecimentos, e o segundo é o que o dossiê precisa responder depois
+  // ("desde quando é seu, e por quê"). O `reason` nomeia o campo e a etapa —
+  // nunca o nome da pessoa (§9: sem PII nova em reason).
+  if (patchDeDono) {
+    const atividadeDeDono = await emitLeadActivity(supabase, {
+      organizationId: lead.organization_id,
+      leadId,
+      contactId: (lead as { contact_id?: string | null }).contact_id ?? null,
+      type: "lead_edited",
+      sourceModule: "crm",
+      sourceId: leadId,
+      actor: { type: "user", id: user.id },
+      reason: `Passou a ser o responsável ao mover para «${stage.name}»`,
+      payload: { fields: ["owner_user_id"], motivo: "move_para_etapa_de_contato" },
+    });
+    if (!atividadeDeDono.ok) {
+      await registraFalhaDeAtividade(supabase, {
+        organizationId: lead.organization_id,
+        leadId,
+        tipo: "lead_edited",
+        origem: "leads/[id]/move",
+        erro: atividadeDeDono.error,
+        requestId,
+      });
+    }
+  }
+
   // Emit domain event (fire-and-forget; trigger NEVER does HTTP — workers do).
   await supabase
     .rpc("emit_event", {
@@ -195,6 +261,7 @@ export async function POST(
       from_stage_id: lead.stage_id,
       to_stage_id: input.stage_id,
       position_in_stage: input.position_in_stage,
+      ...(patchDeDono ? { auto_assigned_owner_user_id: user.id } : {}),
     },
   });
 
