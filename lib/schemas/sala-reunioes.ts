@@ -51,6 +51,31 @@ export const patchMeetingSchema = z
   .refine((v) => Object.keys(v).length > 0, { message: "Nada para atualizar." });
 export type PatchMeetingInput = z.infer<typeof patchMeetingSchema>;
 
+/**
+ * Janela das próximas reuniões. 21 dias cobre folgado o horizonte de um closer
+ * (a operação marca para a semana, no máximo para a seguinte) sem virar uma
+ * lista que ninguém rola.
+ */
+export const proximasReunioesQuerySchema = z.object({
+  dias: z.coerce.number().int().min(1).max(90).default(21),
+});
+
+/**
+ * Marcar/desmarcar um item do preparo. `item` é validado contra a lista de
+ * `lib/sala-reunioes/preparo.ts` DENTRO da rota — só lá se sabe o tipo da
+ * reunião, e item de R2 não vale numa R1.
+ */
+export const toggleItemPreparoSchema = z.object({
+  item: z
+    .string()
+    .trim()
+    .min(1)
+    .max(40)
+    .regex(/^[a-z_]+$/, "Identificador inválido."),
+  feito: z.boolean(),
+});
+export type ToggleItemPreparoInput = z.infer<typeof toggleItemPreparoSchema>;
+
 export const listMeetingsQuerySchema = z.object({
   limit: z.coerce.number().int().min(1).max(100).default(50),
   status: z.string().optional(),

@@ -43,6 +43,14 @@ export const ROTULO_DO_TIPO: Record<TipoDeReuniao, string> = {
 
 /** Quais lembretes já saíram. Carimbo ISO do envio; ausente = ainda não saiu. */
 export interface AvisosDaReuniao {
+  /**
+   * A confirmação que sai NO ATO de marcar (a rota `POST .../meeting`), não o
+   * cron. Carimbada só quando o WhatsApp aceitou: é o que deixa o preparo da
+   * Sala de Reuniões dizer "o convite saiu" sem adivinhar. Reunião marcada
+   * antes de 11/08/2026 não tem este carimbo — ausência ali significa "não
+   * consta", não "não saiu".
+   */
+  confirmacao?: string;
   vespera?: string;
   final?: string;
 }
@@ -63,6 +71,12 @@ export interface Reuniao {
   /** Evento criado no Google Agenda, quando a integração está ligada. */
   gcal_event_id?: string | null;
   gcal_link?: string | null;
+  /**
+   * Os itens do preparo marcados à mão na Sala de Reuniões — `id → ISO de
+   * quando foi marcado`. Quem define os ids é `lib/sala-reunioes/preparo.ts`;
+   * aqui é só armazenamento, para o cron não precisar conhecer a lista.
+   */
+  checklist?: Record<string, string>;
 }
 
 const DATA_RE = /^\d{4}-\d{2}-\d{2}$/;
@@ -156,7 +170,15 @@ export function mesmoDiaCivil(a: Date, b: Date): boolean {
   );
 }
 
-/** Lê `custom_fields.reuniao` sem confiar no formato (jsonb → unknown). */
+/**
+ * Lê `custom_fields.reuniao` sem confiar no formato (jsonb → unknown).
+ *
+ * ⚠️ ESTA FUNÇÃO É A PENEIRA DE QUEM REGRAVA. O cron de lembretes lê com ela e
+ * regrava `{ ...reuniao, avisos }` — então campo que ela NÃO copia é campo que
+ * o próximo lembrete APAGA em silêncio. Foi por isso que `checklist` entrou
+ * aqui junto com o resto: sem esta linha, marcar um item do preparo duraria até
+ * as 18h da véspera.
+ */
 export function lerReuniao(customFields: unknown): Reuniao | null {
   if (!customFields || typeof customFields !== "object" || Array.isArray(customFields)) {
     return null;
@@ -171,8 +193,16 @@ export function lerReuniao(customFields: unknown): Reuniao | null {
   const avisos: AvisosDaReuniao = {};
   if (avisosRaw && typeof avisosRaw === "object" && !Array.isArray(avisosRaw)) {
     const a = avisosRaw as Record<string, unknown>;
+    if (typeof a.confirmacao === "string") avisos.confirmacao = a.confirmacao;
     if (typeof a.vespera === "string") avisos.vespera = a.vespera;
     if (typeof a.final === "string") avisos.final = a.final;
+  }
+  const checklistRaw = obj.checklist;
+  const checklist: Record<string, string> = {};
+  if (checklistRaw && typeof checklistRaw === "object" && !Array.isArray(checklistRaw)) {
+    for (const [chave, valor] of Object.entries(checklistRaw as Record<string, unknown>)) {
+      if (typeof valor === "string") checklist[chave] = valor;
+    }
   }
   return {
     tipo,
@@ -184,6 +214,7 @@ export function lerReuniao(customFields: unknown): Reuniao | null {
     avisos,
     gcal_event_id: typeof obj.gcal_event_id === "string" ? obj.gcal_event_id : null,
     gcal_link: typeof obj.gcal_link === "string" ? obj.gcal_link : null,
+    checklist,
   };
 }
 

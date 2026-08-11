@@ -215,6 +215,26 @@ export async function POST(
     requestId,
   });
 
+  // Carimba a confirmação DENTRO do próprio agendamento. É o que deixa o
+  // preparo da Sala de Reuniões afirmar "o convite saiu" em vez de supor a
+  // partir de `criada_em` — marcar e enviar são dois fatos, e o segundo falha
+  // sozinho (WAHA fora do ar). Só carimba quando saiu: carimbo de envio que
+  // falhou mente pior do que carimbo nenhum.
+  if (envio.ok) {
+    reuniao.avisos = { ...(reuniao.avisos ?? {}), confirmacao: new Date().toISOString() };
+    const { error: carimboErr } = await supabase
+      .from("crm_leads")
+      .update({ custom_fields: { ...camposAtuais, reuniao } })
+      .eq("id", leadId);
+    if (carimboErr) {
+      logger.warn("[meeting] confirmação enviada, carimbo não gravado", {
+        leadId,
+        error: carimboErr.message,
+        requestId,
+      });
+    }
+  }
+
   const atividade = await emitLeadActivity(supabase, {
     organizationId: lead.organization_id,
     leadId,

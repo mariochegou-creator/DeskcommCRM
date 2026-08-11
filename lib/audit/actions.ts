@@ -206,6 +206,10 @@ export type AuditAction =
   // Sala de Reuniões (0098) — o copiloto do Meet
   | "meeting.started"
   | "meeting.finished"
+  // O preparo da reunião marcada: quem marcou "APN montada" e quando. É o único
+  // rastro de um item que vive em jsonb (custom_fields.reuniao.checklist) e não
+  // tem timeline própria.
+  | "meeting.prep_item_toggled"
   // Contraparte do `conversation.closed`: fechar deixava de ser caminho sem
   // volta pela UI.
   | "conversation.reopened"
