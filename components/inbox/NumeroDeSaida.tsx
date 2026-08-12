@@ -23,9 +23,17 @@ interface Props {
   onIrPara: (conversationId: string) => void;
 }
 
-/** Como uma pessoa reconhece o número; `waha_session_name` (`org_…`) nunca aparece. */
+/**
+ * Como uma pessoa reconhece o número; `waha_session_name` (`org_…`) nunca
+ * aparece — nome interno não diz a ninguém por onde a mensagem vai sair.
+ *
+ * `display_name` vem PRIMEIRO (mesma ordem do seletor de filtro): o mesmo
+ * WhatsApp pode estar conectado em duas sessões, e aí só o rótulo escrito à mão
+ * distingue uma da outra — o telefone é idêntico nas duas, quando não está nulo
+ * (a unique de `phone_number` deixa a segunda sessão sem número).
+ */
 export function rotuloDoNumero(c: ChannelSession): string {
-  return formatarTelefone(c.phone_number) ?? c.display_name?.trim() ?? "Número sem nome";
+  return c.display_name?.trim() || formatarTelefone(c.phone_number) || "Número sem nome";
 }
 
 /**
