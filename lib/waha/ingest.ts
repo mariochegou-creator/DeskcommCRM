@@ -15,6 +15,7 @@ import { audit } from "@/lib/audit";
 import type { createAdminClient } from "@/lib/supabase/admin";
 import { ackToStatus } from "@/lib/types/messaging";
 import { bareWaMessageId } from "@/lib/waha/message-id";
+import { ehPedidoDeOptOut } from "@/lib/waha/opt-out";
 
 type Admin = ReturnType<typeof createAdminClient>;
 
@@ -123,7 +124,13 @@ export function parseChatIdComAlt(chatId: string, p: WahaPayload): ChatIdentity 
   return parsed;
 }
 
-const STOP_RX = /\b(STOP|PARAR|SAIR|UNSUBSCRIBE)\b/i;
+// A leitura do opt-out mora em `lib/waha/opt-out.ts` desde 12/08/2026. Aqui
+// havia uma busca de palavra solta (`/\b(STOP|PARAR|SAIR|UNSUBSCRIBE)\b/i`) que
+// casava a palavra no meio de qualquer frase — e como o bloqueio é
+// IRREVERSÍVEL, cada engano apagava um lead vivo em silêncio. Dois aconteceram:
+// a resposta comercial que dizia "antes de sair de casa" e a despedida da nossa
+// própria cadência ("vou parar de te escrever"), que voltou como recebida e
+// bloqueou o contato com o nosso texto. Ver o cabeçalho daquele módulo.
 
 export function verifyHmacSha512(
   rawBody: string,
@@ -385,7 +392,7 @@ async function handleInbound(
 
   await markConversation(admin, session.organization_id, conversationId, "inbound", previewFromMessage(p), now);
 
-  if (p.body && STOP_RX.test(p.body)) {
+  if (ehPedidoDeOptOut(p.body)) {
     await admin
       .from("contacts")
       .update({ is_blocked: true, blocked_reason: "stop_keyword", blocked_at: now })

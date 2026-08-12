@@ -20,6 +20,7 @@ import { emitLeadActivity, stageChangeReason } from "@/lib/leads/activity-emitte
 import { registraFalhaDeAtividade } from "@/lib/leads/activity-write-failure";
 import { etapaMarcaContatoFeito } from "@/lib/leads/etapa-de-contato";
 import { resolveOwnerPatch } from "@/lib/leads/owner-patch";
+import { criarTarefasDaEtapa } from "@/lib/tarefas/criar-da-etapa";
 
 export const dynamic = "force-dynamic";
 
@@ -231,6 +232,30 @@ export async function POST(
     }
   }
 
+  // O CHECKLIST DA COLUNA (ver lib/tarefas/modelos-de-etapa.ts).
+  //
+  // Depois do move e da timeline, e dentro de um try: a tarefa é consequência
+  // do card ter mudado de coluna, então ela não pode ter o poder de desfazer
+  // essa mudança. Falhou, o card continua movido e o checklist não nasceu — o
+  // próximo arrasto para a mesma coluna tenta de novo (a trava é por título).
+  let tarefasCriadas = 0;
+  let chavesDasTarefas: string[] = [];
+  try {
+    const checklist = await criarTarefasDaEtapa(supabase, {
+      organizationId: lead.organization_id,
+      leadId,
+      leadTitulo: lead.title,
+      contactId: (lead as { contact_id?: string | null }).contact_id ?? null,
+      etapa: stage,
+      autorUserId: user.id,
+      agora: new Date(agora),
+    });
+    tarefasCriadas = checklist.criadas;
+    chavesDasTarefas = checklist.chaves;
+  } catch (err) {
+    console.error("[lead.move] checklist da etapa falhou", err);
+  }
+
   // Emit domain event (fire-and-forget; trigger NEVER does HTTP — workers do).
   await supabase
     .rpc("emit_event", {
@@ -262,6 +287,9 @@ export async function POST(
       to_stage_id: input.stage_id,
       position_in_stage: input.position_in_stage,
       ...(patchDeDono ? { auto_assigned_owner_user_id: user.id } : {}),
+      ...(tarefasCriadas > 0
+        ? { tarefas_criadas: tarefasCriadas, modelos_de_tarefa: chavesDasTarefas }
+        : {}),
     },
   });
 

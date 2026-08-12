@@ -11,6 +11,7 @@ import { useCloseConversation } from "@/hooks/inbox/useCloseConversation";
 import { useReopenConversation } from "@/hooks/inbox/useReopenConversation";
 import { ReassignDialog } from "@/components/inbox/ReassignDialog";
 import { SnoozeButton } from "@/components/inbox/SnoozeButton";
+import { AvisoDeTarefasDoLead } from "@/components/inbox/AvisoDeTarefasDoLead";
 import type { ConversationWithContact } from "@/hooks/inbox/useConversationsRealtime";
 
 interface Props {
@@ -135,6 +136,16 @@ export function ConversationHeader({ conversation }: Props) {
         conversationId={conversation.id}
         open={reassignOpen}
         onOpenChange={setReassignOpen}
+      />
+      {/* Vale também para conversa fechada, ao contrário do relógio ao lado: o
+          combinado com o lead não deixa de existir porque a conversa foi
+          encerrada — é justamente aí que ele some da vista. A chave `key`
+          remonta o componente ao trocar de conversa, para o aviso da próxima
+          não herdar o estado da anterior. */}
+      <AvisoDeTarefasDoLead
+        key={conversation.id}
+        conversationId={conversation.id}
+        nomeDoLead={displayName}
       />
     </div>
   );

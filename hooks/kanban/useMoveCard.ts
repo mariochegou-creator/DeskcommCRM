@@ -3,6 +3,7 @@ import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { apiClient } from "@/lib/api/client";
 import { liberarEcoLocal, marcarEcoLocal } from "@/lib/kanban/local-echo";
 import { invalidaLeitoresDeLead } from "@/lib/leads/invalidar";
+import { TAREFAS_KEY } from "@/hooks/tarefas/useTarefas";
 import { ApiError } from "@/lib/api/types";
 import { showApiError } from "@/components/feedback/ApiErrorToast";
 import type { Lead } from "@/lib/types/leads";
@@ -57,6 +58,11 @@ export function useMoveCard(pipelineId: string) {
       // curta do último evento da cascata (ver lib/kanban/local-echo.ts).
       liberarEcoLocal(args.leadId);
       invalidaLeitoresDeLead(qc, pipelineId);
+      // A coluna de destino pode ter criado o checklist dela no servidor (ver
+      // lib/tarefas/criar-da-etapa.ts). Sem esta linha o badge do menu e a aba
+      // Tarefas só mostrariam as novas na próxima navegação — e o arrasto
+      // pareceria não ter feito nada.
+      qc.invalidateQueries({ queryKey: [TAREFAS_KEY] });
     },
   });
 }
