@@ -10,6 +10,8 @@ import {
   type ChannelSession,
 } from "@/hooks/channels/useChannelSessions";
 import { usePacingKnobs } from "@/hooks/channels/usePacingKnobs";
+// Só o tipo (some no build): o módulo em si é server-only.
+import type { UniaoDeNumero } from "@/lib/waha/um-numero-uma-conexao";
 import { AntiBanSheet } from "./AntiBanSheet";
 import {
   AlertDialog,
@@ -94,6 +96,7 @@ export function ConnectionsClient({ wahaConfigured }: { wahaConfigured: boolean 
   const [qr, setQr] = useState<{ sessionId: string; title: string } | null>(null);
   const [antiBanId, setAntiBanId] = useState<string | null>(null);
   const [removing, setRemoving] = useState<ChannelSession | null>(null);
+  const [confirmandoNovo, setConfirmandoNovo] = useState(false);
   const [telefoneVivo, setTelefoneVivo] = useState<Record<string, string>>({});
   const pacingItems = usePacingKnobs().data?.items ?? [];
 
@@ -112,11 +115,22 @@ export function ConnectionsClient({ wahaConfigured }: { wahaConfigured: boolean 
       try {
         const res = await Promise.allSettled(
           list.map((c) =>
-            apiClient.get<{ data: { id: string; phone_number: string | null } }>(
-              `/api/v1/channel-sessions/${c.id}`,
-            ),
+            apiClient.get<{
+              data: { id: string; phone_number: string | null; uniao?: UniaoDeNumero | null };
+            }>(`/api/v1/channel-sessions/${c.id}`),
           ),
         );
+        // A trava de número repetido roda dentro do health check — quando ela
+        // age, quem está olhando a Central precisa saber por que um cartão sumiu.
+        for (const r of res) {
+          const u = r.status === "fulfilled" ? r.value.data.uniao : null;
+          if (!u) continue;
+          toast.success(
+            u.acao === "cartao_reassumiu"
+              ? `${u.rotulo} voltou a funcionar no cartão de sempre.`
+              : `Conexão repetida do mesmo WhatsApp removida. Tudo continua em ${u.rotulo}.`,
+          );
+        }
         // O telefone da resposta vale mais que o da lista: quando o mesmo
         // aparelho está em duas sessões, a unique do banco deixa a coluna vazia
         // numa delas e o card fica sem identificação nenhuma.
@@ -145,6 +159,7 @@ export function ConnectionsClient({ wahaConfigured }: { wahaConfigured: boolean 
   }, [sessions, runHealthCheck]);
 
   const handleConnectNew = useCallback(async () => {
+    setConfirmandoNovo(false);
     setCreating(true);
     try {
       const res = await apiClient.post<{ data: ChannelSession }>(
@@ -234,7 +249,13 @@ export function ConnectionsClient({ wahaConfigured }: { wahaConfigured: boolean 
               Atualizar saúde
             </Button>
           )}
-          <Button size="sm" disabled={creating || !wahaConfigured} onClick={handleConnectNew}>
+          {/* Com número já conectado, o "+" pergunta antes: foi ele, clicado no
+              lugar do "Reconectar", que criou as conexões repetidas de 10/08. */}
+          <Button
+            size="sm"
+            disabled={creating || !wahaConfigured}
+            onClick={() => (list.length > 0 ? setConfirmandoNovo(true) : void handleConnectNew())}
+          >
             {creating ? (
               <CircleNotch size={14} className="animate-spin" aria-hidden />
             ) : (
@@ -347,6 +368,27 @@ export function ConnectionsClient({ wahaConfigured }: { wahaConfigured: boolean 
         onClose={() => setAntiBanId(null)}
       />
 
+      <AlertDialog open={confirmandoNovo} onOpenChange={(o) => !o && setConfirmandoNovo(false)}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Esse WhatsApp é novo?</AlertDialogTitle>
+            <AlertDialogDescription>
+              Use este botão só para um número que ainda não está aqui. Se um número
+              seu caiu, clique em <span className="font-medium">Reconectar</span> no
+              cartão dele — é o mesmo QR, e a conversa dos leads continua no lugar de
+              sempre. Se escanear o mesmo WhatsApp aqui, o CRM devolve a conexão ao
+              cartão que já existe.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancelar</AlertDialogCancel>
+            <AlertDialogAction onClick={() => void handleConnectNew()}>
+              É um número novo
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
       <AlertDialog open={!!removing} onOpenChange={(o) => !o && setRemoving(null)}>
         <AlertDialogContent>
           <AlertDialogHeader>
@@ -397,7 +439,10 @@ export function ConnectionsClient({ wahaConfigured }: { wahaConfigured: boolean 
           sessionId={qr.sessionId}
           title={qr.title}
           wahaConfigured={wahaConfigured}
-          onClose={() => setQr(null)}
+          onClose={() => {
+            setQr(null);
+            invalidate();
+          }}
           onConnected={handleConnected}
         />
       )}
@@ -420,6 +465,7 @@ function QrDialog({
 }) {
   const [status, setStatus] = useState<string>("STARTING");
   const [tick, setTick] = useState(0);
+  const [uniao, setUniao] = useState<UniaoDeNumero | null>(null);
   const done = useRef(false);
   const qrShown = useRef(false);
 
@@ -428,10 +474,17 @@ function QrDialog({
     let cancelled = false;
     const poll = async () => {
       try {
-        const res = await apiClient.get<{ data: { status: string } }>(
+        const res = await apiClient.get<{ data: { status: string; uniao?: UniaoDeNumero | null } }>(
           `/api/v1/channel-sessions/${sessionId}`,
         );
         if (cancelled) return;
+        // Mesmo WhatsApp escaneado de novo: o servidor já desfez a repetição.
+        // Aqui a tela só explica — e para de esperar um QR que não vem mais.
+        if (res.data.uniao?.este_cartao_saiu) {
+          setUniao(res.data.uniao);
+          done.current = true;
+          return;
+        }
         const s = res.data.status;
         setStatus(s);
         // NOWEB: o QR é estável até conectar — carrega a imagem UMA vez ao entrar
@@ -466,7 +519,24 @@ function QrDialog({
           </DialogDescription>
         </DialogHeader>
         <div className="flex min-h-[16rem] flex-col items-center justify-center gap-3 py-2">
-          {status === "SCAN_QR_CODE" ? (
+          {uniao ? (
+            <div className="w-full rounded-md border border-warning bg-warning-bg p-4 text-sm text-warning-fg">
+              <p className="font-medium">
+                {uniao.acao === "cartao_reassumiu"
+                  ? "Esse número já tinha um cartão aqui — ele voltou a funcionar."
+                  : "Esse WhatsApp já está conectado aqui."}
+              </p>
+              <p className="mt-1">
+                Cartão: <span className="font-medium">{uniao.rotulo}</span>.{" "}
+                {uniao.acao === "cartao_reassumiu"
+                  ? "Não criei um segundo cartão: o de sempre assumiu a conexão, com todo o histórico."
+                  : "Não criei um segundo cartão — dois cartões do mesmo número partem a conversa do lead em dois lugares."}
+              </p>
+              <Button size="sm" className="mt-3" onClick={onClose}>
+                Entendi
+              </Button>
+            </div>
+          ) : status === "SCAN_QR_CODE" ? (
             // eslint-disable-next-line @next/next/no-img-element
             <img
               key={tick}

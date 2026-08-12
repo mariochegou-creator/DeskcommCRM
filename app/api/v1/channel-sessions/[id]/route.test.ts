@@ -21,6 +21,11 @@ vi.mock("@/lib/auth/server", () => ({ loadAuthUser: vi.fn(), resolveActiveOrg: v
 vi.mock("@/lib/supabase/server", () => ({ createClient: vi.fn() }));
 vi.mock("@/lib/waha/client", () => ({ getWahaClient: vi.fn(), wahaFriendlyError: (m: string) => m }));
 vi.mock("@/lib/audit", () => ({ audit: vi.fn(async () => undefined) }));
+// A trava de número repetido (0104) só vale no GET, mas o módulo é server-only
+// (usa o client de service role) e o ambiente do teste é jsdom.
+vi.mock("@/lib/waha/um-numero-uma-conexao", () => ({
+  garantirUmCartaoPorNumero: vi.fn(async () => null),
+}));
 
 const ORG_ID = "22222222-2222-4222-8222-222222222222";
 const USER_ID = "11111111-1111-4111-8111-111111111111";

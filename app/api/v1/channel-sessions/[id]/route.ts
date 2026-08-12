@@ -5,6 +5,9 @@
  * O GET consulta o status real no WAHA, grava `last_health_check_at` (+
  * sincroniza `status`) no DB e devolve o estado atual. É a fonte de verdade
  * quando o usuário abre a Central de Conexões ou aguarda o QR ser escaneado.
+ * É também onde mora a trava de número repetido (0104): o número só aparece
+ * depois do QR escaneado, então é aqui que dá para barrar o mesmo WhatsApp
+ * virando dois cartões. Ver `lib/waha/um-numero-uma-conexao.ts`.
  *
  * Qualquer membro da org pode consultar. organization_id vem da sessão.
  */
@@ -18,6 +21,10 @@ import { requireRole } from "@/lib/auth/require-role";
 import { isChannelStatus } from "@/lib/schemas/channels";
 import { createClient } from "@/lib/supabase/server";
 import { getWahaClient } from "@/lib/waha/client";
+import {
+  garantirUmCartaoPorNumero,
+  type UniaoDeNumero,
+} from "@/lib/waha/um-numero-uma-conexao";
 
 export const dynamic = "force-dynamic";
 
@@ -71,6 +78,54 @@ export async function GET(
     // outros erros: mantém o status do DB (não sobrescreve com ruído transitório).
   }
 
+  // UM NÚMERO, UMA CONEXÃO (0104). O número só existe depois do QR escaneado —
+  // este é o primeiro instante em que dá para saber que o mesmo WhatsApp entrou
+  // duas vezes, e a Central/tela do QR chamam esta rota a cada 3 segundos. Se
+  // for repetição, ela morre aqui, antes de receber a primeira mensagem e
+  // partir a conversa do lead em dois lugares.
+  let uniao: UniaoDeNumero | null = null;
+  if (phoneNumber) {
+    uniao = await garantirUmCartaoPorNumero({
+      orgId: activeOrg.orgId,
+      sessionId: id,
+      numero: phoneNumber,
+      waha,
+    });
+  }
+  if (uniao) {
+    void audit({
+      action: uniao.acao === "cartao_reassumiu" ? "channel.reassumido" : "channel.duplicado_removido",
+      actorUserId: user.id,
+      organizationId: activeOrg.orgId,
+      resourceType: "channel_session",
+      resourceId: uniao.cartao_id,
+      requestId,
+      metadata: {
+        numero: phoneNumber,
+        conexao_checada: id,
+        este_cartao_saiu: uniao.este_cartao_saiu,
+        conversas_juntadas: uniao.conversas_juntadas,
+      },
+    });
+  }
+  if (uniao?.este_cartao_saiu) {
+    // Esta linha deixou de ser o cartão do número: nada de gravar telefone nem
+    // status nela. A tela usa `uniao` para explicar e apontar para o cartão certo.
+    return ok(
+      {
+        id: session.id,
+        waha_session_name: session.waha_session_name,
+        display_name: session.display_name,
+        phone_number: phoneNumber,
+        status: liveStatus,
+        last_health_check_at: new Date().toISOString(),
+        waha_configured: true,
+        uniao,
+      },
+      { requestId },
+    );
+  }
+
   // Sincroniza o DB: sempre carimba o health check; atualiza status/telefone só se válido.
   const patch: Record<string, unknown> = { last_health_check_at: new Date().toISOString() };
   if (isChannelStatus(liveStatus) && liveStatus !== session.status) {
@@ -83,11 +138,12 @@ export async function GET(
     supabase.from("channel_sessions").update(patch).eq("organization_id", activeOrg.orgId).eq("id", id);
   const { error: upErr } = await alvo();
   if (upErr && patch.phone_number) {
-    // Mesmo telefone vinculado em duas sessões → colide na unique
-    // (organization_id, phone_number). Antes o erro era engolido e o
-    // last_health_check_at NUNCA avançava nesse canal ("Ainda não verificado"
-    // para sempre). Regrava sem o telefone: o carimbo de saúde é o que importa
-    // no banco, e o número correto já vai na resposta abaixo.
+    // Rede de segurança da trava do banco (índice único
+    // `channel_sessions_numero_vivo_unique`): outro cartão vivo já é dono deste
+    // número e o `garantirUmCartaoPorNumero` acima não deu conta (WAHA fora do
+    // ar, corrida entre dois health checks). Regrava sem o telefone para o
+    // carimbo de saúde avançar — o número correto vai na resposta de qualquer
+    // jeito, e a próxima checagem tenta a união de novo.
     delete patch.phone_number;
     await alvo();
   }
@@ -101,6 +157,7 @@ export async function GET(
       status: liveStatus,
       last_health_check_at: patch.last_health_check_at,
       waha_configured: true,
+      uniao,
     },
     { requestId },
   );
@@ -120,9 +177,10 @@ export async function GET(
  *    banco de qualquer jeito (`conversations`/`messages` referenciam com
  *    ON DELETE RESTRICT); arquivar é o que o usuário quer dizer com "remover".
  *
- * O `phone_number` é zerado no arquivamento porque a unique
- * (organization_id, phone_number) bloquearia reconectar o MESMO número depois.
- * O rótulo é preservado em `display_name` antes de zerar.
+ * O `phone_number` é zerado no arquivamento: remover é uma decisão, e a partir
+ * daqui o número deixa de ter dono na Central — se ele voltar, entra como
+ * cartão novo, sem a trava da 0104 tentar ressuscitar este. O rótulo é
+ * preservado em `display_name` antes de zerar.
  *
  * A sessão no WAHA é parada em best-effort: se o container estiver fora do ar,
  * a remoção acontece do mesmo jeito (o ingest descarta evento de sessão
@@ -215,7 +273,7 @@ export async function DELETE(
       status: "STOPPED",
       status_reason: "removido pelo usuário",
       last_status_change_at: new Date().toISOString(),
-      // Libera a unique (org, phone_number) para reconectar o mesmo número.
+      // Solta o número: reconectar depois entra como cartão novo.
       display_name: rotulo,
       phone_number: null,
     })

@@ -111,6 +111,22 @@ export class WahaClient {
     }
   }
 
+  /**
+   * Todas as sessões do WAHA, com o número de cada uma (`me.id`).
+   *
+   * É a única fonte confiável de "que número é este canal": quando o mesmo
+   * WhatsApp está em duas sessões, a unique do banco deixa `phone_number` vazio
+   * numa delas — a coluna mente, o WAHA não.
+   */
+  async listSessions(): Promise<Array<{ name: string; status: string; me?: { id?: string } | null }>> {
+    const res = await fetch(`${this.baseUrl}/api/sessions?all=true`, {
+      headers: { "X-Api-Key": this.apiKey },
+      cache: "no-store",
+    });
+    if (!res.ok) throw new Error(`waha_${res.status}`);
+    return (await res.json()) as Array<{ name: string; status: string; me?: { id?: string } | null }>;
+  }
+
   async getSessionQr(name: string): Promise<{ qr?: string; status: string }> {
     const res = await fetch(`${this.baseUrl}/api/sessions/${encodeURIComponent(name)}`, {
       headers: { "X-Api-Key": this.apiKey },

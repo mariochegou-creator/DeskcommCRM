@@ -130,6 +130,11 @@ export type AuditAction =
   // Número removido da Central. metadata.modo distingue "apagado" (linha
   // deletada — nunca teve conversa) de "arquivado" (histórico preservado).
   | "channel.removed"
+  // Um número, uma conexão (0104). `duplicado_removido`: o mesmo WhatsApp foi
+  // escaneado num segundo cartão e o segundo saiu. `reassumido`: o número que
+  // tinha caído voltou no cartão de sempre, em vez de nascer um cartão novo.
+  | "channel.duplicado_removido"
+  | "channel.reassumido"
   | "authz.denied"
   | "team.role_changed"
   | "leads.bulk_assigned"
