@@ -311,9 +311,7 @@ create table public.channel_sessions (
   created_by               uuid references auth.users(id),
 
   constraint channel_sessions_waha_session_name_unique unique (waha_session_name),
-  constraint channel_sessions_webhook_path_token_unique unique (webhook_path_token),
-  constraint channel_sessions_phone_per_org_unique unique (organization_id, phone_number)
-                                                  deferrable initially deferred
+  constraint channel_sessions_webhook_path_token_unique unique (webhook_path_token)
 );
 
 create index idx_channel_sessions_org_status
@@ -321,6 +319,16 @@ create index idx_channel_sessions_org_status
 create index idx_channel_sessions_health
   on public.channel_sessions (last_health_check_at)
   where status = 'WORKING';
+
+-- UM NÚMERO, UMA CONEXÃO (migration 0104). Antes era uma unique da tabela
+-- inteira, arquivadas incluídas — o que obrigava a zerar o telefone ao
+-- arquivar e, pior, fazia a SEGUNDA sessão do mesmo WhatsApp nascer com
+-- phone_number NULL em vez de ser barrada. Duas conexões vivas no mesmo
+-- número partem a conversa do lead em dois lugares (aconteceu com 75
+-- contatos em 12/08/2026).
+create unique index channel_sessions_numero_vivo_unique
+  on public.channel_sessions (organization_id, phone_number)
+  where archived_at is null and phone_number is not null;
 
 alter table public.channel_sessions enable row level security;
 
