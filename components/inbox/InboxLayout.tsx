@@ -20,6 +20,7 @@ import {
 import { ChatThread } from "./ChatThread";
 import { Composer, type ComposerHandle } from "./Composer";
 import { ConversationHeader } from "./ConversationHeader";
+import { NumeroDeSaida } from "./NumeroDeSaida";
 import { RetentionNotice } from "./RetentionNotice";
 import { CRMSidePanel } from "./CRMSidePanel";
 import { InboxKeyboardShortcuts } from "./InboxKeyboardShortcuts";
@@ -261,6 +262,9 @@ export function InboxLayout({ initialSelectedId = null }: InboxLayoutProps = {})
               />
             </div>
             <RetentionNotice conversationId={selectedConversation.id} />
+            {/* Fica colado no composer porque é ali que a pergunta "por qual
+                número isso vai sair?" aparece — no segundo antes de enviar. */}
+            <NumeroDeSaida conversation={selectedConversation} onIrPara={handleSelect} />
             <Composer
               ref={composerRef}
               conversationId={selectedConversation.id}

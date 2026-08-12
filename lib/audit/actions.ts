@@ -222,4 +222,11 @@ export type AuditAction =
    * responde isso: muita tentativa nunca vira áudio.
    */
   | "call.logged"
-  | "call.audio_uploaded";
+  | "call.audio_uploaded"
+  /**
+   * Troca do número de saída da conversa. Fica no audit porque muda por onde a
+   * org fala com aquele cliente daí em diante — e do lado dele a mensagem passa
+   * a chegar de outro número. Quando alguém perguntar "por que este lead recebeu
+   * de um número estranho", é esta linha que responde (metadata guarda de/para).
+   */
+  | "conversation.channel_session_changed";

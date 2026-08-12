@@ -89,4 +89,5 @@ export const ACTION_CODES: string[] = [
   "tenant.reactivated",
   "platform_admin.audit_listed",
   "platform_admin.audit_entry_viewed",
+  "conversation.channel_session_changed",
 ];
