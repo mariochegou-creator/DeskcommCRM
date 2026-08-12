@@ -55,6 +55,9 @@ const MOTIVO_DA_CONFIRMACAO: Record<string, string> = {
   // não sabe disso.
   automacao_desligada:
     "as mensagens automáticas estão DESLIGADAS. A reunião ficou marcada, mas o lead não foi avisado — mande a confirmação e os lembretes na mão.",
+  // Também não é falha: é o mesmo dia e hora salvos de novo. Dizer "já tinha
+  // saído" evita que a pessoa mande na mão uma terceira cópia por precaução.
+  ja_confirmada: "esse mesmo horário já estava marcado — a confirmação não foi reenviada.",
 };
 
 /**

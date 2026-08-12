@@ -32,6 +32,7 @@ import { logger } from "@/lib/logger";
 import {
   formatarReuniao,
   instanteDaReuniao,
+  lerReuniao,
   ROTULO_DO_TIPO,
   type Reuniao,
   type TipoDeReuniao,
@@ -46,6 +47,7 @@ import {
   agendaConfigurada,
   criarEventoNaAgenda,
   linkParaAdicionarNaAgenda,
+  type ResultadoDoEvento,
 } from "@/lib/agendamento/google-calendar";
 import { mensagemDeConfirmacao } from "@/lib/agendamento/mensagens";
 import { agendarReuniaoSchema } from "@/lib/schemas/agendamento";
@@ -57,6 +59,17 @@ export const dynamic = "force-dynamic";
 
 /** Passado não se agenda; 5 min de folga cobrem relógio do cliente fora de sincronia. */
 const TOLERANCIA_PASSADO_MS = 5 * 60 * 1000;
+
+/**
+ * O que a nota da atividade diz quando a confirmação NÃO saiu por decisão, e
+ * não por falha. Os dois casos precisam de frase própria: quem lê o card
+ * amanhã tem de saber se o lead foi avisado — "confirmação NÃO enviada
+ * (automacao_desligada)" não responde isso pra quem não escreveu o código.
+ */
+const RECADO_DA_CONFIRMACAO: Record<string, string> = {
+  ja_confirmada: " — a confirmação já tinha saído; nada foi reenviado",
+  automacao_desligada: " — mensagens automáticas desligadas: avise o lead você mesmo",
+};
 
 export async function POST(
   req: NextRequest,
@@ -116,18 +129,32 @@ export async function POST(
     tipo = tipoDeReuniaoDaEtapa((stage ?? {}) as { name?: string; slug?: string }) ?? "r1";
   }
 
+  // Salvar de novo o MESMO instante não é remarcar — é o mesmo agendamento
+  // chegando duas vezes: clique repetido, segunda aba, card arrastado de volta
+  // pra coluna, retry do navegador. Aconteceu em 11/08/2026, com um minuto de
+  // diferença: o lead recebeu a confirmação DUAS vezes, e quem parece
+  // desorganizado nessa hora é a Nexo, não o CRM.
+  //
+  // A tela avisa "salvar aqui remarca", mas o aviso depende de o board já ter
+  // recarregado o card — corrida que a rota não pode terceirizar. A garantia
+  // mora aqui: mesmo instante preserva carimbos, evento e autoria.
+  const anterior = lerReuniao(lead.custom_fields);
+  const mesmoInstante = anterior?.em === quando.toISOString();
+
   const agora = new Date().toISOString();
   const reuniao: Reuniao = {
     tipo,
     em: quando.toISOString(),
     data: input.data,
     hora: input.hora,
-    criada_em: agora,
-    criada_por: user.id,
-    // Remarcação começa sem carimbo: o lembrete do horário NOVO tem que sair.
-    avisos: {},
-    gcal_event_id: null,
-    gcal_link: null,
+    criada_em: mesmoInstante ? (anterior?.criada_em ?? agora) : agora,
+    criada_por: mesmoInstante ? (anterior?.criada_por ?? user.id) : user.id,
+    // Remarcação DE VERDADE começa sem carimbo: o lembrete do horário NOVO tem
+    // que sair. Mesmo instante preserva — zerar aqui faria a véspera que já
+    // saiu sair outra vez.
+    avisos: mesmoInstante ? (anterior?.avisos ?? {}) : {},
+    gcal_event_id: mesmoInstante ? (anterior?.gcal_event_id ?? null) : null,
+    gcal_link: mesmoInstante ? (anterior?.gcal_link ?? null) : null,
   };
 
   const camposAtuais =
@@ -162,7 +189,13 @@ export async function POST(
     convidados: input.convidados,
   };
 
-  const naAgenda = await criarEventoNaAgenda(eventoBase);
+  // Evento já criado para este mesmo instante: reaproveita em vez de abrir um
+  // segundo. Duas linhas iguais na agenda do dia confundem tanto quanto duas
+  // mensagens no WhatsApp do lead.
+  const naAgenda: ResultadoDoEvento = reuniao.gcal_event_id
+    ? { ok: true, eventId: reuniao.gcal_event_id, htmlLink: reuniao.gcal_link ?? null }
+    : await criarEventoNaAgenda(eventoBase);
+
   if (naAgenda.ok) {
     reuniao.gcal_event_id = naAgenda.eventId;
     reuniao.gcal_link = naAgenda.htmlLink;
@@ -197,9 +230,14 @@ export async function POST(
   // vai pra agenda e NADA sai no WhatsApp — a tela devolve
   // `confirmacao.motivo = "automacao_desligada"` e quem marcou escreve à mão.
   const admin = createAdminClient();
-  let envio: ResultadoDoEnvio = { ok: false, motivo: "automacao_desligada" };
+  let envio: ResultadoDoEnvio;
 
-  if (!(await automacaoDesligada(admin, lead.organization_id))) {
+  if (mesmoInstante && reuniao.avisos?.confirmacao) {
+    // Já saiu para este mesmo dia e hora — ver `mesmoInstante`.
+    envio = { ok: false, motivo: "ja_confirmada" };
+  } else if (await automacaoDesligada(admin, lead.organization_id)) {
+    envio = { ok: false, motivo: "automacao_desligada" };
+  } else {
     const { data: contato } = lead.contact_id
       ? await admin
           .from("contacts")
@@ -263,9 +301,8 @@ export async function POST(
     reason: `${ROTULO_DO_TIPO[tipo]} marcada para ${q.diaDaSemana} (${q.diaMes}) às ${q.hora}${
       envio.ok
         ? " — confirmação enviada ao lead"
-        : envio.motivo === "automacao_desligada"
-          ? " — mensagens automáticas desligadas: avise o lead você mesmo"
-          : ` — confirmação NÃO enviada (${envio.motivo})`
+        : (RECADO_DA_CONFIRMACAO[envio.motivo] ??
+          ` — confirmação NÃO enviada (${envio.motivo})`)
     }.`,
     payload: { reuniao_em: reuniao.em, tipo, confirmacao_enviada: envio.ok },
   });

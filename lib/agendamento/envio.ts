@@ -27,6 +27,7 @@ export type ResultadoDoEnvio =
         | "contato_bloqueado"
         | "sem_sessao"
         | "automacao_desligada"
+        | "ja_confirmada"
         | "falhou";
       detalhe?: string;
     };
