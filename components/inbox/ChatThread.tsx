@@ -16,6 +16,12 @@ import type { Message, Note } from "@/lib/types/messaging";
 
 interface Props {
   conversationId: string | null;
+  /**
+   * O contato da conversa. Desce até a bolha porque o cartão de contato (0103)
+   * precisa saber em quais negócios o número que chegou pode entrar — e o
+   * negócio pertence ao CONTATO, não à mensagem.
+   */
+  contactId?: string | null;
 }
 
 /** Onda 5.2: union de item do thread — mensagem real ou nota interna (nunca vai ao cliente). */
@@ -41,7 +47,7 @@ function dayLabel(d: Date): string {
   return format(d, "dd/MM/yyyy", { locale: ptBR });
 }
 
-export function ChatThread({ conversationId }: Props) {
+export function ChatThread({ conversationId, contactId }: Props) {
   const q = useMessagesRealtime(conversationId);
   const notes = useConversationNotes(conversationId);
   const bottomRef = useRef<HTMLDivElement | null>(null);
@@ -155,6 +161,7 @@ export function ChatThread({ conversationId }: Props) {
                   key={`msg-${item.data.id}`}
                   message={item.data}
                   debugCitations={debugCitations}
+                  contactId={contactId}
                 />
               ),
             )}

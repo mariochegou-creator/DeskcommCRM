@@ -255,7 +255,10 @@ export function InboxLayout({ initialSelectedId = null }: InboxLayoutProps = {})
           <>
             <ConversationHeader conversation={selectedConversation} />
             <div className="min-h-0 flex-1 overflow-hidden">
-              <ChatThread conversationId={selectedConversation.id} />
+              <ChatThread
+                conversationId={selectedConversation.id}
+                contactId={selectedConversation.contacts?.id ?? null}
+              />
             </div>
             <RetentionNotice conversationId={selectedConversation.id} />
             <Composer

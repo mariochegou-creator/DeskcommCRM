@@ -14,6 +14,7 @@ import type { ConversationWithContact } from "@/hooks/inbox/useConversationsReal
 import { activityLabel, actorLabel, actorShape } from "@/lib/leads/activity-vocabulary";
 import { extractExtras, extractGanchos } from "@/lib/leads/ganchos";
 import { LeadExtrasList } from "@/components/leads/LeadExtrasList";
+import { ContatosDoNegocio } from "@/components/leads/ContatosDoNegocio";
 import { ConversationTagsEditor } from "./ConversationTagsEditor";
 import { NegocioDoContato } from "./NegocioDoContato";
 import { cn } from "@/lib/utils";
@@ -195,6 +196,22 @@ export function CRMSidePanel({ conversation }: Props) {
           </>
         )}
       </section>
+
+      {/* Quem chamar (0103) — logo abaixo do negócio, porque é dele que a lista
+          fala. Só aparece quando há MAIS DE UM contato: o painel de Contato lá
+          em cima já responde o caso de um só, e repetir a mesma pessoa numa
+          seção nova ensinaria a pular as duas. Sem `fallback` de propósito. */}
+      {/* A borda vai NA peça (className), não num `<Separator/>` irmão: a peça
+          some quando não há o que mostrar, e o separador irmão ficaria — uma
+          linha solta anunciando uma seção que não existe. */}
+      {lead && (
+        <ContatosDoNegocio
+          leadId={lead.id}
+          tituloDoNegocio={lead.title}
+          origin="deal"
+          className="border-t border-border pt-4"
+        />
+      )}
 
       {ganchos.length > 0 && (
         <>

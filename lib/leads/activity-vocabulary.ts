@@ -33,7 +33,9 @@ export type ActivityType =
   | "reactivation_expired"
   | "reuniao_analisada"
   | "call_logged"
-  | "call_analyzed";
+  | "call_analyzed"
+  | "contato_vinculado"
+  | "contato_desvinculado";
 
 export const ACTIVITY_LABELS: Record<ActivityType, string> = {
   stage_changed: "Mudou de estágio",
@@ -76,6 +78,12 @@ export const ACTIVITY_LABELS: Record<ActivityType, string> = {
   // que deram certo.
   call_logged: "Ligação registrada",
   call_analyzed: "Ligação analisada",
+  // Contatos do negócio (0103). DOIS tipos pelo mesmo motivo das ligações: a
+  // saída não é a ausência da entrada. "O sócio foi tirado do negócio" é
+  // decisão de alguém — sem linha própria, o dossiê mostraria a chegada de um
+  // contato que não está mais lá e nada explicaria o buraco.
+  contato_vinculado: "Contato adicionado ao negócio",
+  contato_desvinculado: "Contato removido do negócio",
 };
 
 /** Quando o tipo é legado/desconhecido, a linha ainda é honesta — sem jargão. */

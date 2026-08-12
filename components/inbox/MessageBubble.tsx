@@ -7,6 +7,8 @@ import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/comp
 import type { Message } from "@/lib/types/messaging";
 import { CitationButton } from "@/components/ai/CitationButton";
 import { MediaRenderer } from "@/components/inbox/media/MediaRenderer";
+import { CartaoDeContato } from "@/components/inbox/CartaoDeContato";
+import { analisarVCard } from "@/lib/contacts/vcard";
 import {
   extractCitations,
   isAiGeneratedMessage,
@@ -15,6 +17,11 @@ import {
 interface Props {
   message: Message;
   debugCitations?: boolean;
+  /**
+   * O contato DA CONVERSA — só o cartão de contato usa, para saber em quais
+   * negócios o número que chegou pode entrar (0103).
+   */
+  contactId?: string | null;
 }
 
 function AckIndicator({ status }: { status: string }) {
@@ -30,13 +37,19 @@ function AckIndicator({ status }: { status: string }) {
   return null;
 }
 
-export function MessageBubble({ message, debugCitations }: Props) {
+export function MessageBubble({ message, debugCitations, contactId }: Props) {
   const isOutbound = message.direction === "outbound";
   const time = format(new Date(message.sent_at), "HH:mm", { locale: ptBR });
   const isFailed = message.status === "failed";
   const hasMedia = Boolean(message.media_url || message.media_storage_path);
   // Figurinha sem caption: sem moldura de bolha (padrão WhatsApp).
   const isBareSticker = hasMedia && message.type === "sticker" && !message.body;
+  // O cartão de contato substitui o corpo, não convive com ele: o `body` de uma
+  // mensagem `contact` É o texto do vCard, e mostrar os dois seria desenhar o
+  // cartão bonito com as sete linhas cruas logo abaixo. Só quando o parse deu
+  // certo — vCard que não abrimos volta a ser texto, em vez de virar silêncio.
+  const cartoes = message.type === "contact" ? analisarVCard(message.body) : [];
+  const temCartao = cartoes.length > 0;
   const aiGenerated = isAiGeneratedMessage(message.metadata);
   const citations = extractCitations(message.metadata);
   const showCitationButton =
@@ -78,7 +91,16 @@ export function MessageBubble({ message, debugCitations }: Props) {
           </div>
         )}
 
-        {message.body && (
+        {temCartao && (
+          <CartaoDeContato
+            cartoes={cartoes}
+            contactId={contactId ?? null}
+            messageId={message.id}
+            isOutbound={isOutbound}
+          />
+        )}
+
+        {message.body && !temCartao && (
           <p className="whitespace-pre-wrap break-words leading-snug">{message.body}</p>
         )}
 

@@ -2,6 +2,7 @@
 import { useRef } from "react";
 
 import { ContactActions } from "@/components/contacts/ContactActions";
+import { ContatosDoNegocio } from "@/components/leads/ContatosDoNegocio";
 import { Sheet, SheetContent, SheetHeader, SheetTitle } from "@/components/ui/sheet";
 import Link from "next/link";
 import { Button } from "@/components/ui/button";
@@ -220,17 +221,34 @@ export function LeadDossier({
 
         {/* ① bis — falar com a pessoa. Fica ACIMA da timeline porque a pergunta
             "como falo com este contato agora" é a que traz o SDR ao dossiê; a
-            timeline responde "o que já aconteceu", que vem depois. */}
-        {lead.contact_id && contato.data && !contato.data.data.is_anonymized && (
-          <div className="border-b border-border py-3">
-            <ContactActions
-              contactId={lead.contact_id}
-              contactName={contato.data.data.display_name ?? contato.data.data.name ?? lead.title}
-              phoneNumber={contato.data.data.phone_number}
-              company={lead.title}
-              origin="deal"
-            />
-          </div>
+            timeline responde "o que já aconteceu", que vem depois.
+
+            Com MAIS DE UM contato (0103), a lista "Quem chamar (2)" toma o
+            lugar dos botões soltos — e é ela que responde a pergunta de quem
+            abre o negócio depois de o cliente ter mandado o cartão do sócio.
+            Com um contato só, nada muda: o `fallback` é exatamente o que a
+            gaveta mostrava antes. A decisão de qual dos dois aparece vive
+            DENTRO da peça, nunca aqui (ver o cabeçalho dela). */}
+        {open && (
+          <ContatosDoNegocio
+            leadId={lead.id}
+            tituloDoNegocio={lead.title}
+            origin="deal"
+            className="border-b border-border py-3"
+            fallback={
+              lead.contact_id && contato.data && !contato.data.data.is_anonymized ? (
+                <ContactActions
+                  contactId={lead.contact_id}
+                  contactName={
+                    contato.data.data.display_name ?? contato.data.data.name ?? lead.title
+                  }
+                  phoneNumber={contato.data.data.phone_number}
+                  company={lead.title}
+                  origin="deal"
+                />
+              ) : null
+            }
+          />
         )}
 
         {/* ② timeline */}

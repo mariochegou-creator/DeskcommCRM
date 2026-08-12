@@ -76,6 +76,9 @@ export {
   ChatCircle,
   Phone,
   WhatsappLogo,
+  // contatos do negócio (0103) — o cartão que o lead manda no meio da conversa
+  AddressBook,
+  UserPlus,
   // prospecção — link de volta pro anúncio do Google Maps no dossiê do lead
   MapPin,
   Paperclip,

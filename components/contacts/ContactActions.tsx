@@ -36,6 +36,16 @@ interface Props {
   origin?: "contact" | "deal";
   /** Contato anonimizado (LGPD) não recebe ligação nem áudio novo. */
   disabled?: boolean;
+  /**
+   * Uma linha de lista, não um cabeçalho: só WhatsApp e Ligar, como ícones.
+   *
+   * Existe para a lista de contatos do negócio (0103), onde a mesma pergunta
+   * aparece três ou quatro vezes empilhada. Uma peça compacta SEPARADA teria
+   * duplicado a regra do telefone — e é justamente ela que muda (o nono dígito
+   * mudou em 0102, e mudaria de novo só num dos dois lugares). Subir áudio sai
+   * porque é ação de UMA ligação específica, e na lista não se sabe qual.
+   */
+  compacto?: boolean;
 }
 
 /**
@@ -55,6 +65,7 @@ export function ContactActions({
   company,
   origin = "contact",
   disabled = false,
+  compacto = false,
 }: Props) {
   const [recorderOpen, setRecorderOpen] = useState(false);
   const [enviando, setEnviando] = useState(false);
@@ -113,27 +124,35 @@ export function ContactActions({
       <Button
         variant="outline"
         size="sm"
+        className={compacto ? "h-7 w-7 p-0" : undefined}
         disabled={!whatsapp || disabled}
-        title={whatsapp ? undefined : "Contato sem telefone utilizável"}
+        // No compacto o rótulo sai da tela mas não do leitor: `aria-label` é o
+        // que sobra, e o `title` vira a explicação de por que o botão está
+        // apagado — que no modo cheio o texto já dava.
+        aria-label={compacto ? `WhatsApp de ${contactName}` : undefined}
+        title={whatsapp ? (compacto ? "WhatsApp" : undefined) : "Contato sem telefone utilizável"}
         onClick={() => {
           if (whatsapp) window.open(`https://wa.me/${whatsapp}`, "_blank", "noopener,noreferrer");
         }}
       >
         <ChatCircle size={16} weight="bold" aria-hidden />
-        <span>WhatsApp</span>
+        {!compacto && <span>WhatsApp</span>}
       </Button>
 
       <Button
         variant="outline"
         size="sm"
+        className={compacto ? "h-7 w-7 p-0" : undefined}
         disabled={!phone || disabled || startCall.isPending}
-        title={phone ? undefined : "Contato sem telefone utilizável"}
+        aria-label={compacto ? `Ligar para ${contactName}` : undefined}
+        title={phone ? (compacto ? "Ligar" : undefined) : "Contato sem telefone utilizável"}
         onClick={handleLigar}
       >
         <Phone size={16} weight="bold" aria-hidden />
-        <span>Ligar</span>
+        {!compacto && <span>Ligar</span>}
       </Button>
 
+      {!compacto && (
       <Button
         variant="outline"
         size="sm"
@@ -147,15 +166,20 @@ export function ContactActions({
         )}
         <span>{enviando ? "Enviando…" : "Subir áudio da ligação"}</span>
       </Button>
+      )}
 
-      <input
-        ref={fileRef}
-        type="file"
-        accept={CALL_AUDIO_ACCEPT}
-        className="hidden"
-        onChange={(e) => void handleArquivo(e)}
-      />
+      {!compacto && (
+        <input
+          ref={fileRef}
+          type="file"
+          accept={CALL_AUDIO_ACCEPT}
+          className="hidden"
+          onChange={(e) => void handleArquivo(e)}
+        />
+      )}
 
+      {/* O gravador continua montado no compacto: no desktop é ELE que o botão
+          "Ligar" abre, e sem isso o botão da lista não faria nada. */}
       {phone && (
         <CallRecorderDialog
           open={recorderOpen}
