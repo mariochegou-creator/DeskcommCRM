@@ -12,6 +12,7 @@
 import { createHmac, timingSafeEqual } from "node:crypto";
 
 import { audit } from "@/lib/audit";
+import { analisarVCard } from "@/lib/contacts/vcard";
 import type { createAdminClient } from "@/lib/supabase/admin";
 import { ackToStatus } from "@/lib/types/messaging";
 import { bareWaMessageId } from "@/lib/waha/message-id";
@@ -42,6 +43,8 @@ export interface WahaPayload {
   mimetype?: string;
   /** WAHA >= 2026.x (NOWEB): mídia vem aninhada em payload.media. */
   media?: { url?: string | null; mimetype?: string | null; filename?: string | null } | null;
+  /** NOWEB: contato compartilhado — um texto de vCard por cartão enviado. */
+  vCards?: string[] | null;
   _data?: {
     notifyName?: string;
     pushName?: string;
@@ -148,8 +151,65 @@ export function verifyHmacSha512(
   }
 }
 
+/**
+ * O texto dos cartões de contato que vieram na mensagem, ou null.
+ *
+ * ⚠️ ISTO É O QUE FAZIA O CONTATO COMPARTILHADO SUMIR DO INBOX. O NOWEB manda
+ * "compartilhar contato" com `body: null`, `hasMedia: false` e `media: null` —
+ * o vCard vai em `payload.vCards[]` (e em `_data.message.contactMessage.vcard`).
+ * A guarda de conteúdo lia só body/mídia, então a mensagem morria como
+ * `skip:sem_conteudo`: chegava no WhatsApp Web e nunca no CRM. Medido em
+ * 12/08/2026, no cartão do Hotel Taco de Ouro que o David mandou.
+ *
+ * O topo do payload vem primeiro porque é a forma normalizada do WAHA e já
+ * cobre `multi_vcard` (o WhatsApp deixa mandar vários cartões numa mensagem
+ * só). `_data.message` é o cru do Baileys, usado quando o topo não veio.
+ *
+ * O retorno é o texto inteiro, com um cartão por bloco `BEGIN:VCARD` — é ele
+ * que vira o `body` da mensagem, e é dele que `lib/contacts/vcard.ts` tira nome
+ * e telefone tanto na bolha quanto na rota que grava o vínculo.
+ */
+export function textoDosVCards(p: WahaPayload): string | null {
+  const cartoes: string[] = [];
+  const guardar = (v: unknown) => {
+    if (typeof v === "string" && v.includes("BEGIN:VCARD")) cartoes.push(v);
+  };
+
+  if (Array.isArray(p.vCards)) p.vCards.forEach(guardar);
+
+  if (cartoes.length === 0) {
+    const msg = p._data?.message as Record<string, unknown> | undefined;
+    const um = msg?.contactMessage as { vcard?: unknown } | undefined;
+    guardar(um?.vcard);
+    const varios = msg?.contactsArrayMessage as { contacts?: unknown } | undefined;
+    if (Array.isArray(varios?.contacts)) {
+      for (const c of varios.contacts) guardar((c as { vcard?: unknown })?.vcard);
+    }
+  }
+
+  return cartoes.length > 0 ? cartoes.join("\n") : null;
+}
+
+/**
+ * O que vai para `messages.body`: o texto escrito, ou o vCard quando a mensagem
+ * É um contato. A bolha do inbox lê o `body` de uma mensagem `contact` como
+ * vCard — deixá-lo nulo desenharia uma bolha vazia.
+ */
+function corpoDaMensagem(p: WahaPayload): string | null {
+  return p.body ?? textoDosVCards(p);
+}
+
 function previewFromMessage(p: WahaPayload): string {
   if (p.body) return p.body.slice(0, 280);
+  // Cartão de contato: a lista de conversas mostra o nome de quem foi
+  // compartilhado, não "[contact]" nem sete linhas de BEGIN:VCARD.
+  const vcards = textoDosVCards(p);
+  if (vcards) {
+    const nomes = analisarVCard(vcards)
+      .map((c) => c.nome)
+      .filter(Boolean);
+    return nomes.length > 0 ? `Contato: ${nomes.join(", ")}`.slice(0, 280) : "[contato]";
+  }
   const t = resolveMessageType(p);
   return t !== "text" ? `[${t}]` : "";
 }
@@ -199,6 +259,8 @@ function mapWahaMessageType(raw: string | undefined): string {
  * resolução: `type` explícito → chave do message → prefixo do MIME → text.
  */
 const NOWEB_MESSAGE_KEY_TYPE: Record<string, string> = {
+  contactMessage: "contact",
+  contactsArrayMessage: "contact",
   stickerMessage: "sticker",
   imageMessage: "image",
   videoMessage: "video",
@@ -210,6 +272,9 @@ const NOWEB_MESSAGE_KEY_TYPE: Record<string, string> = {
 
 export function resolveMessageType(p: WahaPayload): string {
   if (p.type) return mapWahaMessageType(p.type);
+  // vCard no topo do payload sem `_data` (WAHA normaliza assim): sem esta linha
+  // o cartão entraria como `text` e a bolha mostraria o BEGIN:VCARD cru.
+  if (Array.isArray(p.vCards) && p.vCards.length > 0) return "contact";
   const msg = p._data?.message;
   if (msg && typeof msg === "object") {
     for (const [key, mapped] of Object.entries(NOWEB_MESSAGE_KEY_TYPE)) {
@@ -352,7 +417,8 @@ async function handleInbound(
   if (parsed.kind === "group") return "grupo"; // grupos não fazem binding CRM
   if (!p.id || !chatId) return "sem_id_ou_chat";
   // WAHA emite eventos vazios p/ status/read-receipt/presence — não viram mensagem.
-  if (!p.body && !mediaUrlOf(p) && !p.hasMedia) return "sem_conteudo";
+  const corpo = corpoDaMensagem(p);
+  if (!corpo && !mediaUrlOf(p) && !p.hasMedia) return "sem_conteudo";
 
   const contactId = await upsertContact(admin, session.organization_id, parsed, chatId, notifyNameOf(p));
   if (!contactId) return "contato_upsert_falhou";
@@ -372,7 +438,7 @@ async function handleInbound(
       direction: "inbound",
       status: "delivered",
       ack: p.ack ?? null,
-      body: p.body ?? null,
+      body: corpo,
       media_url: mediaUrlOf(p),
       media_mime: mediaMimeOf(p),
       sent_via: "external_device",
@@ -519,7 +585,8 @@ async function handleOutboundFromUserPhone(
   const parsed = parseChatIdComAlt(chatId, p);
   if (parsed.kind === "group") return "grupo";
   if (!p.id || !chatId) return "sem_id_ou_chat";
-  if (!p.body && !mediaUrlOf(p) && !p.hasMedia) return "sem_conteudo";
+  const corpo = corpoDaMensagem(p);
+  if (!corpo && !mediaUrlOf(p) && !p.hasMedia) return "sem_conteudo";
 
   // Eco do próprio composer: o CRM já gravou esta linha em `sendMessageHandler`.
   // Os dois lados guardam formas DIFERENTES do mesmo id — o NOWEB responde ao
@@ -570,7 +637,7 @@ async function handleOutboundFromUserPhone(
       direction: "outbound",
       status: "sent",
       ack: p.ack ?? null,
-      body: p.body ?? null,
+      body: corpo,
       media_url: mediaUrlOf(p),
       media_mime: mediaMimeOf(p),
       sent_via: "external_device",
