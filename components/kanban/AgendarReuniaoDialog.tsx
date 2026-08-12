@@ -50,6 +50,11 @@ const MOTIVO_DA_CONFIRMACAO: Record<string, string> = {
   contato_bloqueado: "o contato está bloqueado — a confirmação não saiu.",
   sem_sessao: "nenhum número de WhatsApp conectado — a confirmação não saiu.",
   falhou: "o envio da confirmação falhou. Mande na mão por enquanto.",
+  // Não é falha: é o interruptor da org desligado de propósito. A frase diz o
+  // que sobrou pro humano, porque a reunião ficou marcada de verdade e o lead
+  // não sabe disso.
+  automacao_desligada:
+    "as mensagens automáticas estão DESLIGADAS. A reunião ficou marcada, mas o lead não foi avisado — mande a confirmação e os lembretes na mão.",
 };
 
 /**

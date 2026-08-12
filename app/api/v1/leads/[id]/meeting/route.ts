@@ -15,6 +15,10 @@
  *
  * Remarcar é o MESMO verbo: o POST sobrescreve `reuniao` e zera `avisos`, de
  * modo que a véspera do horário novo saia mesmo que a do antigo já tenha saído.
+ *
+ * Os passos 3 e 4 obedecem ao interruptor da org: com a IA calada
+ * (`ai_dispatch_mode = 'external'`, ver `automacaoDesligada`) a reunião é
+ * gravada e vai pra agenda, mas nenhuma mensagem sai no WhatsApp.
  */
 import { randomUUID } from "node:crypto";
 import { type NextRequest } from "next/server";
@@ -32,7 +36,11 @@ import {
   type Reuniao,
   type TipoDeReuniao,
 } from "@/lib/agendamento/reuniao";
-import { enviarTexto } from "@/lib/agendamento/envio";
+import {
+  automacaoDesligada,
+  enviarTexto,
+  type ResultadoDoEnvio,
+} from "@/lib/agendamento/envio";
 import { tipoDeReuniaoDaEtapa } from "@/lib/agendamento/etapa";
 import {
   agendaConfigurada,
@@ -183,37 +191,46 @@ export async function POST(
 
   // A confirmação sai por conta própria (a decisão do Mario em 09/08): lembrete
   // que espera alguém apertar "enviar" é lembrete que não sai.
+  //
+  // Só que "por conta própria" agora obedece ao interruptor da org: com a IA
+  // calada (`ai_dispatch_mode = 'external'`) o agendamento é gravado, o evento
+  // vai pra agenda e NADA sai no WhatsApp — a tela devolve
+  // `confirmacao.motivo = "automacao_desligada"` e quem marcou escreve à mão.
   const admin = createAdminClient();
-  const { data: contato } = lead.contact_id
-    ? await admin
-        .from("contacts")
-        .select("name, display_name")
-        .eq("id", lead.contact_id)
-        .eq("organization_id", lead.organization_id)
-        .maybeSingle()
-    : { data: null };
+  let envio: ResultadoDoEnvio = { ok: false, motivo: "automacao_desligada" };
 
-  const nomeDoContato =
-    (contato as { name?: string | null; display_name?: string | null } | null)?.display_name ??
-    (contato as { name?: string | null } | null)?.name ??
-    null;
+  if (!(await automacaoDesligada(admin, lead.organization_id))) {
+    const { data: contato } = lead.contact_id
+      ? await admin
+          .from("contacts")
+          .select("name, display_name")
+          .eq("id", lead.contact_id)
+          .eq("organization_id", lead.organization_id)
+          .maybeSingle()
+      : { data: null };
 
-  const corpo = mensagemDeConfirmacao(reuniao, {
-    nomeDoContato,
-    negocio,
-    // Assina quem marcou. `full_name` já vem do requireRole — buscar de novo
-    // seria uma ida ao banco para saber o que a sessão já sabe.
-    quemConduz: user.full_name,
-  });
+    const nomeDoContato =
+      (contato as { name?: string | null; display_name?: string | null } | null)?.display_name ??
+      (contato as { name?: string | null } | null)?.name ??
+      null;
 
-  const envio = await enviarTexto(admin, {
-    organizationId: lead.organization_id,
-    contactId: lead.contact_id,
-    corpo,
-    metadata: { meeting_lead_id: leadId, meeting_message: "confirmacao", meeting_at: reuniao.em },
-    origem: "crm:meeting-confirmation",
-    requestId,
-  });
+    const corpo = mensagemDeConfirmacao(reuniao, {
+      nomeDoContato,
+      negocio,
+      // Assina quem marcou. `full_name` já vem do requireRole — buscar de novo
+      // seria uma ida ao banco para saber o que a sessão já sabe.
+      quemConduz: user.full_name,
+    });
+
+    envio = await enviarTexto(admin, {
+      organizationId: lead.organization_id,
+      contactId: lead.contact_id,
+      corpo,
+      metadata: { meeting_lead_id: leadId, meeting_message: "confirmacao", meeting_at: reuniao.em },
+      origem: "crm:meeting-confirmation",
+      requestId,
+    });
+  }
 
   // Carimba a confirmação DENTRO do próprio agendamento. É o que deixa o
   // preparo da Sala de Reuniões afirmar "o convite saiu" em vez de supor a
@@ -244,7 +261,11 @@ export async function POST(
     sourceId: leadId,
     actor: { type: "user", id: user.id },
     reason: `${ROTULO_DO_TIPO[tipo]} marcada para ${q.diaDaSemana} (${q.diaMes}) às ${q.hora}${
-      envio.ok ? " — confirmação enviada ao lead" : ` — confirmação NÃO enviada (${envio.motivo})`
+      envio.ok
+        ? " — confirmação enviada ao lead"
+        : envio.motivo === "automacao_desligada"
+          ? " — mensagens automáticas desligadas: avise o lead você mesmo"
+          : ` — confirmação NÃO enviada (${envio.motivo})`
     }.`,
     payload: { reuniao_em: reuniao.em, tipo, confirmacao_enviada: envio.ok },
   });

@@ -13,6 +13,10 @@
  * desconfiar de quem está do outro lado. O rollback devolve a chance de retry
  * no tick seguinte, dentro da tolerância de atraso.
  *
+ * INTERRUPTOR: org com `ai_dispatch_mode = 'external'` não recebe lembrete
+ * nenhum (ver `automacaoDesligada`). É a mesma chave que cala a IA nas
+ * respostas — quem desliga a IA espera silêncio total, inclusive daqui.
+ *
  * ZERO LLM: o texto é montado em código (lib/agendamento/mensagens.ts). Os
  * agentes da NEXO seguem sem versão publicada e isto tem de funcionar assim
  * mesmo — a mesma escolha feita no bom-dia do plano de 60 dias.
@@ -34,7 +38,7 @@ import {
   type Lembrete,
   type Reuniao,
 } from "@/lib/agendamento/reuniao";
-import { enviarTexto } from "@/lib/agendamento/envio";
+import { automacaoDesligada, enviarTexto } from "@/lib/agendamento/envio";
 import { TEXTO_DO_LEMBRETE } from "@/lib/agendamento/mensagens";
 import { createAdminClient } from "@/lib/supabase/admin";
 
@@ -88,8 +92,29 @@ async function handle(req: NextRequest): Promise<Response> {
   let enviados = 0;
   let falhados = 0;
   let semNada = 0;
+  let desligados = 0;
+
+  // Cache por TICK, não por processo: o interruptor é de banco e tem de valer no
+  // minuto em que muda. Guardar no módulo obrigaria a reiniciar a VPS para
+  // religar os lembretes — e o ponto de um interruptor é não precisar disso.
+  const interruptorPorOrg = new Map<string, boolean>();
+  const estaDesligada = async (organizationId: string): Promise<boolean> => {
+    const jaSabe = interruptorPorOrg.get(organizationId);
+    if (jaSabe !== undefined) return jaSabe;
+    const valor = await automacaoDesligada(admin, organizationId);
+    interruptorPorOrg.set(organizationId, valor);
+    return valor;
+  };
 
   for (const linha of linhas) {
+    // Antes do carimbo, de propósito: lead pulado por interruptor desligado não
+    // pode ficar marcado como avisado. Se o Mario religar dentro da janela, o
+    // lembrete ainda sai.
+    if (await estaDesligada(linha.organization_id)) {
+      desligados++;
+      continue;
+    }
+
     const reuniao = lerReuniao(linha.custom_fields);
     if (!reuniao) {
       semNada++;
@@ -155,12 +180,19 @@ async function handle(req: NextRequest): Promise<Response> {
       enviados,
       falhados,
       sem_lembrete: semNada,
+      automacao_desligada: desligados,
     },
     requestId,
   });
 
   return ok(
-    { leads_varridos: linhas.length, enviados, falhados, sem_lembrete: semNada },
+    {
+      leads_varridos: linhas.length,
+      enviados,
+      falhados,
+      sem_lembrete: semNada,
+      automacao_desligada: desligados,
+    },
     { requestId },
   );
 }

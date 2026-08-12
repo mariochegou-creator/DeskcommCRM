@@ -21,9 +21,59 @@ export type ResultadoDoEnvio =
   | { ok: true; messageId: string; conversationId: string }
   | {
       ok: false;
-      motivo: "sem_contato" | "sem_telefone" | "contato_bloqueado" | "sem_sessao" | "falhou";
+      motivo:
+        | "sem_contato"
+        | "sem_telefone"
+        | "contato_bloqueado"
+        | "sem_sessao"
+        | "automacao_desligada"
+        | "falhou";
       detalhe?: string;
     };
+
+/**
+ * A org está com as mensagens automáticas desligadas?
+ *
+ * Reusa a MESMA chave que cala a IA nas respostas
+ * (`organizations.settings.ai_dispatch_mode = 'external'`, spec 14) em vez de
+ * criar uma segunda. A razão é do dia 12/08/2026: a IA já estava desligada na
+ * chave certa e ainda assim saiu uma mensagem sozinha uma hora antes de uma
+ * reunião — porque o lembrete de agendamento não consultava chave nenhuma.
+ *
+ * Dois interruptores para a mesma pergunta ("a IA está calada?") é exatamente
+ * como se chega nesse tipo de surpresa: desliga-se um e o outro segue mandando.
+ * Aqui há um só, e ele vale para os três textos do anti-no-show (confirmação,
+ * véspera e toque final).
+ *
+ * FAIL-CLOSED: se a leitura falhar, considera DESLIGADO. Entre não mandar e
+ * mandar sem saber se era permitido, o erro caro é o segundo — a mensagem que
+ * sai no WhatsApp do lead não tem botão de desfazer.
+ */
+export async function automacaoDesligada(
+  admin: SupabaseClient,
+  organizationId: string,
+): Promise<boolean> {
+  const { data, error } = await admin
+    .from("organizations")
+    .select("settings")
+    .eq("id", organizationId)
+    .maybeSingle();
+
+  if (error) {
+    logger.error("[agendamento] interruptor da automação ilegível — tratando como desligado", {
+      organizationId,
+      error: error.message,
+    });
+    return true;
+  }
+
+  const settings = (data as { settings?: unknown } | null)?.settings;
+  const modo =
+    settings && typeof settings === "object" && !Array.isArray(settings)
+      ? (settings as Record<string, unknown>).ai_dispatch_mode
+      : undefined;
+  return modo === "external";
+}
 
 /**
  * A sessão por onde falar com este contato.
