@@ -185,9 +185,17 @@ async function request<T>(
       if (opts.signal?.aborted) {
         throw err;
       }
-      // Network error / timeout — retry
+      // Network error / timeout — retry SÓ em leitura.
+      //
+      // Timeout do cliente não significa que o servidor não fez o trabalho: ele
+      // pode estar terminando agora. Repetir um POST nessa hora manda a mesma
+      // ação de novo, e nada no servidor peneira a repetição (o header
+      // `Idempotency-Key` viaja, mas não existe middleware que o leia). Foi o
+      // que aconteceu com vídeo no inbox: o envio passa dos 10s de timeout
+      // enquanto o WAHA sobe o arquivo, o cliente reenviava, e o cliente final
+      // recebia o mesmo vídeo 3 vezes.
       lastError = err;
-      if (attempt < MAX_ATTEMPTS) {
+      if (attempt < MAX_ATTEMPTS && !MUTATING_METHODS.has(method)) {
         await sleep(backoffMs(attempt), opts.signal);
         continue;
       }

@@ -89,6 +89,21 @@ describe("apiClient", () => {
     expect(fetchMock).toHaveBeenCalledTimes(2);
   });
 
+  it("t8: POST com erro de rede/timeout NÃO retenta (duplicaria a ação)", async () => {
+    fetchMock.mockRejectedValue(new TypeError("fetch failed"));
+    await expect(apiClient.post("/x", { a: 1 })).rejects.toThrow();
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+  });
+
+  it("t9: GET com erro de rede continua retentando", async () => {
+    fetchMock
+      .mockRejectedValueOnce(new TypeError("fetch failed"))
+      .mockResolvedValueOnce(jsonResponse(200, { data: { ok: true } }));
+    const result = await apiClient.get<{ data: { ok: boolean } }>("/x");
+    expect(result).toEqual({ data: { ok: true } });
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+  });
+
   it("t7: opts.idempotencyKey overrides auto-uuid", async () => {
     fetchMock.mockResolvedValueOnce(jsonResponse(200, { data: { ok: true } }));
     await apiClient.post("/x", { a: 1 }, { idempotencyKey: "custom-key-123" });

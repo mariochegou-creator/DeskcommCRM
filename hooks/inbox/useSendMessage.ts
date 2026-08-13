@@ -24,7 +24,14 @@ export function useSendMessage() {
 
   return useMutation({
     mutationFn: async (input: SendArgs) =>
-      apiClient.post<{ data: Message }>("/api/v1/messages", input),
+      apiClient.post<{ data: Message }>("/api/v1/messages", input, {
+        // O POST só responde depois que o WAHA terminou de subir o arquivo pro
+        // WhatsApp (envio síncrono, ver app/api/v1/messages/_handler.ts). Um
+        // vídeo de alguns MB passa fácil dos 10s do padrão — e o timeout aqui
+        // deixava o dialog de anexo travado em "enviando" mesmo com a mensagem
+        // já entregue.
+        ...(input.media_storage_path || input.media_url ? { timeoutMs: 180_000 } : {}),
+      }),
     onMutate: async (args) => {
       if (args.media_storage_path || args.media_url) return {};
 

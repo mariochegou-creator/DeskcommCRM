@@ -28,8 +28,11 @@ export function AttachmentPreviewDialog({ file, sending, onCancel, onSend }: Pro
   const isImage = file.type.startsWith("image/");
   const isVideo = file.type.startsWith("video/");
 
+  // Fechar no X durante o envio não cancela nada — o arquivo já está a caminho.
+  // O dialog sumindo fazia parecer que não tinha ido, e o operador anexava e
+  // mandava de novo. Fica preso até terminar (ou falhar).
   return (
-    <Dialog open onOpenChange={(open) => !open && onCancel()}>
+    <Dialog open onOpenChange={(open) => !open && !sending && onCancel()}>
       <DialogContent className="max-w-md">
         <DialogHeader>
           <DialogTitle>Enviar anexo</DialogTitle>
@@ -61,7 +64,7 @@ export function AttachmentPreviewDialog({ file, sending, onCancel, onSend }: Pro
             Cancelar
           </Button>
           <Button onClick={() => onSend(caption.trim())} disabled={sending}>
-            Enviar
+            {sending ? "Enviando…" : "Enviar"}
           </Button>
         </DialogFooter>
       </DialogContent>
