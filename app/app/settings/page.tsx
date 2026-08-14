@@ -50,6 +50,13 @@ const LINKS: SettingsLink[] = [
     managerOnly: true,
   },
   {
+    href: "/app/settings/tags",
+    title: "Tags do cliente",
+    description:
+      "A lista colorida que marca o cliente no card do Kanban e na conversa do inbox.",
+    managerOnly: true,
+  },
+  {
     href: "/app/settings/import-lista",
     title: "Importar lista",
     description:

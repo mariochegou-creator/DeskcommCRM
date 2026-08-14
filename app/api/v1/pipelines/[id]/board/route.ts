@@ -16,7 +16,12 @@ import { randomUUID } from "node:crypto";
 import { type NextRequest } from "next/server";
 
 import { fail, ok } from "@/lib/api/wrappers";
-import { emLotes, withOwnerAgents, withScores } from "@/lib/leads/enriquecimento";
+import {
+  emLotes,
+  withClientTags,
+  withOwnerAgents,
+  withScores,
+} from "@/lib/leads/enriquecimento";
 import {
   roteiaProximasAcoes,
   type EstadoDoContato,
@@ -227,10 +232,19 @@ export async function GET(_req: NextRequest, ctx: RouteCtx): Promise<Response> {
     return fail("internal_error", leadsComScore.error, 500, { requestId });
   }
 
+  const leadsComTags = await withClientTags(
+    supabase,
+    (pipeline as Pipeline).organization_id,
+    leadsComScore.leads,
+  );
+  if (leadsComTags.error) {
+    return fail("internal_error", leadsComTags.error, 500, { requestId });
+  }
+
   const board: BoardData = {
     pipeline: pipeline as Pipeline,
     stages: (stages ?? []) as Stage[],
-    leads: leadsComScore.leads,
+    leads: leadsComTags.leads,
   };
 
   return ok(board, { requestId });

@@ -2296,6 +2296,44 @@ export type Database = {
           },
         ]
       }
+      crm_client_tags: {
+        Row: {
+          color: string
+          created_at: string
+          id: string
+          name: string
+          organization_id: string
+          position: number
+          updated_at: string
+        }
+        Insert: {
+          color?: string
+          created_at?: string
+          id?: string
+          name: string
+          organization_id: string
+          position?: number
+          updated_at?: string
+        }
+        Update: {
+          color?: string
+          created_at?: string
+          id?: string
+          name?: string
+          organization_id?: string
+          position?: number
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "crm_client_tags_organization_id_fkey"
+            columns: ["organization_id"]
+            isOneToOne: false
+            referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       crm_lead_activities: {
         Row: {
           actor_agent_id: string | null
@@ -5867,6 +5905,21 @@ export type Database = {
           p_payload?: Json
         }
         Returns: string
+      }
+      fn_remove_tag_do_cliente: {
+        Args: {
+          p_nome: string
+          p_organization_id: string
+        }
+        Returns: number
+      }
+      fn_renomeia_tag_do_cliente: {
+        Args: {
+          p_de: string
+          p_organization_id: string
+          p_para: string
+        }
+        Returns: number
       }
       fn_mark_conversation_message: {
         Args: {

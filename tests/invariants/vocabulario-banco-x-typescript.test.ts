@@ -163,6 +163,17 @@ const PARES: Array<{
     arquivo: "lib/tarefas/tarefa.ts",
     simbolo: "StatusDaTarefa",
   },
+  // --- Tags do cliente (0105). A UI ITERA os valores para desenhar as oito
+  // bolinhas do seletor de cor em Configurações — então uma cor nova no banco
+  // sem par no TypeScript não aparece como 23514 no INSERT: aparece como uma
+  // cor que existe, que ninguém consegue escolher, e cujo chip sai CINZA
+  // (`corDeTag` normaliza o desconhecido para o padrão). Silêncio dos dois lados.
+  {
+    tabela: "crm_client_tags",
+    coluna: "color",
+    arquivo: "lib/tags/cores.ts",
+    simbolo: "CORES_DE_TAG",
+  },
 ];
 
 /** Tira um nível de parênteses externos, se ele envolver a expressão inteira. */

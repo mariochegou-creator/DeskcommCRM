@@ -81,6 +81,17 @@ export interface Lead {
   external_id: string | null;
   custom_fields: Record<string, unknown>;
   tags: string[];
+  /**
+   * Derivado (não é coluna): as tags do CLIENTE (0105), lidas de
+   * `contacts.tags` pelo `contact_id`.
+   *
+   * Não se confunde com `tags` logo acima, que é do NEGÓCIO: aquelas
+   * qualificam este card ("orçamento enviado"), estas qualificam a PESSOA
+   * ("Cliente VIP") e por isso aparecem em todos os negócios dela e em toda
+   * conversa dela no inbox. As duas convivem por decisão — ver o cabeçalho da
+   * migration 0105.
+   */
+  client_tags?: string[];
   created_at: string;
   updated_at: string;
   created_by_user_id: string | null;

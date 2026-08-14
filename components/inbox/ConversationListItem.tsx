@@ -4,6 +4,7 @@ import { ptBR } from "date-fns/locale";
 import { Robot } from "@/lib/ui/icons";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { Badge } from "@/components/ui/badge";
+import { ChipsDeTag } from "@/components/tags/ChipsDeTag";
 import { cn } from "@/lib/utils";
 import type { ConversationWithContact } from "@/hooks/inbox/useConversationsRealtime";
 
@@ -66,8 +67,6 @@ export function ConversationListItem({
     "Sem nome";
   const phoneFallback = c?.phone_number ?? "??";
   const tags = c?.tags ?? [];
-  const visibleTags = tags.slice(0, 2);
-  const overflow = tags.length - visibleTags.length;
   const preview = conversation.last_message_preview?.trim() || "Sem mensagens";
   const truncated = preview.length > 60 ? `${preview.slice(0, 60)}…` : preview;
   const time = relativeTime(conversation.last_message_at);
@@ -134,14 +133,12 @@ export function ConversationListItem({
         </p>
 
         <div className="mt-1.5 flex flex-wrap items-center gap-1">
-          {visibleTags.map((t) => (
-            <Badge key={t} variant="secondary" className="h-4 px-1.5 text-[10px]">
-              {t}
-            </Badge>
-          ))}
-          {overflow > 0 && (
-            <span className="text-[10px] text-muted-foreground">+{overflow}</span>
-          )}
+          {/* A COR da tag é o pedido inteiro desta faixa (0105): a lista é
+              varrida com o olho, e um chip cinza atrás do outro não distingue
+              "Cliente" de "Não perturbar" sem parar para ler. O chip sabe casar
+              o nome com o catálogo e cair para cinza no que não casa — texto
+              livre e importação de prospecção continuam aparecendo. */}
+          <ChipsDeTag nomes={tags} max={2} tamanho="xs" />
           {c?.is_blocked && (
             <Badge variant="destructive" className="h-4 px-1.5 text-[10px]">
               Bloqueado

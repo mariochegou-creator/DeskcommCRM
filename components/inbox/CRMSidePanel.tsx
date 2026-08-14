@@ -4,11 +4,12 @@ import { useMemo, useState } from "react";
 import { format } from "date-fns";
 import { ptBR } from "date-fns/locale";
 import { Card } from "@/components/ui/card";
-import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Separator } from "@/components/ui/separator";
 import { Receipt, ArrowRight } from "@/lib/ui/icons";
+import { SeletorDeTagsDoCliente } from "@/components/tags/SeletorDeTagsDoCliente";
+import { usePermission } from "@/hooks/auth/AuthProvider";
 import { useCrmSummary } from "@/hooks/inbox/useCrmSummary";
 import type { ConversationWithContact } from "@/hooks/inbox/useConversationsRealtime";
 import { activityLabel, actorLabel, actorShape } from "@/lib/leads/activity-vocabulary";
@@ -112,6 +113,9 @@ export function CRMSidePanel({ conversation }: Props) {
   const extras = useMemo(() => extractExtras(lead?.custom_fields ?? null), [lead]);
 
   const tags = contact?.tags ?? [];
+  // Marcar o cliente é escrita em `contacts` — o mesmo piso do PATCH da rota
+  // (agent+). Viewer continua vendo os chips, sem o botão que seria recusado.
+  const podeMarcarTag = usePermission("contact.update");
   const displayName =
     contact?.display_name?.trim() ||
     contact?.name?.trim() ||
@@ -137,15 +141,19 @@ export function CRMSidePanel({ conversation }: Props) {
           {contact?.phone_number && (
             <div className="text-xs text-muted-foreground">{contact.phone_number}</div>
           )}
-          {tags.length > 0 && (
-            <div className="flex flex-wrap gap-1">
-              {tags.map((t) => (
-                <Badge key={t} variant="secondary" className="h-4 px-1.5 text-[10px]">
-                  {t}
-                </Badge>
-              ))}
-            </div>
-          )}
+          {/* As tags do CLIENTE (0105) — as mesmas que colorem a lista à
+              esquerda e o card do Kanban. Ficam no cartão do Contato, e não
+              numa seção própria lá embaixo junto das outras duas listas, porque
+              é do contato que elas falam: quem abre a conversa lê nome,
+              telefone e "que cliente é este" de uma vez só.
+
+              Sem lista de sugestão e sem campo livre de propósito: quem escolhe
+              o vocabulário é Configurações. Ver SeletorDeTagsDoCliente. */}
+          <SeletorDeTagsDoCliente
+            contactId={contactId}
+            tags={tags}
+            podeEditar={podeMarcarTag}
+          />
           {contactId && (
             <div className="pt-1">
               <Button asChild size="sm" variant="ghost" className="h-7 px-2 text-xs">

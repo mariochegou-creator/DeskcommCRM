@@ -119,6 +119,21 @@
   --stage-fechado: #157f52;
   --stage-perdido: #b42318;
 
+  /* Tags do cliente (0105) — paleta FECHADA de 8, escolhida em Configurações.
+     Fechada e não hex livre pelo mesmo motivo que `crm_stages.color` não é
+     usado no pill de etapa: cor digitada por quem configura não tem garantia
+     nenhuma de contraste, e a tag aparece em fonte de 10px na lista do inbox,
+     que é o pior caso do app. Cada stop aqui é o TEXTO; o fundo sai dele a 12%
+     via color-mix, o mesmo par translúcido/saturado do STAGE_PILL_CLASS. */
+  --tag-cinza: #4a5769;
+  --tag-azul: #2563eb;
+  --tag-ciano: #0a7d95;
+  --tag-verde: #157f52;
+  --tag-ambar: #b45309;
+  --tag-vermelho: #b42318;
+  --tag-roxo: #6d28d9;
+  --tag-rosa: #be185d;
+
   /* Spacing (4-base) */
   --space-0: 0px;
   --space-1: 4px;
@@ -304,6 +319,18 @@
   --stage-proposta: #00c8e8;
   --stage-fechado: #34d399;
   --stage-perdido: #f87171;
+
+  /* Tags do cliente — os MESMOS 8 nomes, stops claros sobre o navy. A tag
+     escolhida como "azul" continua azul ao alternar o tema; só o stop muda,
+     igual às séries de gráfico. */
+  --tag-cinza: #94a3b8;
+  --tag-azul: #60a5fa;
+  --tag-ciano: #00c8e8;
+  --tag-verde: #34d399;
+  --tag-ambar: #fbbf24;
+  --tag-vermelho: #f87171;
+  --tag-roxo: #c4b5fd;
+  --tag-rosa: #f9a8d4;
 
   /* Shadows — NO ESCURO NÃO HÁ SOMBRA. A profundidade vem do degrau de tom
      entre #050e1f (fundo), #081422 (card) e #0d1e35 (elevado), mais a borda

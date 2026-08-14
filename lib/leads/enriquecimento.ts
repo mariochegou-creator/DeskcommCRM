@@ -184,3 +184,51 @@ export async function withScores(
     error: null,
   };
 }
+
+/**
+ * Anexa as tags do CLIENTE (0105) aos leads, lidas de `contacts.tags`.
+ *
+ * Enriquecimento e não join no SELECT do board pelo mesmo motivo dos outros
+ * dois deste arquivo: a rota do board lê `crm_leads` com `select("*")` e o
+ * painel do inbox monta o mesmo lead por outro caminho — costurar o contato
+ * dentro do SELECT resolveria só um dos dois, e o card do Kanban e o painel
+ * passariam a discordar sobre o mesmo negócio.
+ *
+ * Em lotes pela razão documentada em `emLotes`: a lista de ids viaja na URL.
+ *
+ * Lead sem `contact_id` sai como está — negócio criado à mão sem contato existe,
+ * e forçar `client_tags: []` nele diria "este cliente não tem tag" sobre um
+ * cliente que não existe.
+ */
+export async function withClientTags(
+  supabase: Supabase,
+  organizationId: string,
+  leads: Lead[],
+): Promise<{ leads: Lead[]; error: string | null }> {
+  const contactIds = [
+    ...new Set(leads.map((l) => l.contact_id).filter((c): c is string => !!c)),
+  ];
+  if (contactIds.length === 0) return { leads, error: null };
+
+  const { data, error } = await emLotes(contactIds, (lote) =>
+    supabase
+      .from("contacts")
+      .select("id, tags")
+      .eq("organization_id", organizationId)
+      .in("id", lote),
+  );
+  if (error) return { leads, error };
+
+  const porContato = new Map<string, string[]>();
+  for (const row of (data ?? []) as Array<{ id: string; tags: string[] | null }>) {
+    porContato.set(row.id, row.tags ?? []);
+  }
+
+  return {
+    leads: leads.map((lead) => {
+      const tags = lead.contact_id ? porContato.get(lead.contact_id) : undefined;
+      return tags ? { ...lead, client_tags: tags } : lead;
+    }),
+    error: null,
+  };
+}

@@ -59,6 +59,17 @@ export interface CardInput {
   canonicalTag?: string | null;
   /** Todas as tags — fora do card, acessíveis no hover. */
   tags: string[];
+  /**
+   * As tags do CLIENTE (0105) — estas SIM ocupam pixel no card.
+   *
+   * Decisão oposta à de `tags` logo acima, e de propósito: as tags do NEGÓCIO
+   * são muitas e específicas do card ("orçamento enviado"), por isso saíram
+   * para o hover pela Lei A. As do CLIENTE são poucas (o catálogo de
+   * Configurações), coloridas, e respondem a pergunta que se faz varrendo o
+   * board com o olho — "que cliente é este?". É a mesma marca que a lista do
+   * inbox mostra, e ver uma coisa nas duas telas é metade do valor dela.
+   */
+  clientTags: string[];
 }
 
 /**
@@ -74,6 +85,7 @@ export function buildCardInput(
     | "value_cents"
     | "currency"
     | "tags"
+    | "client_tags"
     | "last_activity_at"
     | "created_at"
     | "owner_kind"
@@ -128,6 +140,10 @@ export function buildCardInput(
     nextAction: lead.next_action ? { label: lead.next_action.label } : null,
     canonicalTag: (opts.canonicalTags ?? []).find((t) => lead.tags.includes(t)) ?? null,
     tags: lead.tags,
+    // `?? []` e não `lead.client_tags`: o campo é derivado e OPCIONAL (lead sem
+    // contato nunca o recebe). Deixar `undefined` chegar ao card obrigaria cada
+    // leitor a tratar a ausência de novo.
+    clientTags: lead.client_tags ?? [],
   };
 }
 

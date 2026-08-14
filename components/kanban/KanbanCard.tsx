@@ -1,6 +1,7 @@
 "use client";
 import { Draggable } from "@hello-pangea/dnd";
 import type { MouseEvent } from "react";
+import { ChipsDeTag } from "@/components/tags/ChipsDeTag";
 import { cn } from "@/lib/utils";
 import type { Lead } from "@/lib/types/leads";
 import { resolveCardState, stageAgeLabel, type CardInput } from "@/lib/kanban/card-state";
@@ -185,15 +186,26 @@ export function KanbanCard({
             <KanbanCardActions lead={lead} pipelineId={pipelineId} />
           </div>
 
-          {/* ② valor — altura reservada mesmo sem valor, senão o card encolhe. */}
-          <p
-            className={cn(
-              "mt-1 h-5 text-xs font-medium leading-5 tabular-nums",
-              value ? "text-text" : "text-text-muted",
-            )}
-          >
-            {value ?? "—"}
-          </p>
+          {/* ② valor · tags do cliente — a MESMA faixa, altura reservada mesmo
+              sem nenhum dos dois, senão o card encolhe.
+
+              As tags entram aqui em vez de numa faixa nova porque o orçamento
+              do card é fixo (ver o cabeçalho): uma quarta faixa faria o board
+              inteiro crescer para exibir o que a maioria dos cards não tem.
+              Esta linha já estava reservada e quase sempre vazia à direita. */}
+          <div className="mt-1 flex h-5 items-center justify-between gap-2">
+            <p
+              className={cn(
+                "text-xs font-medium leading-5 tabular-nums",
+                value ? "text-text" : "text-text-muted",
+              )}
+            >
+              {value ?? "—"}
+            </p>
+            <div className="flex shrink-0 items-center gap-1">
+              <ChipsDeTag nomes={card.clientTags} max={2} tamanho="xs" />
+            </div>
+          </div>
 
           {/* ③ a linha do agente — um slot, três estados, nunca três blocos. */}
           <div className="mt-1.5 flex h-6 items-center gap-2 text-xs">

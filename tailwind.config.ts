@@ -142,6 +142,20 @@ const config: Config = {
           fechado: "var(--stage-fechado)",
           perdido: "var(--stage-perdido)",
         },
+
+        // Tags do cliente (0105) — paleta fechada, escolhida em Configurações.
+        // Mesma decisão do `stage`: a cor de uma tag é uma decisão só, lida por
+        // três telas (Configurações, card do Kanban, lista do inbox).
+        tag: {
+          cinza: "var(--tag-cinza)",
+          azul: "var(--tag-azul)",
+          ciano: "var(--tag-ciano)",
+          verde: "var(--tag-verde)",
+          ambar: "var(--tag-ambar)",
+          vermelho: "var(--tag-vermelho)",
+          roxo: "var(--tag-roxo)",
+          rosa: "var(--tag-rosa)",
+        },
       },
       fontFamily: {
         // Inter e JetBrains Mono são as duas fontes servidas por

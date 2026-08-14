@@ -2,6 +2,7 @@
 import { useState } from "react";
 import {
   DropdownMenu,
+  DropdownMenuCheckboxItem,
   DropdownMenuContent,
   DropdownMenuItem,
   DropdownMenuSeparator,
@@ -11,7 +12,10 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { Button } from "@/components/ui/button";
-import { CalendarBlank, DotsThree, PencilSimple, Users } from "@/lib/ui/icons";
+import { CalendarBlank, DotsThree, PencilSimple, Tag, Users } from "@/lib/ui/icons";
+import { useAplicarTagsNoCliente, useClientTags } from "@/hooks/tags/useClientTags";
+import { CLASSE_DA_BOLINHA, chaveDaTag } from "@/lib/tags/cores";
+import { cn } from "@/lib/utils";
 import { lerReuniao } from "@/lib/agendamento/reuniao";
 import { AgendarReuniaoDialog } from "./AgendarReuniaoDialog";
 import { useWinLead, useEditLead } from "@/hooks/kanban/useUpdateLead";
@@ -43,6 +47,35 @@ export function KanbanCardActions({ lead, pipelineId }: KanbanCardActionsProps) 
   const { data: members } = useAssignableMembers(canAssign);
   // A rota já devolve só agente ativo e não arquivado — é o picker.
   const { data: agents } = useAssignableAgents(canAssign);
+
+  // Tags do cliente (0105). Marcar escreve em `contacts`, não em `crm_leads` —
+  // daí a permissão ser `contact.update` e não a do funil, e daí o submenu
+  // sumir no card sem contato: não há onde gravar.
+  const podeMarcarTag = usePermission("contact.update");
+  const { data: catalogo } = useClientTags({ enabled: podeMarcarTag && !!lead.contact_id });
+  const aplicarTags = useAplicarTagsNoCliente();
+  const tagsDoCliente = lead.client_tags ?? [];
+  const chavesAplicadas = new Set(tagsDoCliente.map(chaveDaTag));
+
+  /**
+   * Marca/desmarca uma tag preservando o que NÃO está no catálogo.
+   *
+   * `contacts.tags` recebia texto livre antes da 0105 e ainda recebe da
+   * importação de prospecção. Mandar só as do catálogo apagaria essas outras em
+   * silêncio — no card do Kanban, onde ninguém as vê para notar a falta.
+   */
+  const alternarTag = (nome: string) => {
+    if (!lead.contact_id) return;
+    const doCatalogo = new Set((catalogo ?? []).map((t) => chaveDaTag(t.name)));
+    const forasteiras = tagsDoCliente.filter((t) => !doCatalogo.has(chaveDaTag(t)));
+    const marcada = chavesAplicadas.has(chaveDaTag(nome));
+    const proximas = (catalogo ?? [])
+      .filter((t) =>
+        chaveDaTag(t.name) === chaveDaTag(nome) ? !marcada : chavesAplicadas.has(chaveDaTag(t.name)),
+      )
+      .map((t) => t.name);
+    aplicarTags.mutate({ contactId: lead.contact_id, tags: [...proximas, ...forasteiras] });
+  };
 
   const reassignToUser = (ownerUserId: string | null) => {
     if (ownerUserId === lead.owner_user_id) return;
@@ -128,6 +161,39 @@ export function KanbanCardActions({ lead, pipelineId }: KanbanCardActionsProps) 
                     )}
                   </DropdownMenuItem>
                 ))}
+              </DropdownMenuSubContent>
+            </DropdownMenuSub>
+          )}
+          {podeMarcarTag && lead.contact_id && (
+            <DropdownMenuSub>
+              <DropdownMenuSubTrigger>
+                <Tag size={14} className="mr-2" /> Tags do cliente
+              </DropdownMenuSubTrigger>
+              <DropdownMenuSubContent className="max-h-64 overflow-y-auto">
+                {(catalogo ?? []).length === 0 ? (
+                  <DropdownMenuItem disabled>Nenhuma tag configurada</DropdownMenuItem>
+                ) : (
+                  (catalogo ?? []).map((t) => (
+                    <DropdownMenuCheckboxItem
+                      key={t.id}
+                      checked={chavesAplicadas.has(chaveDaTag(t.name))}
+                      disabled={aplicarTags.isPending}
+                      // `onSelect` com preventDefault: sem isso o menu fecha a
+                      // cada clique, e marcar três tags viraria três idas ao
+                      // menu — o gesto é justamente escolher várias de uma vez.
+                      onSelect={(e) => {
+                        e.preventDefault();
+                        alternarTag(t.name);
+                      }}
+                    >
+                      <span
+                        className={cn("mr-2 h-2 w-2 rounded-full", CLASSE_DA_BOLINHA[t.color])}
+                        aria-hidden
+                      />
+                      {t.name}
+                    </DropdownMenuCheckboxItem>
+                  ))
+                )}
               </DropdownMenuSubContent>
             </DropdownMenuSub>
           )}
