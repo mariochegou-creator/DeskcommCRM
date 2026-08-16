@@ -79,16 +79,32 @@ export function AvisoDeTarefasDoLead({ conversationId, nomeDoLead }: Props) {
 
   if (!aviso) return null;
 
-  const uma = aviso.tarefas.length === 1;
+  const total = aviso.tarefas.length;
+  const uma = total === 1;
   const nome = (nomeDoLead ?? "").trim();
+
+  // O aviso também traz o que venceu ONTEM (é a regra do módulo). Chamar isso
+  // de "para hoje" era mentira na tela: o prazo logo abaixo dizia "atrasada ·
+  // qui 13/08" enquanto o título dizia hoje.
+  const atrasadas = aviso.tarefas.filter(
+    (t) => new Date(t.due_at).getTime() <= aviso.agora.getTime(),
+  ).length;
+  const titulo =
+    atrasadas === total
+      ? uma
+        ? "Tem uma tarefa atrasada"
+        : `Tem ${total} tarefas atrasadas`
+      : atrasadas > 0
+        ? `Tem ${total} tarefas — ${atrasadas} atrasada${atrasadas > 1 ? "s" : ""}`
+        : uma
+          ? "Tem uma tarefa para hoje"
+          : `Tem ${total} tarefas para hoje`;
 
   return (
     <Dialog open onOpenChange={(v) => !v && setAviso(null)}>
       <DialogContent className="sm:max-w-md">
         <DialogHeader>
-          <DialogTitle>
-            {uma ? "Tem uma tarefa para hoje" : `Tem ${aviso.tarefas.length} tarefas para hoje`}
-          </DialogTitle>
+          <DialogTitle>{titulo}</DialogTitle>
           <DialogDescription>
             {nome.length > 0 ? `Combinado neste lead: ${nome}.` : "Combinado neste lead."} Dá para
             marcar como feita aqui mesmo.

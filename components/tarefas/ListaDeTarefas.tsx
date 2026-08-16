@@ -66,7 +66,7 @@ export function ListaDeTarefas({
 
   function nome(id: string | null): string {
     if (!id) return "—";
-    if (id === user.id) return "eu";
+    if (id === user.id) return "mim";
     return nomePorId.get(id) ?? `Atendente ${id.slice(0, 8)}`;
   }
 
@@ -91,7 +91,11 @@ export function ListaDeTarefas({
   }
 
   return (
-    <ul className="flex flex-col gap-1">
+    // `min-w-0`: dentro de um dialog (que é um grid) a lista é um item de grade,
+    // e item de grade cresce até caber o conteúdo. Sem isso, um título comprido
+    // — os automáticos trazem o nome do lead do Maps inteiro — esticava a linha
+    // para fora do painel e levava o botão "Entendi" junto, para fora da tela.
+    <ul className="flex min-w-0 flex-col gap-1">
       {ordenadas.map((t) => {
         const pendente = t.status === "pending";
         const prazo = new Date(t.due_at);
@@ -103,7 +107,7 @@ export function ListaDeTarefas({
           <li
             key={t.id}
             className={cn(
-              "group flex items-start gap-3 rounded-[10px] border px-3 py-2 transition-colors duration-fast",
+              "group flex min-w-0 items-start gap-3 rounded-[10px] border px-3 py-2 transition-colors duration-fast",
               urgente ? "border-destructive/40 bg-destructive/5" : "border-border",
               !pendente && "opacity-70",
             )}
@@ -127,9 +131,13 @@ export function ListaDeTarefas({
             </button>
 
             <div className="min-w-0 flex-1">
+              {/* Duas linhas em vez de uma linha cortada: o título automático é
+                  "Preparar roteiro da R1 — <nome do lead>", e o nome do Maps
+                  vem com três serviços no meio. Cortado na primeira linha, some
+                  justamente o pedaço que diz DE QUEM é a tarefa. */}
               <p
                 className={cn(
-                  "truncate text-sm",
+                  "line-clamp-2 break-words text-sm",
                   pendente ? "text-text" : "text-text-subtle line-through",
                 )}
                 title={t.title}
