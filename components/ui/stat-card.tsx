@@ -52,7 +52,7 @@ export function StatCard({
   return (
     <div
       className={cn(
-        "relative flex flex-col justify-between gap-6 rounded-card border p-6",
+        "relative flex flex-col justify-between gap-4 rounded-card border p-5",
         featured
           ? "border-transparent bg-accent text-accent-foreground shadow-glow"
           : "border-border bg-surface text-text",
@@ -96,10 +96,10 @@ export function StatCard({
 
       <div className="flex flex-col gap-2">
         <div className="flex flex-wrap items-center gap-3">
-          {/* -0.5px de tracking: em 32px o Inter abre demais e o número perde
-              a leitura de bloco único. `tabular` trava a largura do dígito para
-              a coluna não dançar a cada refetch. */}
-          <span className="text-[32px] font-bold leading-none tracking-[-0.5px] tabular">
+          {/* -0.5px de tracking: em display o Inter abre demais e o número
+              perde a leitura de bloco único. `tabular` trava a largura do
+              dígito para a coluna não dançar a cada refetch. */}
+          <span className="text-[28px] font-bold leading-none tracking-[-0.5px] tabular">
             {value}
           </span>
           {delta !== undefined && (

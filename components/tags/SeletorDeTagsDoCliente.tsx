@@ -111,7 +111,7 @@ export function SeletorDeTagsDoCliente({ contactId, tags, podeEditar = true }: P
                       aria-pressed={marcada}
                       className={cn(
                         "flex w-full items-center gap-2 rounded-sm px-2 py-1.5 text-left text-xs",
-                        "hover:bg-accent/40 disabled:opacity-50",
+                        "hover:bg-surface-elevated disabled:opacity-50",
                       )}
                     >
                       <span
@@ -128,7 +128,7 @@ export function SeletorDeTagsDoCliente({ contactId, tags, podeEditar = true }: P
             <div className="mt-1 border-t border-border pt-1">
               <Link
                 href="/app/settings/tags"
-                className="flex items-center gap-2 rounded-sm px-2 py-1.5 text-xs text-text-muted hover:bg-accent/40 hover:text-text"
+                className="flex items-center gap-2 rounded-sm px-2 py-1.5 text-xs text-text-muted hover:bg-surface-elevated hover:text-text"
               >
                 <Gear size={12} aria-hidden />
                 Configurar tags

@@ -310,7 +310,7 @@ export function LeadsClient({
         <>
           <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
             {[0, 1, 2, 3].map((i) => (
-              <Skeleton key={i} className="h-[124px] rounded-card" />
+              <Skeleton key={i} className="h-[88px] rounded-card" />
             ))}
           </div>
           <Skeleton className="h-[420px] rounded-card" />

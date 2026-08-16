@@ -79,13 +79,17 @@ export function ConversationListItem({
       type="button"
       onClick={() => onSelect(conversation.id)}
       className={cn(
-        "group flex w-full items-start gap-3 border-b border-border px-3 py-3 text-left transition-colors hover:bg-accent/40",
-        isSelected && "bg-accent/60",
+        // `accent/40`/`accent/60` eram tinta translúcida calibrada pro ciano
+        // sobre navy; com o azul do redesign sobre fundo claro viravam um
+        // bloco saturado ilegível. Hover neutro, selecionado em `accent-soft`
+        // — o mesmo par da tabela.
+        "group flex w-full items-start gap-3 border-b border-border px-3 py-2 text-left transition-colors hover:bg-surface-elevated",
+        isSelected && "bg-accent-soft hover:bg-accent-soft",
       )}
       aria-current={isSelected ? "true" : undefined}
     >
       <div className="relative shrink-0">
-        <Avatar className="h-10 w-10">
+        <Avatar className="h-9 w-9">
           <AvatarFallback className="text-xs">
             {initials(displayName, phoneFallback)}
           </AvatarFallback>

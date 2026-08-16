@@ -98,8 +98,8 @@ function MultiSelectPopover({
                 onClick={() => onToggle(o.value)}
                 className={`w-full rounded px-2 py-1.5 text-left text-sm transition-colors ${
                   selected.includes(o.value)
-                    ? "bg-accent font-medium"
-                    : "hover:bg-accent/50"
+                    ? "bg-accent-soft font-medium"
+                    : "hover:bg-surface-elevated"
                 }`}
               >
                 {o.label}

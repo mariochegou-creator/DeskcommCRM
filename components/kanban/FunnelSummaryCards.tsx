@@ -80,7 +80,7 @@ export function FunnelSummaryCards({
           className="overflow-hidden rounded-card border border-border bg-surface"
         >
           <div
-            className="relative flex h-12 items-center px-5"
+            className="relative flex h-9 items-center px-4"
             style={{ backgroundColor: STAGE_SOLID_VAR[s.tone] }}
           >
             <CornerWaves />
@@ -94,9 +94,9 @@ export function FunnelSummaryCards({
               {s.name}
             </span>
           </div>
-          <div className="flex flex-col gap-2 p-5">
+          <div className="flex flex-col gap-1.5 p-4">
             <div className="flex flex-wrap items-center gap-3">
-              <span className="text-[28px] font-bold leading-none tracking-[-0.5px] text-text tabular">
+              <span className="text-[22px] font-bold leading-none tracking-[-0.5px] text-text tabular">
                 {s.count.toLocaleString("pt-BR")}
               </span>
               {s.delta !== undefined && (
