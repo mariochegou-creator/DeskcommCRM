@@ -5,7 +5,9 @@ import * as React from "react";
 export type Theme = "light" | "dark" | "system";
 export type ResolvedTheme = "light" | "dark";
 
-const STORAGE_KEY = "deskcomm-theme";
+// `-v2` (redesign 2026-08): a chave antiga guardava `dark` para todo mundo e
+// esconderia o visual novo; trocar a chave faz o primeiro acesso cair no claro.
+const STORAGE_KEY = "deskcomm-theme-v2";
 
 type ThemeContextValue = {
   /** User preference: light, dark, or system. */
@@ -19,29 +21,29 @@ type ThemeContextValue = {
 const ThemeContext = React.createContext<ThemeContextValue | null>(null);
 
 /**
- * Sem preferência salva o default é `dark`, e NÃO `system`: o escuro é o tema da
- * identidade da Nexo IA, então é a marca que decide a primeira impressão — não o
- * SO de quem abre. Quem escolher `system` no alternador passa a seguir o SO, aí
- * sim, porque nesse caso seguir o SO É a escolha.
+ * Sem preferência salva o default é `light`, e NÃO `system`: o claro é o tema
+ * do redesign 2026-08, então é o produto que decide a primeira impressão — não
+ * o SO de quem abre. Quem escolher `system` no alternador passa a seguir o SO,
+ * aí sim, porque nesse caso seguir o SO É a escolha.
  *
  * Esta função e `getSystemTheme` são a metade client de uma regra que também
  * vive no THEME_INIT_SCRIPT de `app/layout.tsx`. Mudar uma sem a outra reintroduz
  * o flash de tema que o script inline existe para evitar — as duas andam juntas.
  */
 function readStoredTheme(): Theme {
-  if (typeof window === "undefined") return "dark";
+  if (typeof window === "undefined") return "light";
   try {
     const v = window.localStorage.getItem(STORAGE_KEY);
     if (v === "light" || v === "dark" || v === "system") return v;
   } catch {
     // localStorage indisponível (modo privado, sandbox) — segue com default.
   }
-  return "dark";
+  return "light";
 }
 
 function getSystemTheme(): ResolvedTheme {
-  // Fallback de SSR alinhado ao <html data-theme="dark"> do layout.
-  if (typeof window === "undefined") return "dark";
+  // Fallback de SSR alinhado ao <html data-theme="light"> do layout.
+  if (typeof window === "undefined") return "light";
   return window.matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light";
 }
 

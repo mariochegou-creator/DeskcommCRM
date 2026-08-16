@@ -3,134 +3,126 @@
 @tailwind utilities;
 
 /* ─────────────────────────────────────────────────────────────────────────
-   DeskcommCRM — Design System tokens (paleta Nexo IA · density Aerada)
+   DeskcommCRM — Design System tokens (redesign 2026-08 · claro neutro denso)
    Source of truth: /app/design/lib/tokens.ts (PALETTES.nexo)
-   Identidade: NexoIAos/identidade/design-guide.md
 
-   O ESCURO É O TEMA DA MARCA e é o padrão (app/layout.tsx). O claro existe
-   para ambiente muito iluminado e é DESENHADO À PARTE, não invertido — as
-   razões de contraste de cada desvio do guia estão no cabeçalho de PALETTES.nexo.
+   O CLARO É O PADRÃO (app/layout.tsx). A identidade anterior — navy #050e1f +
+   ciano #00c8e8, espelhada de nexoialocal.com.br — foi substituída em
+   16/08/2026 por um visual neutro estilo "records table": fundo #fafafb,
+   superfície branca, cinzas frios, azul #0285ff como único acento. O escuro
+   deixa de ser navy e vira grafite neutro — alternativa opcional, não mais o
+   tema da marca.
 
-   ── Redesign 2026-08: os valores do escuro foram conferidos contra o CSS
-   servido por https://nexoialocal.com.br. O site declara, no :root dele:
-       --bg #050e1f · --surface #081422 · --surface2 #0d1e35
-       --border rgba(0,200,232,.12) · --border-h rgba(0,200,232,.3)
-       --cyan #00c8e8 · --orange #f97316 · --text #e2e8f0 · --muted #64748b
-   e carrega Inter + JetBrains Mono (NÃO existe Space Grotesk no site — o
-   display é o próprio Inter nos pesos 800/900). Onde o CRM divergia, o site
-   ganhou: `surface-elevated` foi de #0d1c2e para #0d1e35 e a borda de repouso
-   de .14 para .12. A ÚNICA divergência que sobrevive de propósito é
-   `--color-text-muted` (#94a3b8 em vez do #64748b do site): o site é peça de
-   marketing em texto grande, o CRM é corpo de 13px — ver nota 1 em tokens.ts.
+   E-mails (lib/email/templates/) e PDF LGPD (lib/lgpd/pdf-renderer.tsx) têm
+   paleta própria e NÃO seguem estes tokens.
    ───────────────────────────────────────────────────────────────────────── */
 
 :root {
-  /* Surfaces (light) — `surface` é #f9fbfd, não #ffffff: o guia proíbe branco
-     puro como fundo, e a proibição vale nos dois temas. */
-  --color-bg: #eef3f8;
-  --color-surface: #f9fbfd;
-  --color-surface-elevated: #e8eef4;
-  --color-overlay: rgba(10, 18, 28, 0.45);
+  /* Surfaces (light) — `surface` É branco puro: o redesign revogou a proibição
+     de #fff do guia antigo. O contorno do card vem da borda cinza + sombra
+     discreta, não do degrau de cor. */
+  --color-bg: #fafafb;
+  --color-surface: #ffffff;
+  --color-surface-elevated: #f4f5f6;
+  --color-overlay: rgba(15, 16, 18, 0.4);
 
   /* Text (light) */
-  --color-text: #141c28;
-  --color-text-muted: #4a5769;
-  --color-text-subtle: #64748b;
+  --color-text: #1f2124;
+  --color-text-muted: #62656b;
+  --color-text-subtle: #9a9da3;
 
   /* Borders (light) */
-  --color-border: #d5dfe9;
-  --color-border-strong: #b6c4d3;
+  --color-border: #ecedef;
+  --color-border-strong: #e0e2e5;
 
-  /* Accent — ciano Nexo (11 stops, âncora #00c8e8 no stop 400) */
-  --color-accent-50:  #ecfdff;
-  --color-accent-100: #cff7fe;
-  --color-accent-200: #a2eefb;
-  --color-accent-300: #67e0f5;
-  --color-accent-400: #00c8e8;
-  --color-accent-500: #04a5c4;
-  --color-accent-600: #0a7d95;
-  --color-accent-700: #0e6577;
-  --color-accent-800: #135160;
-  --color-accent-900: #144351;
-  --color-accent-950: #072b36;
-  /* No claro o default é o 600: #00c8e8 com texto branco dá 1,9:1 e seria um
-     botão ilegível. O 600 dá 4,79:1. */
-  --color-accent: var(--color-accent-600);
+  /* Accent — azul neutro (11 stops, âncora #0285ff no stop 500) */
+  --color-accent-50:  #f2f8ff;
+  --color-accent-100: #e9f3ff;
+  --color-accent-200: #cfe6ff;
+  --color-accent-300: #a3ceff;
+  --color-accent-400: #5fadff;
+  --color-accent-500: #0285ff;
+  --color-accent-600: #0170dd;
+  --color-accent-700: #015cb4;
+  --color-accent-800: #0a4b8e;
+  --color-accent-900: #0d3e73;
+  --color-accent-950: #082947;
+  /* #0285ff com texto branco dá ~3,6:1 — passa para UI/texto grande, que é o
+     que o botão primário é. Se parecer lavado no ar, o plano B é 1 linha:
+     apontar o default para o 600 (#0170dd, ~5,4:1). */
+  --color-accent: var(--color-accent-500);
   --color-accent-fg: #ffffff;
   --color-accent-soft: var(--color-accent-100);
-  --color-accent-hover: var(--color-accent-700);
+  --color-accent-hover: var(--color-accent-600);
   /* Sobre o CARD DE DESTAQUE (fundo accent sólido) os tokens normais de texto
-     e de estado não servem — todos foram calibrados contra o navy do fundo.
-     Estes dois são o par secundário desse contexto e existem NOS DOIS TEMAS,
-     porque no claro o texto sobre o accent é branco e no escuro é navy:
-     escrever a cor direto no componente acertaria um tema e erraria o outro.
-       -fg-muted: rótulo/apoio sobre o accent (78% → 4,6:1 sobre #0a7d95)
-       -fg-soft:  preenchimento translúcido sobre o accent (pill de variação) */
-  --color-accent-fg-muted: rgba(255, 255, 255, 0.78);
-  --color-accent-fg-soft: rgba(255, 255, 255, 0.20);
+     não servem. Este é o par secundário desse contexto e existe NOS DOIS
+     TEMAS, porque no claro o texto sobre o accent é branco e no escuro é
+     grafite — escrever a cor direto no componente acertaria um tema e erraria
+     o outro. */
+  --color-accent-fg-muted: rgba(255, 255, 255, 0.82);
+  --color-accent-fg-soft: rgba(255, 255, 255, 0.2);
 
-  /* Neutrals — slate frio (11 stops, light) */
-  --color-neutral-50:  #f4f7fa;
-  --color-neutral-100: #e8eef4;
-  --color-neutral-200: #d5dfe9;
-  --color-neutral-300: #b6c4d3;
-  --color-neutral-400: #8798ab;
-  --color-neutral-500: #64748b;
-  --color-neutral-600: #4a5769;
-  --color-neutral-700: #37424f;
-  --color-neutral-800: #232c38;
-  --color-neutral-900: #141c28;
-  --color-neutral-950: #0a121c;
+  /* Neutrals — cinza levemente frio (11 stops, light) */
+  --color-neutral-50:  #f7f8f9;
+  --color-neutral-100: #f1f2f3;
+  --color-neutral-200: #e4e6e8;
+  --color-neutral-300: #cfd2d6;
+  --color-neutral-400: #9a9da3;
+  --color-neutral-500: #7c8087;
+  --color-neutral-600: #62656b;
+  --color-neutral-700: #4a4d52;
+  --color-neutral-800: #333539;
+  --color-neutral-900: #1f2124;
+  --color-neutral-950: #141517;
 
-  /* States (light) — o laranja da marca desce para #b45309 aqui (5,0:1 com
-     branco); #f97316 daria 2,9:1. O `-bg` guarda o laranja original. */
-  --color-success: #157f52;
-  --color-success-bg: rgba(21, 127, 82, 0.12);
-  --color-success-fg: #0f6642;
-  --color-warning: #b45309;
-  --color-warning-bg: rgba(249, 115, 22, 0.12);
-  --color-warning-fg: #9a3412;
-  --color-error: #b42318;
-  --color-error-bg: rgba(180, 35, 24, 0.12);
-  --color-error-fg: #912018;
-  --color-info: #0a7d95;
-  --color-info-bg: rgba(0, 200, 232, 0.12);
-  --color-info-fg: #0e6577;
+  /* States (light) — o `-bg` guarda o matiz cheio a ~12%; o texto (`-fg`) é
+     um stop mais escuro, porque badge de estado é texto pequeno sobre claro. */
+  --color-success: #189a4d;
+  --color-success-bg: rgba(24, 154, 77, 0.12);
+  --color-success-fg: #127a3d;
+  --color-warning: #ef720c;
+  --color-warning-bg: rgba(239, 114, 12, 0.12);
+  --color-warning-fg: #c45b06;
+  --color-error: #e3474c;
+  --color-error-bg: rgba(227, 71, 76, 0.12);
+  --color-error-fg: #c22f34;
+  --color-info: #0285ff;
+  --color-info-bg: rgba(2, 133, 255, 0.1);
+  --color-info-fg: #0170dd;
 
-  /* Chart — ordem fixa do briefing. No claro cada stop desce o suficiente para
-     a série sobreviver ao fundo #f9fbfd; a ORDEM é a mesma nos dois temas para
-     a mesma série não trocar de cor quando alguém alterna o tema. */
-  --chart-1: #0a7d95;
-  --chart-2: #2563eb;
-  --chart-3: #b45309;
-  --chart-4: #b42318;
-  --chart-5: #157f52;
-  --chart-grid: #d5dfe9;
+  /* Chart — a ORDEM é a mesma nos dois temas para a mesma série não trocar de
+     cor quando alguém alterna o tema. */
+  --chart-1: #0285ff;
+  --chart-2: #189a4d;
+  --chart-3: #ef720c;
+  --chart-4: #e3474c;
+  --chart-5: #6d28d9;
+  --chart-grid: #ecedef;
   /* Texto ESCRITO EM CIMA da fatia (o "34%" dentro do donut). No claro as
-     séries são stops escuros, então o rótulo é branco; no escuro elas são
-     stops claros e ele é navy. Fixar o hex no componente acertaria um tema. */
+     séries são matizes cheios, então o rótulo é branco; no escuro elas são
+     stops claros e ele é grafite. */
   --chart-label: #ffffff;
 
-  /* Etapas do funil — o pill de etapa e o header do card de resumo leem daqui,
-     então a cor de uma etapa é UMA decisão e não uma por componente. */
-  --stage-entrada: #2563eb;
-  --stage-r1: #b45309;
-  --stage-proposta: #0a7d95;
-  --stage-fechado: #157f52;
-  --stage-perdido: #b42318;
+  /* Etapas do funil — o pill de etapa e o header do card de resumo leem daqui.
+     Stops escurecidos: o pill escreve a cor como TEXTO de 11-12px sobre o
+     próprio matiz a 12%, mesmo critério das tags abaixo. */
+  --stage-entrada: #0170dd;
+  --stage-r1: #c45b06;
+  --stage-proposta: #6d28d9;
+  --stage-fechado: #127a3d;
+  --stage-perdido: #c22f34;
 
-  /* Tags do cliente (0105) — paleta FECHADA de 8, escolhida em Configurações.
-     Fechada e não hex livre pelo mesmo motivo que `crm_stages.color` não é
-     usado no pill de etapa: cor digitada por quem configura não tem garantia
-     nenhuma de contraste, e a tag aparece em fonte de 10px na lista do inbox,
-     que é o pior caso do app. Cada stop aqui é o TEXTO; o fundo sai dele a 12%
-     via color-mix, o mesmo par translúcido/saturado do STAGE_PILL_CLASS. */
-  --tag-cinza: #4a5769;
-  --tag-azul: #2563eb;
-  --tag-ciano: #0a7d95;
-  --tag-verde: #157f52;
-  --tag-ambar: #b45309;
-  --tag-vermelho: #b42318;
+  /* Tags do cliente (0105) — paleta FECHADA de 8; os NOMES são contrato com o
+     banco, só o valor muda. Cada stop é o TEXTO em fonte de 10px na lista do
+     inbox — o pior caso do app — então os matizes vivos do template descem um
+     degrau: o "ciano" vira teal e o âmbar #ef720c cru não segura 10px sobre
+     branco. O fundo sai do stop a 12% via color-mix (lib/tags/cores.ts). */
+  --tag-cinza: #62656b;
+  --tag-azul: #0170dd;
+  --tag-ciano: #0e7490;
+  --tag-verde: #127a3d;
+  --tag-ambar: #c45b06;
+  --tag-vermelho: #d13438;
   --tag-roxo: #6d28d9;
   --tag-rosa: #be185d;
 
@@ -151,38 +143,32 @@
   --space-32: 128px;
 
   /* Radius — a escala antiga (sm..xl) fica porque dezenas de componentes a
-     consomem. O redesign acrescenta TRÊS papéis semânticos, que são os que a
-     UI nova usa; trocar o valor aqui muda a forma do produto inteiro:
-       card    20px — bloco de conteúdo (KPI, painel, tabela, dossiê)
-       control 12px — botão, input, select, chip quadrado
-       pill    999px — status, variação percentual, busca, avatar
-     Nota: o site institucional para em 16px no card. Os 20px vêm do §Forma do
-     briefing, que é explícito; a família visual se mantém porque control/pill
-     batem exatamente com o site (12px e 100px). Para alinhar 1:1 com o site,
-     este é o único valor a mexer. */
+     consomem. Os TRÊS papéis semânticos são os que a UI usa; o redesign
+     2026-08 desceu card 20→10 e control 12→8: canto grande pede moldura
+     grande, e a moldura grande era o que inflava a UI antiga. */
   --radius-none: 0px;
   --radius-sm: 4px;
   --radius-md: 8px;
   --radius-lg: 12px;
   --radius-xl: 16px;
-  --radius-card: 20px;
-  --radius-control: 12px;
+  --radius-card: 10px;
+  --radius-control: 8px;
   --radius-pill: 999px;
   --radius-full: 9999px;
 
-  /* Shadows — base navy fria (era greige quente) */
-  --shadow-xs: 0 1px 2px 0 rgba(10, 18, 28, 0.05);
-  --shadow-sm: 0 1px 2px 0 rgba(10, 18, 28, 0.06), 0 1px 1px 0 rgba(10, 18, 28, 0.04);
-  --shadow-md: 0 4px 12px -2px rgba(10, 18, 28, 0.08), 0 2px 4px -1px rgba(10, 18, 28, 0.05);
-  --shadow-lg: 0 12px 32px -6px rgba(10, 18, 28, 0.12), 0 4px 12px -2px rgba(10, 18, 28, 0.07);
-  --shadow-xl: 0 24px 48px -12px rgba(10, 18, 28, 0.18), 0 8px 16px -4px rgba(10, 18, 28, 0.10);
+  /* Shadows — base neutra fria, discretas: superfície branca sobre fundo
+     quase branco, a sombra só afirma o degrau, nunca decora. */
+  --shadow-xs: 0 1px 2px 0 rgba(15, 16, 18, 0.05);
+  --shadow-sm: 0 1px 2px 0 rgba(15, 16, 18, 0.06), 0 1px 1px 0 rgba(15, 16, 18, 0.04);
+  --shadow-md: 0 4px 12px -2px rgba(15, 16, 18, 0.07), 0 2px 4px -1px rgba(15, 16, 18, 0.05);
+  --shadow-lg: 0 12px 32px -6px rgba(15, 16, 18, 0.1), 0 4px 12px -2px rgba(15, 16, 18, 0.06);
+  --shadow-xl: 0 24px 48px -12px rgba(15, 16, 18, 0.14), 0 8px 16px -4px rgba(15, 16, 18, 0.08);
 
-  /* Glow — elemento-chave do guia ("0 0 24px rgba(0,200,232,0.3)"). Exposto
-     como token para o botão primário/métrica de alerta poder usá-lo via
-     `shadow-glow` / `shadow-glow-warning` do Tailwind. No claro fica mais
-     contido: glow sobre fundo claro vira borrão, não brilho. */
-  --shadow-glow: 0 0 16px rgba(0, 200, 232, 0.18);
-  --shadow-glow-warning: 0 0 14px rgba(249, 115, 22, 0.16);
+  /* Glow — assinatura da identidade ANTIGA (ciano Nexo). Os tokens continuam
+     existindo para não quebrar os consumidores de `shadow-glow`, mas deixam
+     de desenhar nos dois temas. */
+  --shadow-glow: none;
+  --shadow-glow-warning: none;
 
   /* Density — Aerada */
   --density-row: 56px;
@@ -229,134 +215,113 @@
 }
 
 [data-theme="dark"] {
-  /* Surfaces (dark) — os três hexes servidos pelo :root de nexoialocal.com.br,
-     sem desvio. `surface-elevated` = o `--surface2` do site (#0d1e35). */
-  --color-bg: #050e1f;
-  --color-surface: #081422;
-  --color-surface-elevated: #0d1e35;
-  --color-overlay: rgba(2, 6, 15, 0.68);
+  /* Surfaces (dark) — dark NEUTRO (grafite), alternativa opcional. O navy da
+     identidade antiga saiu do produto. */
+  --color-bg: #17181a;
+  --color-surface: #232427;
+  --color-surface-elevated: #2a2b2e;
+  --color-overlay: rgba(0, 0, 0, 0.6);
 
-  /* Text (dark) — `#e2e8f0` é o texto do guia. O secundário é #94a3b8 (7,5:1
-     sobre o navy) e não o `#64748b` do guia, que dá 4,05:1 e não sustenta
-     corpo de 13px; o #64748b fica no `subtle`, onde 4,05:1 basta. */
-  --color-text: #e2e8f0;
-  --color-text-muted: #94a3b8;
-  --color-text-subtle: #64748b;
+  /* Text (dark) */
+  --color-text: #f2f3f4;
+  --color-text-muted: #a5a8ad;
+  --color-text-subtle: #77797f;
 
-  /* Borders (dark) — ciano translúcido, o elemento-chave da marca. Os dois
-     valores são literalmente o `--border`/`--border-h` do site: 0.12 no
-     repouso, 0.30 no realce. É esta borda que dá o contorno do card no escuro,
-     já que aqui não há sombra nenhuma (ver bloco Shadows abaixo). */
-  --color-border: rgba(0, 200, 232, 0.12);
-  --color-border-strong: rgba(0, 200, 232, 0.30);
+  /* Borders (dark) — cinza sólido; o contorno do card é borda + degrau de tom. */
+  --color-border: #2e3033;
+  --color-border-strong: #3a3c40;
 
-  /* Accent — mesmos stops; no escuro o default sobe para o 400, que É o ciano
-     da marca, com o navy por cima (9,6:1, exatamente o botão do guia). */
-  --color-accent-50:  #ecfdff;
-  --color-accent-100: #cff7fe;
-  --color-accent-200: #a2eefb;
-  --color-accent-300: #67e0f5;
-  --color-accent-400: #00c8e8;
-  --color-accent-500: #04a5c4;
-  --color-accent-600: #0a7d95;
-  --color-accent-700: #0e6577;
-  --color-accent-800: #135160;
-  --color-accent-900: #144351;
-  --color-accent-950: #072b36;
-  --color-accent: var(--color-accent-400);
-  --color-accent-fg: #050e1f;
-  --color-accent-soft: rgba(0, 200, 232, 0.16);
-  --color-accent-hover: var(--color-accent-300);
-  /* Par do card de destaque no escuro: navy sobre o ciano. O 0.72 dá 5,2:1
-     contra o #00c8e8 — passa AA para corpo, que é o que o rótulo e a linha de
-     apoio do card são. Ver a nota gêmea no :root. */
-  --color-accent-fg-muted: rgba(5, 14, 31, 0.72);
-  --color-accent-fg-soft: rgba(5, 14, 31, 0.16);
+  /* Accent — mesmos stops do claro; o default sobe para #3d9aff porque o
+     #0285ff afunda sobre o grafite. */
+  --color-accent-50:  #f2f8ff;
+  --color-accent-100: #e9f3ff;
+  --color-accent-200: #cfe6ff;
+  --color-accent-300: #a3ceff;
+  --color-accent-400: #5fadff;
+  --color-accent-500: #0285ff;
+  --color-accent-600: #0170dd;
+  --color-accent-700: #015cb4;
+  --color-accent-800: #0a4b8e;
+  --color-accent-900: #0d3e73;
+  --color-accent-950: #082947;
+  --color-accent: #3d9aff;
+  /* Grafite sobre o azul claro (~6:1); branco daria ~2,9:1 e falharia. */
+  --color-accent-fg: #17181a;
+  --color-accent-soft: rgba(61, 154, 255, 0.14);
+  --color-accent-hover: var(--color-accent-400);
+  /* Par do card de destaque no escuro: grafite sobre o azul. Ver nota gêmea
+     no :root. */
+  --color-accent-fg-muted: rgba(23, 24, 26, 0.72);
+  --color-accent-fg-soft: rgba(23, 24, 26, 0.16);
 
-  /* Neutrals — navy (11 stops, dark). 950/900/800 = bg/surface/elevated. */
-  --color-neutral-50:  #e2e8f0;
-  --color-neutral-100: #cbd5e1;
-  --color-neutral-200: #94a3b8;
-  --color-neutral-300: #64748b;
-  --color-neutral-400: #4a5a71;
-  --color-neutral-500: #34455c;
-  --color-neutral-600: #22334a;
-  --color-neutral-700: #16263a;
-  --color-neutral-800: #0d1c2e;
-  --color-neutral-900: #081422;
-  --color-neutral-950: #050e1f;
+  /* Neutrals — grafite (11 stops, dark). 950/900/800 = bg/surface/elevated. */
+  --color-neutral-50:  #f2f3f4;
+  --color-neutral-100: #d7d8da;
+  --color-neutral-200: #a5a8ad;
+  --color-neutral-300: #77797f;
+  --color-neutral-400: #5d6066;
+  --color-neutral-500: #4a4d52;
+  --color-neutral-600: #3a3c40;
+  --color-neutral-700: #2e3033;
+  --color-neutral-800: #2a2b2e;
+  --color-neutral-900: #232427;
+  --color-neutral-950: #17181a;
 
-  /* States (dark) — o alerta é o laranja #f97316 do guia (6,9:1 sobre o navy);
-     info é o próprio ciano. */
-  --color-success: #34d399;
-  --color-success-bg: rgba(52, 211, 153, 0.16);
-  --color-success-fg: #6ee7b7;
-  --color-warning: #f97316;
-  --color-warning-bg: rgba(249, 115, 22, 0.18);
-  --color-warning-fg: #fdba74;
-  --color-error: #f87171;
-  --color-error-bg: rgba(248, 113, 113, 0.18);
-  --color-error-fg: #fca5a5;
-  --color-info: #00c8e8;
-  --color-info-bg: rgba(0, 200, 232, 0.16);
-  --color-info-fg: #67e0f5;
+  /* States (dark) — stops claros dos mesmos matizes do claro. */
+  --color-success: #34c46e;
+  --color-success-bg: rgba(52, 196, 110, 0.16);
+  --color-success-fg: #6fdca0;
+  --color-warning: #f68f3c;
+  --color-warning-bg: rgba(246, 143, 60, 0.16);
+  --color-warning-fg: #ffb277;
+  --color-error: #ee5c61;
+  --color-error-bg: rgba(238, 92, 97, 0.18);
+  --color-error-fg: #ff9a9d;
+  --color-info: #3d9aff;
+  --color-info-bg: rgba(61, 154, 255, 0.16);
+  --color-info-fg: #7ec0ff;
 
-  /* Chart — ordem fixa do briefing: ciano, azul, âmbar, vermelho, verde. */
-  --chart-1: #00c8e8;
-  --chart-2: #60a5fa;
-  --chart-3: #fbbf24;
-  --chart-4: #f87171;
-  --chart-5: #34d399;
-  /* Grade quase invisível: é o próprio `surface-elevated`, então a linha some
-     no fundo e só estrutura o olho — nunca compete com a barra. */
-  --chart-grid: #0d1e35;
-  /* Navy sobre as séries claras — o pior par é o #60a5fa, que ainda dá 7,6:1. */
-  --chart-label: #050e1f;
+  /* Chart — mesma ordem do claro, stops claros. */
+  --chart-1: #5fadff;
+  --chart-2: #34c46e;
+  --chart-3: #f68f3c;
+  --chart-4: #ee5c61;
+  --chart-5: #a78bfa;
+  /* Grade quase invisível: é o próprio `surface-elevated`. */
+  --chart-grid: #2a2b2e;
+  /* Grafite sobre as séries claras. */
+  --chart-label: #17181a;
 
   /* Etapas do funil */
-  --stage-entrada: #60a5fa;
-  --stage-r1: #fbbf24;
-  --stage-proposta: #00c8e8;
-  --stage-fechado: #34d399;
-  --stage-perdido: #f87171;
+  --stage-entrada: #5fadff;
+  --stage-r1: #f68f3c;
+  --stage-proposta: #a78bfa;
+  --stage-fechado: #34c46e;
+  --stage-perdido: #ee5c61;
 
-  /* Tags do cliente — os MESMOS 8 nomes, stops claros sobre o navy. A tag
-     escolhida como "azul" continua azul ao alternar o tema; só o stop muda,
-     igual às séries de gráfico. */
-  --tag-cinza: #94a3b8;
-  --tag-azul: #60a5fa;
-  --tag-ciano: #00c8e8;
-  --tag-verde: #34d399;
-  --tag-ambar: #fbbf24;
-  --tag-vermelho: #f87171;
+  /* Tags do cliente — os MESMOS 8 nomes, stops claros sobre o grafite. A tag
+     escolhida como "azul" continua azul ao alternar o tema; só o stop muda. */
+  --tag-cinza: #a5a8ad;
+  --tag-azul: #5fadff;
+  --tag-ciano: #38c0d6;
+  --tag-verde: #34c46e;
+  --tag-ambar: #f6a13c;
+  --tag-vermelho: #ee5c61;
   --tag-roxo: #c4b5fd;
   --tag-rosa: #f9a8d4;
 
-  /* Shadows — NO ESCURO NÃO HÁ SOMBRA. A profundidade vem do degrau de tom
-     entre #050e1f (fundo), #081422 (card) e #0d1e35 (elevado), mais a borda
-     ciano de 1px. Sombra sobre navy não escurece nada: ela só suja a borda e
-     mata o contorno ciano, que é a assinatura da marca.
-
-     Os tokens continuam existindo e vão a `none` de propósito: ~58 arquivos
-     usam `shadow-xs`/`sm`/`md` (Card, Button, Dialog, Popover, Select…) e
-     apagar a classe em cada um seria churn sem ganho. Zerando aqui, a regra
-     vale no app inteiro e o tema CLARO — que é superfície clara sobre fundo
-     claro e realmente precisa de sombra — fica intacto.
-
-     As duas exceções são elevação REAL sobre conteúdo (menu, modal, toast):
-     essas flutuam de verdade e sem separação viram sopa. Ficam com uma sombra
-     só, de base navy. */
+  /* Shadows — no escuro seguem quase ausentes: o degrau de tom + a borda
+     cinza dão a profundidade; só o que flutua de verdade sobre conteúdo
+     (menu, modal, toast) sombreia. */
   --shadow-xs: none;
   --shadow-sm: none;
   --shadow-md: none;
-  --shadow-lg: 0 16px 40px -12px rgba(2, 6, 15, 0.72);
-  --shadow-xl: 0 28px 60px -16px rgba(2, 6, 15, 0.80);
+  --shadow-lg: 0 16px 40px -12px rgba(0, 0, 0, 0.55);
+  --shadow-xl: 0 28px 60px -16px rgba(0, 0, 0, 0.65);
 
-  /* Glow — MUITO sutil e reservado ao card de destaque (`shadow-glow`).
-     O 0.30 do guia é para peça de marketing; num painel de trabalho lido o dia
-     inteiro ele vira halo permanente em volta do maior bloco da tela. */
-  --shadow-glow: 0 0 24px rgba(0, 200, 232, 0.06);
-  --shadow-glow-warning: 0 0 24px rgba(249, 115, 22, 0.06);
+  /* Glow — extinto junto com a identidade antiga. */
+  --shadow-glow: none;
+  --shadow-glow-warning: none;
 
   /* shadcn-compat aliases */
   --background: var(--color-bg);
@@ -384,24 +349,22 @@
     border-color: var(--color-border);
   }
 
-  /* Escuro é o padrão da marca, então é ele o `color-scheme` de base — o claro
-     só se anuncia quando o atributo o pede. Trocar a ordem faria o navegador
-     pintar scrollbar/form nativo em claro no instante antes do CSS resolver. */
+  /* O claro é o padrão do redesign, então é ele o `color-scheme` de base — o
+     escuro só se anuncia quando o atributo o pede. Trocar a ordem faria o
+     navegador pintar scrollbar/form nativo em escuro no instante antes do CSS
+     resolver. */
   html {
-    color-scheme: dark;
-  }
-  [data-theme="light"] {
     color-scheme: light;
   }
+  [data-theme="dark"] {
+    color-scheme: dark;
+  }
 
-  /* Inter é a fonte do site (carregada lá nos pesos 300–900) e passa a ser a
-     do CRM, corpo e display. O briefing pedia Space Grotesk no display, mas o
-     site não a carrega — e a instrução de que o site vence valeu aqui: o
-     display é o próprio Inter em 800/900, que é como nexoialocal.com.br
-     resolve título. Isto substitui o Atkinson Hyperlegible.
-     `cv11`/`ss01` desambiguam 1/l/I e dão o "a" de bico — sem eles Inter fica
-     genérico em UI densa. `tnum` NÃO entra aqui: no texto corrido ele abre o
-     espaçamento e dá cara de planilha (ver o utilitário `.tabular` abaixo). */
+  /* Inter, corpo e display (display em 800/900). Substitui o Atkinson
+     Hyperlegible. `cv11`/`ss01` desambiguam 1/l/I e dão o "a" de bico — sem
+     eles Inter fica genérico em UI densa. `tnum` NÃO entra aqui: no texto
+     corrido ele abre o espaçamento e dá cara de planilha (ver o utilitário
+     `.tabular` abaixo). */
   body {
     background-color: var(--color-bg);
     color: var(--color-text);
@@ -434,7 +397,7 @@
     color: var(--color-accent-50);
   }
 
-  /* Focus ring: Sage 500/400, 2px with offset */
+  /* Focus ring: accent 500/400, 2px with offset */
   :focus-visible {
     outline: 2px solid var(--color-accent-500);
     outline-offset: 2px;
@@ -444,7 +407,7 @@
     outline-color: var(--color-accent-400);
   }
 
-  /* Scrollbar — subtle greige */
+  /* Scrollbar — discreta, neutra */
   * {
     scrollbar-width: thin;
     scrollbar-color: var(--color-neutral-300) transparent;
@@ -518,12 +481,12 @@
 @media (prefers-reduced-motion: reduce) {
   .card-pulse {
     animation: none;
-    /* Anel ESTÁTICO, não fundo: no tema claro `--color-accent-soft` é cor
-       sólida (#e4ebe0), e um overlay sólido sobre o card inteiro deixaria quem
-       usa movimento reduzido 1,2s SEM LER o card. O caminho de acessibilidade
-       é para ser igual, não pior — então o aviso é o mesmo anel, só que parado.
-       Ele dura os PULSE_MS inteiros (useBoard.ts), NÃO os 320ms da animação:
-       a diferença entre os dois números é deliberada e está explicada lá. */
+    /* Anel ESTÁTICO, não fundo: um overlay sólido sobre o card inteiro
+       deixaria quem usa movimento reduzido 1,2s SEM LER o card. O caminho de
+       acessibilidade é para ser igual, não pior — então o aviso é o mesmo
+       anel, só que parado. Ele dura os PULSE_MS inteiros (useBoard.ts), NÃO os
+       320ms da animação: a diferença entre os dois números é deliberada e
+       está explicada lá. */
     border-color: var(--color-accent);
   }
 }

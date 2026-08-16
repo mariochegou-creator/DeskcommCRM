@@ -66,8 +66,8 @@ export function generateMetadata(): Metadata {
 
 export const viewport: Viewport = {
   themeColor: [
-    { media: "(prefers-color-scheme: light)", color: "#eef3f8" },
-    { media: "(prefers-color-scheme: dark)", color: "#050e1f" },
+    { media: "(prefers-color-scheme: light)", color: "#fafafb" },
+    { media: "(prefers-color-scheme: dark)", color: "#17181a" },
   ],
 };
 
@@ -76,17 +76,18 @@ export const viewport: Viewport = {
  * usuário), portanto seguro. Lê localStorage + prefers-color-scheme antes do
  * primeiro paint.
  *
- * O ESCURO É O PADRÃO — é o tema da identidade da Nexo IA. A regra tem três
- * ramos e ela precisa ser LETRA POR LETRA a de `readStoredTheme`/`getSystemTheme`
- * em `lib/theme.tsx` e a do `data-theme` do <html> abaixo: divergir entre os
- * três produz um flash do tema errado, que é justamente o que este script
- * existe para impedir.
- *   1. NADA salvo          → escuro (a marca decide, não o SO);
+ * O CLARO É O PADRÃO — é o tema do redesign 2026-08 (a chave de storage é a
+ * `deskcomm-theme-v2` de `lib/theme.tsx`: a antiga guardava `dark` para todo
+ * mundo e esconderia o visual novo). A regra tem três ramos e ela precisa ser
+ * LETRA POR LETRA a de `readStoredTheme`/`getSystemTheme` em `lib/theme.tsx` e
+ * a do `data-theme` do <html> abaixo: divergir entre os três produz um flash
+ * do tema errado, que é justamente o que este script existe para impedir.
+ *   1. NADA salvo          → claro (o produto decide, não o SO);
  *   2. 'light' ou 'dark'   → o que a pessoa escolheu, sempre;
  *   3. 'system' explícito  → o SO, porque aí a escolha FOI seguir o SO.
- * No `catch` (localStorage bloqueado) o fallback é escuro, não claro.
+ * No `catch` (localStorage bloqueado) o fallback é claro, não escuro.
  */
-const THEME_INIT_SCRIPT = `(function(){try{var s=localStorage.getItem('deskcomm-theme');var d=window.matchMedia('(prefers-color-scheme: dark)').matches;var r=(s==='light'||s==='dark')?s:(s==='system'?(d?'dark':'light'):'dark');document.documentElement.setAttribute('data-theme',r);}catch(e){document.documentElement.setAttribute('data-theme','dark');}})();`;
+const THEME_INIT_SCRIPT = `(function(){try{var s=localStorage.getItem('deskcomm-theme-v2');var d=window.matchMedia('(prefers-color-scheme: dark)').matches;var r=(s==='light'||s==='dark')?s:(s==='system'?(d?'dark':'light'):'light');document.documentElement.setAttribute('data-theme',r);}catch(e){document.documentElement.setAttribute('data-theme','light');}})();`;
 
 export default function RootLayout({
   children,
@@ -94,7 +95,7 @@ export default function RootLayout({
   return (
     <html
       lang="pt-BR"
-      data-theme="dark"
+      data-theme="light"
       suppressHydrationWarning
       className={`${inter.variable} ${jetbrainsMono.variable}`}
     >
