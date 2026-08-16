@@ -42,8 +42,13 @@ const jetbrainsMono = JetBrains_Mono({
  * declaram apenas o próprio nome ("Entrar") e herdam o sufixo daqui.
  */
 export function generateMetadata(): Metadata {
-  const { name } = branding();
+  const { name, logoUrl } = branding();
   return {
+    // Ícone da aba. Sem isto o navegador desenha o globo genérico. Quem
+    // white-labela a instalação (APP_LOGO_URL) recebe o próprio logo aqui
+    // também — pelo mesmo motivo do nome: a marca dele não pode depender de
+    // editar código. Ver lib/branding.ts.
+    icons: { icon: logoUrl ?? "/icon.svg", apple: logoUrl ?? "/icon.svg" },
     title: {
       default: `${name} — atendimento e vendas por WhatsApp com agentes de IA`,
       template: `%s · ${name}`,
