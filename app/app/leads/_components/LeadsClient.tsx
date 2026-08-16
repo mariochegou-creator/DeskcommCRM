@@ -6,10 +6,12 @@ import {
   Plus,
   Export,
   UploadSimple,
-  ArrowsDownUp,
+  FunnelSimple,
   DotsThree,
   CaretLeft,
   CaretRight,
+  CaretUp,
+  CaretDown,
 } from "@/lib/ui/icons";
 
 import { useBoard } from "@/hooks/kanban/useBoard";
@@ -23,10 +25,13 @@ import {
   Table,
   TableBody,
   TableCell,
+  TableFooter,
   TableHead,
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
+import { Checkbox } from "@/components/ui/checkbox";
+import { ChipsDeTag } from "@/components/tags/ChipsDeTag";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -48,14 +53,11 @@ import type { Stage } from "@/lib/kanban/types";
 
 const PAGE_SIZE = 25;
 
-type SortId = "recent" | "value-desc" | "value-asc" | "activity";
-
-const SORT_OPTIONS: Array<{ id: SortId; label: string }> = [
-  { id: "recent", label: "Mais recentes" },
-  { id: "activity", label: "Atividade mais recente" },
-  { id: "value-desc", label: "Maior valor" },
-  { id: "value-asc", label: "Menor valor" },
-];
+// A ordenação vive no CABEÇALHO (clique alterna asc/desc), não mais num
+// dropdown "Ordenar" na toolbar. `created` é o estado inicial (mais recentes
+// primeiro) e também o que o clique em "Negócio" usa como segundo toque.
+type SortColumn = "created" | "title" | "value" | "activity";
+type SortState = { column: SortColumn; dir: "asc" | "desc" };
 
 const STATUS_OPTIONS = [
   { id: "open", label: "Abertos" },
@@ -113,6 +115,42 @@ function exportCsv(leads: Lead[], stages: Stage[]) {
   URL.revokeObjectURL(url);
 }
 
+function SortableHead({
+  label,
+  column,
+  sort,
+  onSort,
+  align = "left",
+  className,
+}: {
+  label: string;
+  column: SortColumn;
+  sort: SortState;
+  onSort: (column: SortColumn) => void;
+  align?: "left" | "right";
+  className?: string;
+}) {
+  const active = sort.column === column;
+  const Caret = sort.dir === "asc" ? CaretUp : CaretDown;
+  return (
+    <TableHead
+      aria-sort={active ? (sort.dir === "asc" ? "ascending" : "descending") : undefined}
+      className={className}
+    >
+      <button
+        type="button"
+        onClick={() => onSort(column)}
+        className={`flex w-full items-center gap-1 font-medium text-text-muted transition-colors duration-fast hover:text-text ${
+          align === "right" ? "justify-end text-right" : "text-left"
+        }`}
+      >
+        <span className="truncate">{label}</span>
+        {active && <Caret size={12} weight="bold" aria-hidden />}
+      </button>
+    </TableHead>
+  );
+}
+
 export function LeadsClient({
   pipelineId,
   pipelines,
@@ -124,7 +162,7 @@ export function LeadsClient({
   const [search, setSearch] = useState("");
   const [stageFilter, setStageFilter] = useState<string | null>(null);
   const [statusFilter, setStatusFilter] = useState<StatusId | null>("open");
-  const [sort, setSort] = useState<SortId>("recent");
+  const [sort, setSort] = useState<SortState>({ column: "created", dir: "desc" });
   const [page, setPage] = useState(0);
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [createOpen, setCreateOpen] = useState(false);
@@ -159,21 +197,38 @@ export function LeadsClient({
       return true;
     });
 
+    const dir = sort.dir === "asc" ? 1 : -1;
     const sorted = [...result];
     sorted.sort((a, b) => {
-      if (sort === "value-desc") return (b.value_cents ?? 0) - (a.value_cents ?? 0);
-      if (sort === "value-asc") return (a.value_cents ?? 0) - (b.value_cents ?? 0);
-      if (sort === "activity") {
-        // Sem atividade vai para o FIM em vez de virar epoch 0 e liderar a
-        // ordenação inversa — "nunca teve atividade" não é "atividade antiga".
-        const av = a.last_activity_at ? new Date(a.last_activity_at).getTime() : -Infinity;
-        const bv = b.last_activity_at ? new Date(b.last_activity_at).getTime() : -Infinity;
-        return bv - av;
+      if (sort.column === "title") return a.title.localeCompare(b.title, "pt-BR") * dir;
+      if (sort.column === "value")
+        return ((a.value_cents ?? 0) - (b.value_cents ?? 0)) * dir;
+      if (sort.column === "activity") {
+        // Sem atividade vai para o FIM nos dois sentidos — "nunca teve
+        // atividade" não é "atividade antiga" nem "atividade recente".
+        const av = a.last_activity_at ? new Date(a.last_activity_at).getTime() : null;
+        const bv = b.last_activity_at ? new Date(b.last_activity_at).getTime() : null;
+        if (av === null && bv === null) return 0;
+        if (av === null) return 1;
+        if (bv === null) return -1;
+        return (av - bv) * dir;
       }
-      return new Date(b.created_at).getTime() - new Date(a.created_at).getTime();
+      return (
+        (new Date(a.created_at).getTime() - new Date(b.created_at).getTime()) * dir
+      );
     });
     return sorted;
   }, [board.data, search, stageFilter, statusFilter, sort]);
+
+  function toggleSort(column: SortColumn) {
+    setSort((prev) =>
+      prev.column === column
+        ? { column, dir: prev.dir === "asc" ? "desc" : "asc" }
+        : // Texto começa A→Z; número e data começam do maior/mais novo.
+          { column, dir: column === "title" ? "asc" : "desc" },
+    );
+    setPage(0);
+  }
 
   const pageCount = Math.max(1, Math.ceil(filtered.length / PAGE_SIZE));
   // Filtrar reduz a lista e a página atual pode deixar de existir — sem isto a
@@ -208,6 +263,12 @@ export function LeadsClient({
 
   const allVisibleSelected =
     visible.length > 0 && visible.every((l) => selected.has(l.id));
+  const someVisibleSelected =
+    !allVisibleSelected && visible.some((l) => selected.has(l.id));
+  const totalCents = useMemo(
+    () => filtered.reduce((sum, l) => sum + (l.value_cents ?? 0), 0),
+    [filtered],
+  );
 
   function toggleAll() {
     setSelected((prev) => {
@@ -266,93 +327,91 @@ export function LeadsClient({
           <FunnelSummaryCards stages={funnel} />
 
           <Card className="overflow-hidden">
-            {/* Barra de ações. `flex-wrap` porque são seis controles: numa
-                tela de 1280px com o rail aberto eles não cabem em uma linha, e
-                sem a quebra o botão primário sairia do card. */}
-            <div className="flex flex-wrap items-center gap-3 border-b border-border p-4">
-              <div className="relative min-w-0 flex-1 sm:max-w-xs">
-                <MagnifyingGlass
-                  size={16}
-                  className="pointer-events-none absolute left-4 top-1/2 -translate-y-1/2 text-text-muted"
-                  aria-hidden
+            {/* Toolbar ÚNICA. Com seleção ativa, esta MESMA faixa vira a barra
+                de ações em massa — antes eram até 4 faixas empilhadas antes do
+                primeiro dado (toolbar, chips, barra de seleção, header). A
+                barra continua no topo, no fluxo: o sticky bottom já foi
+                tentado e não funciona aqui (ver BulkActionBar.tsx). */}
+            <div className="flex flex-wrap items-center gap-3 border-b border-border p-3">
+              {selected.size > 0 ? (
+                <BulkActionBar
+                  selectedIds={[...selected]}
+                  stages={stages}
+                  pipelineId={pipelineId}
+                  onClear={() => setSelected(new Set())}
                 />
-                <input
-                  type="search"
-                  value={searchInput}
-                  onChange={(e) => { setSearchInput(e.target.value); setPage(0); }}
-                  placeholder="Buscar negócio…"
-                  aria-label="Buscar negócio"
-                  className="h-10 w-full rounded-pill bg-surface-elevated pl-10 pr-4 text-sm text-text placeholder:text-text-subtle focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent-500 focus-visible:ring-offset-2 focus-visible:ring-offset-surface"
-                />
-              </div>
+              ) : (
+                <>
+                  <div className="relative min-w-0 flex-1 sm:max-w-xs">
+                    <MagnifyingGlass
+                      size={16}
+                      className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-text-muted"
+                      aria-hidden
+                    />
+                    <input
+                      type="search"
+                      value={searchInput}
+                      onChange={(e) => { setSearchInput(e.target.value); setPage(0); }}
+                      placeholder="Buscar negócio…"
+                      aria-label="Buscar negócio"
+                      className="h-9 w-full rounded-control border border-border bg-surface pl-9 pr-3 text-sm text-text placeholder:text-text-subtle focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent-500 focus-visible:ring-offset-2 focus-visible:ring-offset-surface"
+                    />
+                  </div>
 
-              <span className="text-sm text-text-muted tabular">
-                {filtered.length.toLocaleString("pt-BR")}{" "}
-                {filtered.length === 1 ? "negócio" : "negócios"}
-              </span>
+                  <DropdownMenu>
+                    <DropdownMenuTrigger asChild>
+                      <Button variant="secondary" className="gap-2">
+                        <FunnelSimple size={16} aria-hidden />
+                        {STATUS_OPTIONS.find((s) => s.id === statusFilter)?.label ??
+                          "Status"}
+                      </Button>
+                    </DropdownMenuTrigger>
+                    <DropdownMenuContent align="start">
+                      <DropdownMenuLabel>Status</DropdownMenuLabel>
+                      <DropdownMenuSeparator />
+                      {STATUS_OPTIONS.map((o) => (
+                        <DropdownMenuItem
+                          key={o.id}
+                          onClick={() => { setStatusFilter(o.id); setPage(0); }}
+                          disabled={o.id === statusFilter}
+                        >
+                          {o.label}
+                        </DropdownMenuItem>
+                      ))}
+                    </DropdownMenuContent>
+                  </DropdownMenu>
 
-              <div className="ml-auto flex flex-wrap items-center gap-2">
-                <Button
-                  variant="link"
-                  onClick={() => setImportOpen(true)}
-                  className="gap-2 no-underline"
-                >
-                  <UploadSimple size={16} aria-hidden />
-                  Importar
-                </Button>
-
-                <Button
-                  variant="link"
-                  onClick={() => exportCsv(filtered, stages)}
-                  disabled={filtered.length === 0}
-                  className="gap-2 no-underline"
-                >
-                  <Export size={16} aria-hidden />
-                  Exportar
-                </Button>
-
-                <DropdownMenu>
-                  <DropdownMenuTrigger asChild>
-                    <Button variant="secondary" className="gap-2">
-                      <ArrowsDownUp size={16} aria-hidden />
-                      <span className="hidden sm:inline">Ordenar</span>
+                  <div className="ml-auto flex flex-wrap items-center gap-2">
+                    <Button
+                      variant="link"
+                      onClick={() => setImportOpen(true)}
+                      className="gap-2 no-underline"
+                    >
+                      <UploadSimple size={16} aria-hidden />
+                      Importar
                     </Button>
-                  </DropdownMenuTrigger>
-                  <DropdownMenuContent align="end" className="min-w-[220px]">
-                    <DropdownMenuLabel>Ordenar por</DropdownMenuLabel>
-                    <DropdownMenuSeparator />
-                    {SORT_OPTIONS.map((o) => (
-                      <DropdownMenuItem
-                        key={o.id}
-                        onClick={() => setSort(o.id)}
-                        disabled={o.id === sort}
-                      >
-                        {o.label}
-                      </DropdownMenuItem>
-                    ))}
-                    <DropdownMenuSeparator />
-                    <DropdownMenuLabel>Status</DropdownMenuLabel>
-                    {STATUS_OPTIONS.map((o) => (
-                      <DropdownMenuItem
-                        key={o.id}
-                        onClick={() => { setStatusFilter(o.id); setPage(0); }}
-                        disabled={o.id === statusFilter}
-                      >
-                        {o.label}
-                      </DropdownMenuItem>
-                    ))}
-                  </DropdownMenuContent>
-                </DropdownMenu>
 
-                <Button onClick={() => setCreateOpen(true)} className="gap-2">
-                  <Plus size={16} weight="bold" aria-hidden />
-                  Adicionar
-                </Button>
-              </div>
+                    <Button
+                      variant="link"
+                      onClick={() => exportCsv(filtered, stages)}
+                      disabled={filtered.length === 0}
+                      className="gap-2 no-underline"
+                    >
+                      <Export size={16} aria-hidden />
+                      Exportar
+                    </Button>
+
+                    <Button onClick={() => setCreateOpen(true)} className="gap-2">
+                      <Plus size={16} weight="bold" aria-hidden />
+                      Adicionar
+                    </Button>
+                  </div>
+                </>
+              )}
             </div>
 
             {activeFilters.length > 0 && (
-              <div className="border-b border-border px-4 py-3">
+              <div className="border-b border-border px-3 py-2">
                 <FilterChips
                   filters={activeFilters}
                   onClearAll={() => {
@@ -366,20 +425,6 @@ export function LeadsClient({
               </div>
             )}
 
-            {/* Acima da tabela, junto dos filtros — mesma razão do Kanban: é
-                onde o olho está depois de marcar, sem depender de rolar uma
-                lista de centenas de linhas. */}
-            {selected.size > 0 && (
-              <div className="border-b border-border px-4 py-3">
-                <BulkActionBar
-                  selectedIds={[...selected]}
-                  stages={stages}
-                  pipelineId={pipelineId}
-                  onClear={() => setSelected(new Set())}
-                />
-              </div>
-            )}
-
             {visible.length === 0 ? (
               <p className="p-10 text-center text-sm text-text-muted">
                 Nenhum negócio corresponde a estes filtros.
@@ -388,19 +433,39 @@ export function LeadsClient({
               <Table>
                 <TableHeader>
                   <TableRow>
-                    <TableHead className="w-12">
-                      <input
-                        type="checkbox"
+                    {/* Canto duplamente sticky (topo + esquerda): z acima do
+                        resto do header para a coluna fixa passar POR BAIXO. */}
+                    <TableHead className="sticky left-0 z-20 w-10 bg-surface-elevated">
+                      <Checkbox
                         checked={allVisibleSelected}
+                        indeterminate={someVisibleSelected}
                         onChange={toggleAll}
                         aria-label="Selecionar todos os negócios desta página"
-                        className="h-4 w-4 cursor-pointer rounded-sm accent-[var(--color-accent)]"
                       />
                     </TableHead>
-                    <TableHead>Negócio</TableHead>
-                    <TableHead className="text-right">Valor</TableHead>
+                    <SortableHead
+                      label="Negócio"
+                      column="title"
+                      sort={sort}
+                      onSort={toggleSort}
+                      className="sticky left-10 z-20 min-w-[220px] bg-surface-elevated"
+                    />
+                    <SortableHead
+                      label="Valor"
+                      column="value"
+                      sort={sort}
+                      onSort={toggleSort}
+                      align="right"
+                    />
                     <TableHead>Etapa</TableHead>
-                    <TableHead className="hidden lg:table-cell">Atividade</TableHead>
+                    <TableHead className="hidden md:table-cell">Tags</TableHead>
+                    <SortableHead
+                      label="Atividade"
+                      column="activity"
+                      sort={sort}
+                      onSort={toggleSort}
+                      className="hidden lg:table-cell"
+                    />
                     <TableHead className="w-12" />
                   </TableRow>
                 </TableHeader>
@@ -410,11 +475,14 @@ export function LeadsClient({
                     return (
                       <TableRow
                         key={lead.id}
+                        className="group"
                         data-state={selected.has(lead.id) ? "selected" : undefined}
                       >
-                        <TableCell>
-                          <input
-                            type="checkbox"
+                        {/* Checkbox + Negócio ficam fixos no scroll horizontal.
+                            O fundo precisa acompanhar hover/seleção da linha
+                            (via `group`), senão a coluna fixa fica "furada". */}
+                        <TableCell className="sticky left-0 z-[1] w-10 bg-surface transition-colors duration-fast group-hover:bg-surface-elevated group-data-[state=selected]:bg-accent-soft">
+                          <Checkbox
                             checked={selected.has(lead.id)}
                             onChange={() =>
                               setSelected((prev) => {
@@ -425,11 +493,10 @@ export function LeadsClient({
                               })
                             }
                             aria-label={`Selecionar ${lead.title}`}
-                            className="h-4 w-4 cursor-pointer rounded-sm accent-[var(--color-accent)]"
                           />
                         </TableCell>
 
-                        <TableCell>
+                        <TableCell className="sticky left-10 z-[1] bg-surface transition-colors duration-fast group-hover:bg-surface-elevated group-data-[state=selected]:bg-accent-soft">
                           <div className="flex flex-col gap-0.5">
                             <Link
                               href={`/app/leads/${lead.id}`}
@@ -474,6 +541,16 @@ export function LeadsClient({
                           )}
                         </TableCell>
 
+                        <TableCell className="hidden md:table-cell">
+                          <div className="flex flex-wrap items-center gap-1">
+                            <ChipsDeTag
+                              nomes={lead.client_tags}
+                              max={2}
+                              tamanho="sm"
+                            />
+                          </div>
+                        </TableCell>
+
                         <TableCell className="hidden text-xs text-text-muted lg:table-cell">
                           {relativeTime(lead.last_activity_at)}
                         </TableCell>
@@ -512,6 +589,25 @@ export function LeadsClient({
                     );
                   })}
                 </TableBody>
+                {/* Rodapé de cálculo: contagem e soma do RECORTE FILTRADO
+                    inteiro, não só da página — é a resposta que quem filtra
+                    está procurando. */}
+                <TableFooter>
+                  <TableRow className="hover:bg-transparent">
+                    <TableCell className="sticky left-0 z-[1] w-10 bg-surface-elevated" />
+                    <TableCell className="sticky left-10 z-[1] bg-surface-elevated text-xs font-medium tabular">
+                      {filtered.length.toLocaleString("pt-BR")}{" "}
+                      {filtered.length === 1 ? "negócio" : "negócios"}
+                    </TableCell>
+                    <TableCell className="text-right text-xs font-medium tabular">
+                      {totalCents > 0 ? formatBRL(totalCents) : "—"}
+                    </TableCell>
+                    <TableCell />
+                    <TableCell className="hidden md:table-cell" />
+                    <TableCell className="hidden lg:table-cell" />
+                    <TableCell />
+                  </TableRow>
+                </TableFooter>
               </Table>
             )}
 

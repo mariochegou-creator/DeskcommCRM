@@ -17,9 +17,9 @@ const Table = React.forwardRef<
 Table.displayName = "Table"
 
 /**
- * Header em `surface-elevated` (#0d1e35), que é o degrau acima do fundo do
- * card. É a faixa que separa rótulo de dado — não leva borda vertical nenhuma:
- * a grade de linhas verticais é o que faz tabela escura virar planilha.
+ * `sticky top-0`: o scroll é do wrapper `overflow-auto` do próprio Table, então
+ * o header gruda no topo do card enquanto as linhas rolam por baixo — 25 linhas
+ * por página sem perder o rótulo da coluna de vista.
  */
 const TableHeader = React.forwardRef<
   HTMLTableSectionElement,
@@ -27,7 +27,7 @@ const TableHeader = React.forwardRef<
 >(({ className, ...props }, ref) => (
   <thead
     ref={ref}
-    className={cn("bg-surface-elevated [&_tr]:border-0", className)}
+    className={cn("sticky top-0 z-10 bg-surface-elevated [&_tr]:border-0", className)}
     {...props}
   />
 ))
@@ -52,7 +52,7 @@ const TableFooter = React.forwardRef<
   <tfoot
     ref={ref}
     className={cn(
-      "border-t bg-muted/50 font-medium [&>tr]:last:border-b-0",
+      "border-t border-border bg-surface-elevated text-xs text-text-muted [&>tr]:last:border-b-0",
       className
     )}
     {...props}
@@ -67,11 +67,11 @@ const TableRow = React.forwardRef<
   <tr
     ref={ref}
     className={cn(
-      // SEM ZEBRA. A separação é uma linha quase invisível e a altura generosa
-      // da linha; listra alternada em fundo escuro cria duas superfícies que
-      // brigam com o pill colorido de status, que é quem deve puxar o olho.
+      // SEM ZEBRA: a grade fina de linhas já separa. Hover e selecionado são
+      // fundos DIFERENTES de propósito — antes ambos eram `surface-elevated` e
+      // não dava para saber, passando o mouse, o que estava marcado.
       "border-b border-border transition-colors duration-fast",
-      "hover:bg-surface-elevated data-[state=selected]:bg-surface-elevated",
+      "hover:bg-surface-elevated data-[state=selected]:bg-accent-soft data-[state=selected]:hover:bg-accent-soft",
       className
     )}
     {...props}
@@ -86,9 +86,10 @@ const TableHead = React.forwardRef<
   <th
     ref={ref}
     className={cn(
-      // 12px, CAIXA ALTA, tracking 0.5px — o rótulo de coluna se distingue do
-      // dado por forma, não por cor, e assim não gasta nem ciano nem contraste.
-      "h-11 px-4 text-left align-middle text-xs font-medium uppercase tracking-[0.5px] text-text-muted",
+      // Caixa normal (o uppercase era linguagem do tema navy antigo) e grade
+      // vertical explícita: no visual claro estilo planilha a linha fina é o
+      // que deixa uma tabela larga escaneável coluna a coluna.
+      "h-9 border-r border-border px-3 text-left align-middle text-xs font-medium text-text-muted last:border-r-0",
       "[&:has([role=checkbox])]:pr-0 [&>[role=checkbox]]:translate-y-[2px]",
       className
     )}
@@ -104,10 +105,9 @@ const TableCell = React.forwardRef<
   <td
     ref={ref}
     className={cn(
-      // `h-16` = linha de 64px: o briefing pede tabela alta, e a altura é o que
-      // deixa a célula de contato caber em duas linhas (nome + telefone) sem
-      // apertar. `py-3` mantém o respiro quando a célula cresce além disso.
-      "h-16 px-4 py-3 align-middle text-sm",
+      // 40px: densidade de planilha. Célula de duas linhas (nome + data)
+      // cresce pelo `py`, não quebra.
+      "h-10 border-r border-border px-3 py-1.5 align-middle text-sm last:border-r-0",
       "[&:has([role=checkbox])]:pr-0 [&>[role=checkbox]]:translate-y-[2px]",
       className
     )}

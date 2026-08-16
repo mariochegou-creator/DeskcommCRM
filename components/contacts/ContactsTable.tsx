@@ -11,6 +11,7 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { Badge } from "@/components/ui/badge";
+import { ChipsDeTag } from "@/components/tags/ChipsDeTag";
 import type { Contact } from "@/lib/types/contacts";
 
 interface Props {
@@ -49,12 +50,15 @@ export function ContactsTable({ contacts }: Props) {
               {c.phone_number ?? "—"}
             </TableCell>
             <TableCell>
-              <div className="flex flex-wrap gap-1">
-                {c.tags.length === 0
-                  ? <span className="text-muted-foreground text-xs">—</span>
-                  : c.tags.map((t) => (
-                      <Badge key={t} variant="neutral">{t}</Badge>
-                    ))}
+              {/* ChipsDeTag no lugar do Badge cru: a mesma cor do catálogo
+                  que o inbox e o kanban já usam — aqui era o único lugar em
+                  que a tag saía sem a cor configurada. */}
+              <div className="flex flex-wrap items-center gap-1">
+                {c.tags.length === 0 ? (
+                  <span className="text-muted-foreground text-xs">—</span>
+                ) : (
+                  <ChipsDeTag nomes={c.tags} max={3} tamanho="sm" />
+                )}
               </div>
             </TableCell>
             <TableCell className="text-muted-foreground text-sm">
