@@ -85,7 +85,7 @@ export function DashboardClient({
       <header className="flex flex-wrap items-end justify-between gap-4">
         <div className="flex flex-col gap-1">
           {/* Emoji SÓ na saudação — é a única licença do sistema. */}
-          <h1 className="text-[28px] font-bold leading-tight tracking-[-0.5px] text-text">
+          <h1 className="text-xl font-semibold leading-tight tracking-[-0.2px] text-text">
             {firstName ? `Olá, ${firstName}` : "Olá"} 👋
           </h1>
           <p className="text-sm text-text-muted">

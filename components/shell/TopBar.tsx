@@ -11,7 +11,7 @@ import { TodayDate } from "./TodayDate";
 /**
  * TopBar — busca à esquerda, data ao centro, controles circulares à direita.
  *
- * `h-16` casa com a altura do cabeçalho da Sidebar, para a régua do topo
+ * `h-14` casa com a altura do cabeçalho da Sidebar, para a régua do topo
  * atravessar a tela sem degrau. O fundo é `bg-bg` (o mesmo da página), e não
  * `bg-surface`: no escuro a topbar não é um card, é o topo da página — pintá-la
  * de surface criaria uma faixa que compete com o primeiro card do conteúdo.
@@ -19,7 +19,7 @@ import { TodayDate } from "./TodayDate";
  */
 export function TopBar() {
   return (
-    <header className="sticky top-0 z-20 flex h-16 shrink-0 items-center gap-4 border-b border-border bg-bg/95 px-4 backdrop-blur md:px-6">
+    <header className="sticky top-0 z-20 flex h-14 shrink-0 items-center gap-4 border-b border-border bg-bg/95 px-4 backdrop-blur md:px-6">
       <div className="flex flex-1 items-center gap-3">
         <SearchTrigger />
         <TenantSwitcher />

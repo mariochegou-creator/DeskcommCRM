@@ -170,11 +170,11 @@
   --shadow-glow: none;
   --shadow-glow-warning: none;
 
-  /* Density — Aerada */
-  --density-row: 56px;
-  --density-gap: 24px;
-  --density-px: 20px;
-  --density-py: 16px;
+  /* Density — Equilibrada (redesign 2026-08; era Aerada) */
+  --density-row: 44px;
+  --density-gap: 16px;
+  --density-px: 16px;
+  --density-py: 12px;
 
   /* Motion */
   --ease-out: cubic-bezier(0.2, 0, 0, 1);

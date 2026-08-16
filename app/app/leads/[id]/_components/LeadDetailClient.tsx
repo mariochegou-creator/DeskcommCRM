@@ -107,7 +107,7 @@ export function LeadDetailClient({
         <header className="flex flex-wrap items-start justify-between gap-4">
           <div className="flex min-w-0 flex-col gap-2">
             <MonoLabel>negócio</MonoLabel>
-            <h1 className="text-[28px] font-bold leading-tight tracking-[-0.5px] text-text">
+            <h1 className="text-xl font-semibold leading-tight tracking-[-0.2px] text-text">
               {lead.title}
             </h1>
             <div className="flex flex-wrap items-center gap-2">
