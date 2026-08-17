@@ -13,14 +13,21 @@ export interface AgendarArgs {
   /** HH:MM civil da Bahia. */
   hora: string;
   tipo?: TipoDeReuniao;
+  /**
+   * Quem recebe o convite do Google Agenda. Ausente NÃO é "ninguém": a rota
+   * cai no e-mail cadastrado do contato do lead.
+   */
+  convidados?: string[];
 }
 
 export interface RespostaDoAgendamento {
   reuniao: Reuniao;
   confirmacao: { enviada: true } | { enviada: false; motivo: string };
   agenda:
-    | { criada: true; link: string | null }
+    | { criada: true; link: string | null; convidados: string[] }
     | { criada: false; motivo: string; link_manual: string; configurada: boolean };
+  /** A ligação de preparo: nasceu agora, teve o prazo movido, ou não coube. */
+  tarefa_de_ligar: "criada" | "remarcada" | null;
 }
 
 /**

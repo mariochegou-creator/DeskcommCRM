@@ -15,7 +15,6 @@ import { Label } from "@/components/ui/label";
 import { useAgendarReuniao, type RespostaDoAgendamento } from "@/hooks/kanban/useAgendarReuniao";
 import { useCriarTarefa } from "@/hooks/tarefas/useTarefas";
 import {
-  AGENDA_PUBLICA_EMBED,
   AGENDA_PUBLICA_URL,
   dataCivilBahia,
   formatarReuniao,
@@ -65,15 +64,16 @@ const MOTIVO_DA_CONFIRMACAO: Record<string, string> = {
 /**
  * O dialog que aparece quando o card entra na coluna de reunião marcada.
  *
- * Dois passos, nessa ordem:
+ * UMA tela só, e o caminho é do CRM PARA o Google — nunca o contrário.
  *
- * 1. **A agenda do Google, embutida.** É onde a reunião nasce de verdade —
- *    escolhe-se dia, hora e o e-mail do lead, e o Google manda o convite. Fica
- *    dentro do CRM porque abrir outra aba no meio do arrasto é o jeito mais
- *    fácil de esquecer o card no meio do caminho.
- * 2. **A mesma hora, dita ao CRM.** O Google não avisa este sistema do que foi
- *    marcado, e sem a hora aqui dentro não sai confirmação no WhatsApp nem os
- *    lembretes da véspera e de 1h antes.
+ * A tentativa anterior (17/08/2026) embutia a página pública de agendamento do
+ * Google num iframe como primeiro passo. Funcionava para marcar, mas morria ali:
+ * uma página do Google dentro de um iframe **não conta ao CRM** o dia, a hora
+ * nem o e-mail que foram digitados — é outro domínio, sem canal de volta. O
+ * resultado era digitar tudo duas vezes. Então o sentido foi invertido: dia,
+ * hora e e-mail entram AQUI, e é o CRM que cria o evento na agenda e manda o
+ * convite (`lib/agendamento/google-calendar.ts`, quando as 4 env vars estão
+ * ligadas — sem elas sobra o botão "Adicionar na minha agenda").
  *
  * Ele existe porque o CRM não tinha COMO saber a hora da reunião — e sem ela
  * não há véspera nem toque final, que são justamente os dois lembretes que
@@ -106,11 +106,11 @@ export function AgendarReuniaoDialog({
   const [hora, setHora] = useState<string>(SLOTS_DO_CLOSER[1]);
   const [resultado, setResultado] = useState<RespostaDoAgendamento | null>(null);
   /**
-   * Onde o dialog começa. Na agenda do Google — é lá que a reunião é marcada
-   * de fato. Remarcação pelo menu do card já tem hora escolhida e pula direto
-   * para o passo do CRM, senão conferir a hora custaria um passo a mais.
+   * O e-mail que recebe o convite do Google. Vazio NÃO significa "sem convite":
+   * a rota cai no e-mail cadastrado do contato. Este campo é para o caso comum
+   * de o dono do negócio dar um e-mail diferente na hora de marcar.
    */
-  const [passo, setPasso] = useState<"agenda" | "crm">(reuniaoAtual ? "crm" : "agenda");
+  const [email, setEmail] = useState("");
   const mutation = useAgendarReuniao(pipelineId);
 
   const jaMarcada = useMemo(
@@ -121,20 +121,32 @@ export function AgendarReuniaoDialog({
   const noPassado = quando.getTime() < abertoEm.getTime();
   const previa = formatarReuniao(quando);
 
+  /**
+   * Só manda o convidado quando o campo tem cara de e-mail. Digitação pela
+   * metade viraria 422 do zod (`z.string().email()`) e derrubaria um
+   * agendamento válido por causa de um campo opcional.
+   */
+  const emailLimpo = email.trim();
+  const emailValido = /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(emailLimpo);
+
   const salvar = async () => {
     try {
-      const resposta = await mutation.mutateAsync({ leadId, data, hora, tipo });
+      const resposta = await mutation.mutateAsync({
+        leadId,
+        data,
+        hora,
+        tipo,
+        convidados: emailValido ? [emailLimpo] : undefined,
+      });
       setResultado(resposta);
     } catch {
       // showApiError já avisou; o dialog fica aberto para corrigir a data.
     }
   };
 
-  const naAgenda = !resultado && passo === "agenda";
-
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className={naAgenda ? "sm:max-w-[880px]" : undefined}>
+      <DialogContent>
         <DialogHeader>
           <DialogTitle>
             {tipo ? ROTULO_DO_TIPO[tipo].toUpperCase() : "Reunião"} — {leadTitulo}
@@ -142,34 +154,12 @@ export function AgendarReuniaoDialog({
           <DialogDescription>
             {resultado
               ? "Reunião marcada."
-              : naAgenda
-                ? "Escolha o dia, a hora e digite o e-mail do lead aqui na agenda. Depois clique em «Já marquei» para o CRM avisar no WhatsApp."
-                : "Confirme o dia e a hora que você marcou. O lead recebe a confirmação agora, um lembrete às 18h da véspera e outro 1 hora antes."}
+              : "Escolha o dia e a hora. O evento entra na sua agenda, o lead recebe o convite por e-mail e a confirmação no WhatsApp, mais lembrete às 18h da véspera e 1 hora antes."}
           </DialogDescription>
         </DialogHeader>
 
         {resultado ? (
           <Resultado resposta={resultado} leadId={leadId} leadTitulo={leadTitulo} />
-        ) : naAgenda ? (
-          <div className="grid gap-2">
-            {/* A página pública do Google, embutida. O `?gv=true` é o modo de
-                embed oficial; sem ele o Google recusa o iframe. */}
-            <iframe
-              src={AGENDA_PUBLICA_EMBED}
-              title="Agenda do Google"
-              className="h-[min(68vh,620px)] w-full rounded-md border border-border bg-white"
-            />
-            {/* Escape para o dia em que o navegador bloquear o iframe (cookies
-                de terceiros): sem este link a tela ficaria em branco e sem saída. */}
-            <a
-              className="text-xs text-muted-foreground underline underline-offset-2"
-              href={AGENDA_PUBLICA_URL}
-              target="_blank"
-              rel="noreferrer"
-            >
-              Não carregou? Abrir a agenda em outra aba
-            </a>
-          </div>
         ) : (
           <div className="grid gap-4">
             {jaMarcada && (
@@ -215,6 +205,23 @@ export function AgendarReuniaoDialog({
               </div>
             </div>
 
+            <div className="grid gap-1.5">
+              <Label htmlFor="reuniao-email">E-mail do lead (para o convite)</Label>
+              <Input
+                id="reuniao-email"
+                type="email"
+                inputMode="email"
+                placeholder="deixe vazio para usar o e-mail do cadastro"
+                value={email}
+                onChange={(e) => setEmail(e.target.value)}
+              />
+              {emailLimpo.length > 0 && !emailValido && (
+                <p className="text-xs text-destructive">
+                  Esse e-mail está incompleto — do jeito que está, o convite não vai.
+                </p>
+              )}
+            </div>
+
             <p
               className={`text-sm ${noPassado ? "text-destructive" : "text-muted-foreground"}`}
               aria-live="polite"
@@ -223,19 +230,23 @@ export function AgendarReuniaoDialog({
                 ? "Esse horário já passou — escolha um futuro."
                 : `${previa.diaDaSemana}, ${previa.diaMes} às ${previa.hora}.`}
             </p>
+
+            {/* Atalho para conferir o que já está ocupado no dia. Abre fora: a
+                agenda do Google não cabe (nem se comunica) dentro do dialog. */}
+            <a
+              className="text-xs text-muted-foreground underline underline-offset-2"
+              href={AGENDA_PUBLICA_URL}
+              target="_blank"
+              rel="noreferrer"
+            >
+              Ver minha agenda do Google
+            </a>
           </div>
         )}
 
         <DialogFooter>
           {resultado ? (
             <Button onClick={() => onOpenChange(false)}>Fechar</Button>
-          ) : naAgenda ? (
-            <>
-              <Button variant="outline" onClick={() => onOpenChange(false)}>
-                Agora não
-              </Button>
-              <Button onClick={() => setPasso("crm")}>Já marquei — avisar o lead</Button>
-            </>
           ) : (
             <>
               <Button
@@ -296,6 +307,9 @@ function Resultado({
       {resposta.agenda.criada ? (
         <p className="text-muted-foreground">
           Evento criado no Google Agenda.{" "}
+          {resposta.agenda.convidados.length > 0
+            ? `Convite enviado para ${resposta.agenda.convidados.join(", ")}. `
+            : "Sem e-mail do lead — ninguém foi convidado. "}
           {resposta.agenda.link && (
             <a
               className="underline underline-offset-2"
@@ -331,6 +345,13 @@ function Resultado({
           recado é no relógio da conversa (dialog de tarefas). */}
       <div className="grid gap-2 border-t border-border pt-3">
         <p className="text-xs font-medium text-text">Sua preparação</p>
+        {resposta.tarefa_de_ligar && (
+          <p className="text-xs text-muted-foreground">
+            {resposta.tarefa_de_ligar === "criada"
+              ? "✓ Tarefa criada sozinha: ligar 1h antes."
+              : "✓ A tarefa de ligar 1h antes foi movida para o horário novo."}
+          </p>
+        )}
         <div className="flex flex-wrap gap-2">
           {PREPARACAO.map((p) => {
             const em = new Date(emReuniao.getTime() - p.horas * 60 * 60 * 1000);

@@ -182,11 +182,42 @@ export async function POST(
     .filter(Boolean)
     .join("\n");
 
+  const admin = createAdminClient();
+
+  const { data: contato } = lead.contact_id
+    ? await admin
+        .from("contacts")
+        .select("name, display_name, email")
+        .eq("id", lead.contact_id)
+        .eq("organization_id", lead.organization_id)
+        .maybeSingle()
+    : { data: null };
+
+  const dadosDoContato = contato as {
+    name?: string | null;
+    display_name?: string | null;
+    email?: string | null;
+  } | null;
+
+  const nomeDoContato = dadosDoContato?.display_name ?? dadosDoContato?.name ?? null;
+
+  // Quem foi digitado na tela vence; sem ninguém digitado, o e-mail do cadastro
+  // assume. A alternativa — exigir o e-mail toda vez — faria quem já cadastrou
+  // o contato redigitar o mesmo endereço a cada remarcação, e o convite do
+  // Google simplesmente não sairia nas vezes em que ninguém lembrasse.
+  const emailDoCadastro = (dadosDoContato?.email ?? "").trim();
+  const convidados =
+    input.convidados && input.convidados.length > 0
+      ? input.convidados
+      : emailDoCadastro.length > 0
+        ? [emailDoCadastro]
+        : undefined;
+
   const eventoBase = {
     titulo: tituloDoEvento,
     descricao: descricaoDoEvento,
     inicio: quando,
-    convidados: input.convidados,
+    convidados,
   };
 
   // Evento já criado para este mesmo instante: reaproveita em vez de abrir um
@@ -229,7 +260,6 @@ export async function POST(
   // calada (`ai_dispatch_mode = 'external'`) o agendamento é gravado, o evento
   // vai pra agenda e NADA sai no WhatsApp — a tela devolve
   // `confirmacao.motivo = "automacao_desligada"` e quem marcou escreve à mão.
-  const admin = createAdminClient();
   let envio: ResultadoDoEnvio;
 
   if (mesmoInstante && reuniao.avisos?.confirmacao) {
@@ -238,20 +268,6 @@ export async function POST(
   } else if (await automacaoDesligada(admin, lead.organization_id)) {
     envio = { ok: false, motivo: "automacao_desligada" };
   } else {
-    const { data: contato } = lead.contact_id
-      ? await admin
-          .from("contacts")
-          .select("name, display_name")
-          .eq("id", lead.contact_id)
-          .eq("organization_id", lead.organization_id)
-          .maybeSingle()
-      : { data: null };
-
-    const nomeDoContato =
-      (contato as { name?: string | null; display_name?: string | null } | null)?.display_name ??
-      (contato as { name?: string | null } | null)?.name ??
-      null;
-
     const corpo = mensagemDeConfirmacao(reuniao, {
       nomeDoContato,
       negocio,
@@ -288,6 +304,29 @@ export async function POST(
         requestId,
       });
     }
+  }
+
+  // O lembrete de QUEM VAI ATENDER, criado sozinho. Os lembretes automáticos
+  // são todos do LEAD; do lado de cá havia só dois botões ("ligar 5h/2h antes")
+  // que dependiam de alguém clicar depois de salvar — e ninguém clica com o
+  // quadro cheio. Não derruba o agendamento se falhar: a reunião já está
+  // gravada, e a tarefa continua podendo ser criada à mão.
+  let tarefaDeLigar: "criada" | "remarcada" | null = null;
+  try {
+    tarefaDeLigar = await garantirTarefaDeLigar(supabase, {
+      organizationId: lead.organization_id,
+      leadId,
+      contactId: lead.contact_id,
+      negocio,
+      reuniaoEm: quando,
+      autorUserId: user.id,
+    });
+  } catch (err) {
+    logger.warn("[meeting] tarefa de ligar não criada", {
+      leadId,
+      error: err instanceof Error ? err.message : String(err),
+      requestId,
+    });
   }
 
   const atividade = await emitLeadActivity(supabase, {
@@ -336,7 +375,7 @@ export async function POST(
         ? { enviada: true as const }
         : { enviada: false as const, motivo: envio.motivo },
       agenda: naAgenda.ok
-        ? { criada: true as const, link: naAgenda.htmlLink }
+        ? { criada: true as const, link: naAgenda.htmlLink, convidados: convidados ?? [] }
         : {
             criada: false as const,
             motivo: naAgenda.motivo,
@@ -344,7 +383,75 @@ export async function POST(
             link_manual: linkParaAdicionarNaAgenda(eventoBase),
             configurada: agendaConfigurada(),
           },
+      tarefa_de_ligar: tarefaDeLigar,
     },
     { requestId },
   );
+}
+
+/** Antecedência da ligação de preparo. Mesma hora do último toque no lead. */
+const HORAS_ANTES_DA_LIGACAO = 1;
+
+interface EntradaDaTarefaDeLigar {
+  organizationId: string;
+  leadId: string;
+  contactId: string | null;
+  negocio: string;
+  reuniaoEm: Date;
+  autorUserId: string;
+}
+
+/**
+ * Garante UMA tarefa "ligar 1h antes" para esta reunião.
+ *
+ * Remarcar não cria uma segunda: a busca é pelo título (mesma trava de
+ * `lib/tarefas/criar-da-etapa.ts`) e o prazo da tarefa existente é movido para
+ * a hora nova. Sem isso, remarcar três vezes deixaria três ligações na lista,
+ * duas delas para horários que não existem mais — e uma lista com lixo dentro
+ * para de ser lida, que é o modo de falha que todo este checklist evita.
+ *
+ * Devolve `null` quando não há o que criar: reunião daqui a menos de uma hora
+ * faria a tarefa nascer já atrasada, e tarefa nascida atrasada é ruído.
+ */
+async function garantirTarefaDeLigar(
+  supabase: Awaited<ReturnType<typeof createClient>>,
+  entrada: EntradaDaTarefaDeLigar,
+): Promise<"criada" | "remarcada" | null> {
+  const prazo = new Date(
+    entrada.reuniaoEm.getTime() - HORAS_ANTES_DA_LIGACAO * 60 * 60 * 1000,
+  );
+  if (prazo.getTime() <= Date.now()) return null;
+
+  const titulo = `Ligar 1h antes — ${entrada.negocio || "negócio sem nome"}`;
+
+  const { data: existente, error: erroLeitura } = await supabase
+    .from("crm_tasks")
+    .select("id")
+    .eq("lead_id", entrada.leadId)
+    .eq("title", titulo)
+    .eq("status", "pending")
+    .maybeSingle();
+
+  // Leitura falhou ⇒ não dá para saber se já existe. Criar às cegas duplicaria.
+  if (erroLeitura) return null;
+
+  if (existente?.id) {
+    const { error } = await supabase
+      .from("crm_tasks")
+      .update({ due_at: prazo.toISOString() })
+      .eq("id", existente.id);
+    return error ? null : "remarcada";
+  }
+
+  const { error } = await supabase.from("crm_tasks").insert({
+    organization_id: entrada.organizationId,
+    title: titulo,
+    kind: "ligar",
+    due_at: prazo.toISOString(),
+    assigned_to_user_id: entrada.autorUserId,
+    created_by_user_id: entrada.autorUserId,
+    lead_id: entrada.leadId,
+    contact_id: entrada.contactId,
+  });
+  return error ? null : "criada";
 }
