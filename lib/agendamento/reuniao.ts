@@ -27,11 +27,69 @@ export const HORA_LEMBRETE_VESPERA = 18;
 export const HORAS_LEMBRETE_FINAL = 1;
 
 /**
- * Os 3 slots fixos do closer (decisão de 09/08/2026: toda reunião cai em 10h,
- * 14h ou 16h, eventos recorrentes na agenda). O dialog oferece estes com um
- * clique e ainda aceita horário livre — a regra é operacional, não do código.
+ * O expediente de reuniões: de hora em hora, das 10h às 18h (decisão do Mario
+ * em 17/08/2026, que substituiu os 3 slots fixos de 09/08 — 10h/14h/16h davam
+ * três reuniões por dia num dia que comporta nove).
+ *
+ * O dialog oferece estes com um clique e ainda aceita horário livre no campo
+ * de hora: a grade é a regra da operação, não uma trava do código.
  */
-export const SLOTS_DO_CLOSER = ["10:00", "14:00", "16:00"] as const;
+export const SLOTS_DA_AGENDA = [
+  "10:00",
+  "11:00",
+  "12:00",
+  "13:00",
+  "14:00",
+  "15:00",
+  "16:00",
+  "17:00",
+  "18:00",
+] as const;
+
+/**
+ * Quanto tempo cada reunião ocupa. A call é de 20 min e o bloco reserva 30.
+ *
+ * Mora aqui, e não em `google-calendar.ts`, porque quem calcula colisão de
+ * horário precisa dela e aquele arquivo lê `env` (não roda no cliente). Lá o
+ * símbolo continua existindo, importado daqui — uma duração só, ou o slot
+ * exibido como livre não seria o mesmo bloco criado na agenda.
+ */
+export const DURACAO_DA_REUNIAO_MIN = 30;
+
+/** Um pedaço de tempo já comprometido. Instantes ISO UTC. */
+export interface Ocupacao {
+  inicio: string;
+  fim: string;
+  /** Id do evento no Google, quando veio de lá. Serve para ignorar o próprio. */
+  gcalEventId?: string | null;
+}
+
+/**
+ * Quais slots do dia colidem com algo já marcado.
+ *
+ * Colisão é SOBREPOSIÇÃO, não igualdade de horário: uma reunião às 10h30
+ * (marcada no campo livre) derruba o slot das 10h, e um compromisso de duas
+ * horas na agenda do Google derruba os dois slots que ele cobre. Comparar só
+ * "mesma hora cheia" deixaria passar exatamente esses dois casos.
+ *
+ * Puro: o dialog desenha e a rota calcula com a mesma regra.
+ */
+export function slotsOcupados(data: string, ocupacoes: Ocupacao[]): string[] {
+  const bloqueados: string[] = [];
+  for (const slot of SLOTS_DA_AGENDA) {
+    const inicio = instanteDaReuniao(data, slot).getTime();
+    if (Number.isNaN(inicio)) continue;
+    const fim = inicio + DURACAO_DA_REUNIAO_MIN * 60_000;
+    const colide = ocupacoes.some((o) => {
+      const oi = Date.parse(o.inicio);
+      const of = Date.parse(o.fim);
+      if (Number.isNaN(oi) || Number.isNaN(of)) return false;
+      return oi < fim && of > inicio;
+    });
+    if (colide) bloqueados.push(slot);
+  }
+  return bloqueados;
+}
 
 /**
  * A página pública de agendamento do Google (Appointment Schedules) da NEXO.

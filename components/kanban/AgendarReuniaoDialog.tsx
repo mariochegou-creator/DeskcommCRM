@@ -13,6 +13,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { useAgendarReuniao, type RespostaDoAgendamento } from "@/hooks/kanban/useAgendarReuniao";
+import { useHorariosDoDia } from "@/hooks/kanban/useHorariosDoDia";
 import { useCriarTarefa } from "@/hooks/tarefas/useTarefas";
 import {
   AGENDA_PUBLICA_URL,
@@ -20,7 +21,7 @@ import {
   formatarReuniao,
   instanteDaReuniao,
   ROTULO_DO_TIPO,
-  SLOTS_DO_CLOSER,
+  SLOTS_DA_AGENDA,
   type Reuniao,
   type TipoDeReuniao,
 } from "@/lib/agendamento/reuniao";
@@ -103,7 +104,7 @@ export function AgendarReuniaoDialog({
   const hoje = useMemo(() => dataCivilBahia(abertoEm), [abertoEm]);
   const amanha = useMemo(() => dataCivilBahia(abertoEm, 1), [abertoEm]);
   const [data, setData] = useState(amanha);
-  const [hora, setHora] = useState<string>(SLOTS_DO_CLOSER[1]);
+  const [hora, setHora] = useState<string>(SLOTS_DA_AGENDA[0]);
   const [resultado, setResultado] = useState<RespostaDoAgendamento | null>(null);
   /**
    * O e-mail que recebe o convite do Google. Vazio NÃO significa "sem convite":
@@ -120,6 +121,17 @@ export function AgendarReuniaoDialog({
   const quando = useMemo(() => instanteDaReuniao(data, hora), [data, hora]);
   const noPassado = quando.getTime() < abertoEm.getTime();
   const previa = formatarReuniao(quando);
+
+  // O que já tem dono nesse dia — reuniões do CRM mais a agenda do Google.
+  const horarios = useHorariosDoDia(data, leadId);
+  const ocupados = useMemo(
+    () => new Set(horarios.data?.ocupados ?? []),
+    [horarios.data?.ocupados],
+  );
+  // O slot escolhido ficou ocupado (ou já estava, ao trocar de dia). O botão de
+  // salvar trava: deixar salvar por cima é criar a segunda reunião no mesmo
+  // horário, que é exatamente o que esta grade existe para impedir.
+  const escolhidoOcupado = ocupados.has(hora);
 
   /**
    * Só manda o convidado quando o campo tem cara de e-mail. Digitação pela
@@ -181,20 +193,29 @@ export function AgendarReuniaoDialog({
 
             <div className="grid gap-1.5">
               <Label>Hora</Label>
-              {/* Os 3 slots do closer primeiro (10h/14h/16h são a regra da
-                  operação); o campo livre existe para a exceção, não para o
-                  dia a dia. */}
+              {/* A grade do expediente (10h–18h); o campo livre existe para a
+                  exceção, não para o dia a dia. Horário com dono aparece
+                  desabilitado em vez de sumir: quem olha precisa entender que
+                  o horário EXISTE e está tomado — uma grade que encolhe
+                  sozinha parece defeito. */}
               <div className="flex flex-wrap gap-2">
-                {SLOTS_DO_CLOSER.map((slot) => (
-                  <Button
-                    key={slot}
-                    type="button"
-                    variant={hora === slot ? "default" : "outline"}
-                    onClick={() => setHora(slot)}
-                  >
-                    {slot.replace(":00", "h")}
-                  </Button>
-                ))}
+                {SLOTS_DA_AGENDA.map((slot) => {
+                  const tomado = ocupados.has(slot);
+                  return (
+                    <Button
+                      key={slot}
+                      type="button"
+                      size="sm"
+                      variant={hora === slot ? "default" : "outline"}
+                      disabled={tomado}
+                      title={tomado ? "Já tem compromisso nesse horário" : undefined}
+                      className={tomado ? "line-through opacity-50" : undefined}
+                      onClick={() => setHora(slot)}
+                    >
+                      {slot.replace(":00", "h")}
+                    </Button>
+                  );
+                })}
                 <Input
                   type="time"
                   aria-label="Outro horário"
@@ -203,6 +224,15 @@ export function AgendarReuniaoDialog({
                   onChange={(e) => setHora(e.target.value)}
                 />
               </div>
+              {horarios.isLoading && (
+                <p className="text-xs text-muted-foreground">Conferindo a agenda…</p>
+              )}
+              {horarios.data && !horarios.data.agenda_lida && (
+                <p className="text-xs text-muted-foreground">
+                  A agenda do Google não respondeu — aqui só aparecem os horários já
+                  marcados no CRM.
+                </p>
+              )}
             </div>
 
             <div className="grid gap-1.5">
@@ -223,12 +253,16 @@ export function AgendarReuniaoDialog({
             </div>
 
             <p
-              className={`text-sm ${noPassado ? "text-destructive" : "text-muted-foreground"}`}
+              className={`text-sm ${
+                noPassado || escolhidoOcupado ? "text-destructive" : "text-muted-foreground"
+              }`}
               aria-live="polite"
             >
               {noPassado
                 ? "Esse horário já passou — escolha um futuro."
-                : `${previa.diaDaSemana}, ${previa.diaMes} às ${previa.hora}.`}
+                : escolhidoOcupado
+                  ? "Esse horário já tem compromisso — escolha outro."
+                  : `${previa.diaDaSemana}, ${previa.diaMes} às ${previa.hora}.`}
             </p>
 
             {/* Atalho para conferir o que já está ocupado no dia. Abre fora: a
@@ -256,7 +290,10 @@ export function AgendarReuniaoDialog({
               >
                 Agora não
               </Button>
-              <Button onClick={salvar} disabled={noPassado || mutation.isPending}>
+              <Button
+                onClick={salvar}
+                disabled={noPassado || escolhidoOcupado || mutation.isPending}
+              >
                 {mutation.isPending ? "Marcando…" : "Marcar e confirmar"}
               </Button>
             </>

@@ -20,13 +20,14 @@
  */
 import { env } from "@/lib/env";
 import { logger } from "@/lib/logger";
+import { DURACAO_DA_REUNIAO_MIN, type Ocupacao } from "./reuniao";
 
 const OAUTH_TOKEN_URL = "https://oauth2.googleapis.com/token";
 const CALENDAR_API = "https://www.googleapis.com/calendar/v3/calendars";
 const TIMEOUT_MS = 8_000;
 
-/** Duração padrão do bloco na agenda: a call é de 20 min, o bloco reserva 30. */
-export const DURACAO_PADRAO_MIN = 30;
+/** Duração padrão do bloco na agenda. Uma fonte só — ver `reuniao.ts`. */
+export const DURACAO_PADRAO_MIN = DURACAO_DA_REUNIAO_MIN;
 
 export interface EventoDaReuniao {
   titulo: string;
@@ -154,6 +155,80 @@ export async function criarEventoNaAgenda(evento: EventoDaReuniao): Promise<Resu
       motivo: "api_falhou",
       detalhe: err instanceof Error ? err.message : String(err),
     };
+  }
+}
+
+/**
+ * O que já está ocupado na agenda entre dois instantes.
+ *
+ * Serve para o dialog não oferecer um horário que já tem dono. Lê os EVENTOS
+ * (não o free/busy) por dois motivos: o escopo autorizado é
+ * `calendar.events`, e o id do evento vem junto — é ele que deixa a
+ * remarcação de um lead ignorar o próprio compromisso em vez de se declarar
+ * ocupada.
+ *
+ * `singleEvents=true` expande as recorrências: sem isso, uma reunião semanal
+ * apareceria uma vez só, na data em que foi criada, e todas as outras semanas
+ * pareceriam livres.
+ *
+ * Devolve `null` quando não dá para saber (integração desligada, token
+ * recusado, Google fora do ar) — que é diferente de `[]`. Quem chama precisa
+ * distinguir "nada ocupado" de "não consegui perguntar": tratar falha como
+ * agenda vazia ofereceria justamente os horários já tomados.
+ */
+export async function ocupacoesDaAgenda(de: Date, ate: Date): Promise<Ocupacao[] | null> {
+  if (!agendaConfigurada()) return null;
+
+  const token = await accessToken();
+  if (!token) return null;
+
+  const calendarId = env.GOOGLE_CALENDAR_ID || "primary";
+  const params = new URLSearchParams({
+    timeMin: de.toISOString(),
+    timeMax: ate.toISOString(),
+    singleEvents: "true",
+    orderBy: "startTime",
+    maxResults: "50",
+  });
+
+  try {
+    const res = await fetch(
+      `${CALENDAR_API}/${encodeURIComponent(calendarId)}/events?${params.toString()}`,
+      { headers: { Authorization: `Bearer ${token}` }, signal: AbortSignal.timeout(TIMEOUT_MS) },
+    );
+    if (!res.ok) {
+      logger.warn("[google-calendar] listagem recusada", { status: res.status });
+      return null;
+    }
+    const body = (await res.json()) as {
+      items?: Array<{
+        id?: string;
+        status?: string;
+        transparency?: string;
+        start?: { dateTime?: string; date?: string };
+        end?: { dateTime?: string; date?: string };
+      }>;
+    };
+
+    const ocupacoes: Ocupacao[] = [];
+    for (const item of body.items ?? []) {
+      // Cancelado não ocupa. "transparent" é o evento marcado como "Disponível"
+      // no Google — quem o criou disse explicitamente que ele não bloqueia.
+      if (item.status === "cancelled") continue;
+      if (item.transparency === "transparent") continue;
+      // Evento de dia inteiro vem com `date` em vez de `dateTime`. Ignorado de
+      // propósito: aniversário e feriado tomariam o dia todo da grade.
+      const inicio = item.start?.dateTime;
+      const fim = item.end?.dateTime;
+      if (!inicio || !fim) continue;
+      ocupacoes.push({ inicio, fim, gcalEventId: item.id ?? null });
+    }
+    return ocupacoes;
+  } catch (err) {
+    logger.warn("[google-calendar] falha ao listar eventos", {
+      error: err instanceof Error ? err.message : String(err),
+    });
+    return null;
   }
 }
 
