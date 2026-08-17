@@ -15,6 +15,8 @@ import { Label } from "@/components/ui/label";
 import { useAgendarReuniao, type RespostaDoAgendamento } from "@/hooks/kanban/useAgendarReuniao";
 import { useCriarTarefa } from "@/hooks/tarefas/useTarefas";
 import {
+  AGENDA_PUBLICA_EMBED,
+  AGENDA_PUBLICA_URL,
   dataCivilBahia,
   formatarReuniao,
   instanteDaReuniao,
@@ -63,6 +65,16 @@ const MOTIVO_DA_CONFIRMACAO: Record<string, string> = {
 /**
  * O dialog que aparece quando o card entra na coluna de reunião marcada.
  *
+ * Dois passos, nessa ordem:
+ *
+ * 1. **A agenda do Google, embutida.** É onde a reunião nasce de verdade —
+ *    escolhe-se dia, hora e o e-mail do lead, e o Google manda o convite. Fica
+ *    dentro do CRM porque abrir outra aba no meio do arrasto é o jeito mais
+ *    fácil de esquecer o card no meio do caminho.
+ * 2. **A mesma hora, dita ao CRM.** O Google não avisa este sistema do que foi
+ *    marcado, e sem a hora aqui dentro não sai confirmação no WhatsApp nem os
+ *    lembretes da véspera e de 1h antes.
+ *
  * Ele existe porque o CRM não tinha COMO saber a hora da reunião — e sem ela
  * não há véspera nem toque final, que são justamente os dois lembretes que
  * derrubam o no-show. Dois cliques (dia + slot) é o teto de fricção aceitável:
@@ -93,6 +105,12 @@ export function AgendarReuniaoDialog({
   const [data, setData] = useState(amanha);
   const [hora, setHora] = useState<string>(SLOTS_DO_CLOSER[1]);
   const [resultado, setResultado] = useState<RespostaDoAgendamento | null>(null);
+  /**
+   * Onde o dialog começa. Na agenda do Google — é lá que a reunião é marcada
+   * de fato. Remarcação pelo menu do card já tem hora escolhida e pula direto
+   * para o passo do CRM, senão conferir a hora custaria um passo a mais.
+   */
+  const [passo, setPasso] = useState<"agenda" | "crm">(reuniaoAtual ? "crm" : "agenda");
   const mutation = useAgendarReuniao(pipelineId);
 
   const jaMarcada = useMemo(
@@ -112,9 +130,11 @@ export function AgendarReuniaoDialog({
     }
   };
 
+  const naAgenda = !resultado && passo === "agenda";
+
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent>
+      <DialogContent className={naAgenda ? "sm:max-w-[880px]" : undefined}>
         <DialogHeader>
           <DialogTitle>
             {tipo ? ROTULO_DO_TIPO[tipo].toUpperCase() : "Reunião"} — {leadTitulo}
@@ -122,12 +142,34 @@ export function AgendarReuniaoDialog({
           <DialogDescription>
             {resultado
               ? "Reunião marcada."
-              : "Escolha o dia e a hora. O lead recebe a confirmação agora, um lembrete às 18h da véspera e outro 1 hora antes."}
+              : naAgenda
+                ? "Escolha o dia, a hora e digite o e-mail do lead aqui na agenda. Depois clique em «Já marquei» para o CRM avisar no WhatsApp."
+                : "Confirme o dia e a hora que você marcou. O lead recebe a confirmação agora, um lembrete às 18h da véspera e outro 1 hora antes."}
           </DialogDescription>
         </DialogHeader>
 
         {resultado ? (
           <Resultado resposta={resultado} leadId={leadId} leadTitulo={leadTitulo} />
+        ) : naAgenda ? (
+          <div className="grid gap-2">
+            {/* A página pública do Google, embutida. O `?gv=true` é o modo de
+                embed oficial; sem ele o Google recusa o iframe. */}
+            <iframe
+              src={AGENDA_PUBLICA_EMBED}
+              title="Agenda do Google"
+              className="h-[min(68vh,620px)] w-full rounded-md border border-border bg-white"
+            />
+            {/* Escape para o dia em que o navegador bloquear o iframe (cookies
+                de terceiros): sem este link a tela ficaria em branco e sem saída. */}
+            <a
+              className="text-xs text-muted-foreground underline underline-offset-2"
+              href={AGENDA_PUBLICA_URL}
+              target="_blank"
+              rel="noreferrer"
+            >
+              Não carregou? Abrir a agenda em outra aba
+            </a>
+          </div>
         ) : (
           <div className="grid gap-4">
             {jaMarcada && (
@@ -187,6 +229,13 @@ export function AgendarReuniaoDialog({
         <DialogFooter>
           {resultado ? (
             <Button onClick={() => onOpenChange(false)}>Fechar</Button>
+          ) : naAgenda ? (
+            <>
+              <Button variant="outline" onClick={() => onOpenChange(false)}>
+                Agora não
+              </Button>
+              <Button onClick={() => setPasso("crm")}>Já marquei — avisar o lead</Button>
+            </>
           ) : (
             <>
               <Button

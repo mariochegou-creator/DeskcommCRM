@@ -33,6 +33,24 @@ export const HORAS_LEMBRETE_FINAL = 1;
  */
 export const SLOTS_DO_CLOSER = ["10:00", "14:00", "16:00"] as const;
 
+/**
+ * A página pública de agendamento do Google (Appointment Schedules) da NEXO.
+ *
+ * É ela que o dialog mostra PRIMEIRO: quem marca escolhe dia, hora e digita o
+ * e-mail do lead ali dentro, sem sair do CRM, e o Google manda o convite. O
+ * passo seguinte (dia + hora no CRM) continua existindo porque o Google não
+ * conta ao CRM o que foi marcado — e sem a hora aqui dentro não há confirmação
+ * no WhatsApp nem os lembretes que derrubam o no-show.
+ *
+ * Para trocar o link: cole aqui a URL LONGA (a curta calendar.app.google
+ * redireciona e não embute). Abra a curta no navegador e copie o endereço final.
+ */
+export const AGENDA_PUBLICA_URL =
+  "https://calendar.google.com/calendar/appointments/schedules/AcZssZ31z5vYZqwgmpn1ok6ovC6N6kQ91FLzhB3Lb1kTdGdfsWwcuzx8jodeAANubignlU2iKN0Kl4B7";
+
+/** A mesma página em modo embutido — o `?gv=true` é o que o Google exige no iframe. */
+export const AGENDA_PUBLICA_EMBED = `${AGENDA_PUBLICA_URL}?gv=true`;
+
 export type TipoDeReuniao = "raio-x" | "r1" | "r2";
 
 export const ROTULO_DO_TIPO: Record<TipoDeReuniao, string> = {
