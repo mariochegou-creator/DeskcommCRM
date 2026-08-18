@@ -103,14 +103,35 @@ export async function GET(
     return fail("unauthenticated", "Auth required.", 401, { requestId });
   }
 
+  // O negócio "desta pessoa" tem DUAS portas: ser o contato de ORIGEM
+  // (`crm_leads.contact_id`) ou ter entrado pelo cartão (`crm_lead_links`,
+  // target_kind='contact' — migration 0103). Só a primeira fazia a conversa com
+  // o sócio dizer "sem negócio", e o diálogo de adicionar contato mandar criar
+  // um negócio que já existia.
+  const links = await supabase
+    .from("crm_lead_links")
+    .select("lead_id")
+    .eq("target_kind", "contact")
+    .eq("target_id", contactId);
+  if (links.error) {
+    return fail("internal_error", links.error.message, 500, { requestId });
+  }
+  const idsVinculados = [
+    ...new Set((links.data ?? []).map((l) => l.lead_id as string)),
+  ];
+
+  let leadsQuery = supabase
+    .from("crm_leads")
+    .select("*")
+    .neq("status", "archived")
+    .order("updated_at", { ascending: false })
+    .limit(3);
+  leadsQuery = idsVinculados.length
+    ? leadsQuery.or(`contact_id.eq.${contactId},id.in.(${idsVinculados.join(",")})`)
+    : leadsQuery.eq("contact_id", contactId);
+
   const [leads, orders, activities] = await Promise.all([
-    supabase
-      .from("crm_leads")
-      .select("*")
-      .eq("contact_id", contactId)
-      .neq("status", "archived")
-      .order("updated_at", { ascending: false })
-      .limit(3),
+    leadsQuery,
     supabase
       .from("orders")
       .select(ORDER_COLS)

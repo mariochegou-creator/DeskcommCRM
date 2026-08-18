@@ -16,6 +16,9 @@
  * O negócio vem do CONTATO DA CONVERSA, não de uma busca: adicionar o sócio a
  * um negócio de outra pessoa não é um caso que aconteça no meio de um
  * atendimento — e uma busca aberta aqui seria a porta para fazê-lo por engano.
+ * E quando a conversa ainda NÃO tem negócio, o salvar cria o negócio do contato
+ * da conversa e vincula nele — mandar a pessoa "criar o negócio primeiro" era
+ * tirá-la do atendimento para fazer à mão o que o botão sabe fazer.
  */
 import { useMemo, useState } from "react";
 
@@ -90,11 +93,22 @@ export function AdicionarContatoDialog({
   const [escolha, setEscolha] = useState<string | null>(null);
   const leadId = escolha && leads.some((l) => l.id === escolha) ? escolha : leads[0]?.id ?? null;
 
-  const vincular = useVincularContato(leadId);
+  const vincular = useVincularContato(leadId, contactId);
+
+  /**
+   * Contato sem negócio NÃO é beco: o hook cria o negócio da conversa e vincula
+   * nele — a única exigência é a lista já ter chegado (`!isPending`), para não
+   * criar negócio novo enquanto o que existe ainda está a caminho.
+   */
+  const semNegocio = !resumo.isPending && leads.length === 0;
 
   const telefone = cartao.telefone;
   const nomeLimpo = nome.trim();
-  const podeSalvar = !!telefone && !!leadId && nomeLimpo.length > 0 && !vincular.isPending;
+  const podeSalvar =
+    !!telefone &&
+    nomeLimpo.length > 0 &&
+    !vincular.isPending &&
+    (!!leadId || (semNegocio && !!contactId));
 
   const salvar = () => {
     if (!podeSalvar || !telefone) return;
@@ -124,11 +138,6 @@ export function AdicionarContatoDialog({
             O cartão veio sem um número que dê para usar — falta o DDD ou o formato não
             é reconhecido. Peça o número por escrito na conversa.
           </p>
-        ) : leads.length === 0 && !resumo.isPending ? (
-          <p className="text-sm text-text-muted">
-            Este contato ainda não tem negócio no funil. Crie o negócio primeiro — é
-            nele que o novo contato entra.
-          </p>
         ) : (
           <div className="space-y-3">
             <div className="space-y-1.5">
@@ -146,7 +155,14 @@ export function AdicionarContatoDialog({
                 porque quem adiciona precisa VER em qual negócio está entrando —
                 esconder a informação junto com o controle é como o contato
                 acaba no card errado sem ninguém notar. */}
-            {leads.length === 1 && leads[0] ? (
+            {resumo.isPending ? (
+              <p className="text-xs text-text-muted">Procurando o negócio da conversa…</p>
+            ) : semNegocio ? (
+              <p className="text-xs text-text-muted">
+                Este contato ainda não tem negócio no funil — ao adicionar, o negócio da
+                conversa é criado na primeira etapa e o contato entra nele.
+              </p>
+            ) : leads.length === 1 && leads[0] ? (
               <p className="text-xs text-text-muted">
                 Entra no negócio <span className="font-medium text-text">{leads[0].title}</span>.
               </p>
