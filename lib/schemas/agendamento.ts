@@ -23,5 +23,14 @@ export const agendarReuniaoSchema = z.strictObject({
   tipo: z.enum(TIPOS_DE_REUNIAO).optional(),
   /** E-mails que recebem o convite do Google Agenda. */
   convidados: z.array(z.string().email()).max(5).optional(),
+  /**
+   * Criar o grupo do WhatsApp (lead + time) e mandar a confirmação NELE.
+   *
+   * Ausente = SIM. O padrão é criar porque o grupo é o que derruba o no-show
+   * (ver `lib/agendamento/grupo.ts`), e padrão que depende de alguém lembrar de
+   * marcar uma caixinha não acontece na correria. `false` explícito mantém o
+   * comportamento antigo: confirmação no privado do lead.
+   */
+  criar_grupo: z.boolean().optional(),
 });
 export type AgendarReuniaoInput = z.infer<typeof agendarReuniaoSchema>;

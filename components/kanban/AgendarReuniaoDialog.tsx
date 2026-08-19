@@ -10,6 +10,7 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
+import { Checkbox } from "@/components/ui/checkbox";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { useAgendarReuniao, type RespostaDoAgendamento } from "@/hooks/kanban/useAgendarReuniao";
@@ -45,6 +46,21 @@ interface AgendarReuniaoDialogProps {
    */
   reuniaoAtual?: Reuniao | null;
 }
+
+/**
+ * Por que o grupo não saiu. Cada frase termina no que sobrou pro humano fazer —
+ * "sem_sessao" não diz nada a quem não escreveu o código, e um grupo que não
+ * existe silenciosamente é uma reunião que volta a depender só do lembrete.
+ */
+const MOTIVO_DO_GRUPO: Record<string, string> = {
+  nao_pedido: "",
+  automacao_desligada: "",
+  sem_contato: "Grupo não criado: este negócio não tem contato ligado.",
+  sem_telefone: "Grupo não criado: o contato não tem telefone.",
+  sem_sessao: "Grupo não criado: nenhum número de WhatsApp conectado.",
+  waha_desligado: "Grupo não criado: o serviço do WhatsApp não está no ar.",
+  falhou: "O WhatsApp recusou a criação do grupo. Crie na mão, se for o caso.",
+};
 
 const MOTIVO_DA_CONFIRMACAO: Record<string, string> = {
   sem_contato: "este negócio não tem contato ligado — a confirmação não saiu.",
@@ -112,6 +128,13 @@ export function AgendarReuniaoDialog({
    * de o dono do negócio dar um e-mail diferente na hora de marcar.
    */
   const [email, setEmail] = useState("");
+  /**
+   * Criar o grupo do WhatsApp com o lead e o time. LIGADO por padrão: é o que
+   * derruba o no-show, e opção que depende de lembrar de marcar não acontece
+   * na correria. Desmarcar volta ao comportamento antigo — confirmação e
+   * lembretes no privado do lead.
+   */
+  const [criarGrupo, setCriarGrupo] = useState(true);
   const mutation = useAgendarReuniao(pipelineId);
 
   const jaMarcada = useMemo(
@@ -149,6 +172,7 @@ export function AgendarReuniaoDialog({
         hora,
         tipo,
         convidados: emailValido ? [emailLimpo] : undefined,
+        criar_grupo: criarGrupo,
       });
       setResultado(resposta);
     } catch {
@@ -252,6 +276,21 @@ export function AgendarReuniaoDialog({
               )}
             </div>
 
+            <label className="flex items-start gap-2 rounded-md border border-border px-3 py-2">
+              <Checkbox
+                className="mt-0.5"
+                checked={criarGrupo}
+                onChange={(e) => setCriarGrupo(e.target.checked)}
+              />
+              <span className="grid gap-0.5 text-sm">
+                <span className="font-medium text-text">Criar grupo no WhatsApp</span>
+                <span className="text-xs text-muted-foreground">
+                  Lead + você + o time. A confirmação e os lembretes saem no grupo, não no
+                  privado. Furar reunião na frente de três pessoas é mais difícil.
+                </span>
+              </span>
+            </label>
+
             <p
               className={`text-sm ${
                 noPassado || escolhidoOcupado ? "text-destructive" : "text-muted-foreground"
@@ -336,10 +375,26 @@ function Resultado({
 
       <p className={resposta.confirmacao.enviada ? "text-muted-foreground" : "text-destructive"}>
         {resposta.confirmacao.enviada
-          ? "Confirmação enviada no WhatsApp. Os lembretes da véspera e de 1h antes saem sozinhos."
+          ? resposta.grupo.criado
+            ? `Confirmação enviada no grupo "${resposta.grupo.nome}". Os lembretes da véspera e de 1h antes também saem lá.`
+            : "Confirmação enviada no WhatsApp. Os lembretes da véspera e de 1h antes saem sozinhos."
           : (MOTIVO_DA_CONFIRMACAO[resposta.confirmacao.motivo] ??
             "a confirmação não saiu.")}
       </p>
+
+      {resposta.grupo.criado && resposta.grupo.faltaram.length > 0 && (
+        <p className="text-destructive">
+          {resposta.grupo.faltaram.length === 1
+            ? "1 pessoa não entrou no grupo"
+            : `${resposta.grupo.faltaram.length} pessoas não entraram no grupo`}{" "}
+          — o WhatsApp delas só aceita convite de quem já está na agenda. Adicione à mão pelo
+          celular.
+        </p>
+      )}
+
+      {!resposta.grupo.criado && MOTIVO_DO_GRUPO[resposta.grupo.motivo] && (
+        <p className="text-destructive">{MOTIVO_DO_GRUPO[resposta.grupo.motivo]}</p>
+      )}
 
       {resposta.agenda.criada ? (
         <p className="text-muted-foreground">

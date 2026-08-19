@@ -8,6 +8,8 @@
  * stored in container env). Plaintext-then-hash is NOT used in this version.
  * So WAHA_API_KEY in .env.local IS the hex hash.
  */
+import { extrairChatIdDoGrupo, participantesQueFaltaram } from "./grupo";
+
 export class WahaClient {
   constructor(
     private readonly baseUrl: string,
@@ -146,6 +148,42 @@ export class WahaClient {
     });
     if (!res.ok) throw new Error(`waha_${res.status}`);
     return res.json();
+  }
+
+  /**
+   * Cria um grupo do WhatsApp e devolve o `…@g.us` dele.
+   *
+   * O número da própria sessão entra como DONO automaticamente — não deve ir
+   * na lista de participantes (o WhatsApp recusa o convite a si mesmo, e o
+   * WAHA devolve isso como participante que falhou, poluindo o diagnóstico).
+   *
+   * `faltaram` é a parte que não pode ser engolida: quem tem "só quem eu
+   * conheço" no controle de privacidade de grupos NÃO entra, e o grupo é
+   * criado assim mesmo. Sem essa lista de volta, o CRM diria "grupo criado com
+   * o David" e o David não estaria lá.
+   */
+  async createGroup(
+    session: string,
+    name: string,
+    participants: string[],
+  ): Promise<{ chatId: string; faltaram: string[] }> {
+    const res = await fetch(`${this.baseUrl}/api/${encodeURIComponent(session)}/groups`, {
+      method: "POST",
+      headers: { "X-Api-Key": this.apiKey, "Content-Type": "application/json" },
+      body: JSON.stringify({ name, participants: participants.map((id) => ({ id })) }),
+    });
+    if (!res.ok) {
+      const body = await res.text().catch(() => "");
+      throw new Error(`waha_group_${res.status}: ${body.slice(0, 200)}`);
+    }
+    const json = (await res.json()) as unknown;
+    const chatId = extrairChatIdDoGrupo(json);
+    if (!chatId) {
+      // O grupo pode ter sido criado do lado do WhatsApp; o que não dá é seguir
+      // sem o endereço — ver o cabeçalho de lib/waha/grupo.ts.
+      throw new Error(`waha_group_sem_id: ${JSON.stringify(json).slice(0, 200)}`);
+    }
+    return { chatId, faltaram: participantesQueFaltaram(json) };
   }
 
   async sendMedia(

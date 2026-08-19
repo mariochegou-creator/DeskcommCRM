@@ -131,6 +131,55 @@ export interface EnvioDeTexto {
   requestId: string;
 }
 
+/**
+ * Manda um texto NUMA CONVERSA que já existe — o caso do grupo da reunião.
+ *
+ * Separado de `enviarTexto` porque lá o alvo é um CONTATO e a conversa é
+ * derivada dele (`ensureConversation`); aqui o alvo é a conversa em si, que é
+ * de grupo e não tem contato próprio. Passar o contato do lead por
+ * `enviarTexto` mandaria a mensagem no privado dele — exatamente o que o grupo
+ * existe para substituir.
+ *
+ * O roteamento para o `…@g.us` acontece sozinho: `sendMessageHandler` lê
+ * `is_group`/`group_chat_id` da conversa (ver `lib/waha/send.ts`).
+ */
+export async function enviarNoGrupo(
+  admin: SupabaseClient,
+  envio: Omit<EnvioDeTexto, "contactId"> & { conversationId: string },
+): Promise<ResultadoDoEnvio> {
+  try {
+    const message = await sendMessageHandler(
+      admin,
+      {
+        organization_id: envio.organizationId,
+        actor: { type: "webhook_source", id: envio.origem },
+        requestId: envio.requestId,
+      },
+      {
+        conversation_id: envio.conversationId,
+        type: "text",
+        body: envio.corpo,
+        metadata: envio.metadata,
+      } as Parameters<typeof sendMessageHandler>[2],
+    );
+    return {
+      ok: true,
+      messageId: (message as { id: string }).id,
+      conversationId: envio.conversationId,
+    };
+  } catch (err) {
+    const detalhe = err instanceof Error ? err.message : String(err);
+    logger.error("[agendamento] envio no grupo falhou", {
+      organizationId: envio.organizationId,
+      conversationId: envio.conversationId,
+      origem: envio.origem,
+      error: detalhe,
+      requestId: envio.requestId,
+    });
+    return { ok: false, motivo: "falhou", detalhe };
+  }
+}
+
 /** Manda um texto para o contato do lead. Nunca lança — devolve o motivo. */
 export async function enviarTexto(
   admin: SupabaseClient,

@@ -170,6 +170,117 @@ export const TEXTO_DO_LEMBRETE = {
   final: mensagemFinal,
 } as const;
 
+/* -------------------------------------------------------------------------
+ * OS MESMOS TRÊS TEXTOS, NA VOZ DO GRUPO
+ *
+ * Não é enfeite: no privado quem escreve é o closer ("já levantei o que está
+ * acontecendo"). No grupo o closer ESTÁ LENDO junto, e uma mensagem em primeira
+ * pessoa saindo do número da empresa enquanto o Mario aparece na lista de
+ * participantes é o tipo de detalhe que o dono do negócio percebe na hora — e
+ * que transforma "eles são organizados" em "isso aí é robô".
+ *
+ * Então a assistente fala como assistente, e o closer é citado em terceira
+ * pessoa. É também a decisão do Mario de 19/08/2026: a IA é ASSUMIDA. Vender IA
+ * e esconder a IA é a contradição que custa a venda quando o cliente descobre.
+ * ------------------------------------------------------------------------- */
+
+/** Como a assistente se apresenta. Um nome só, em todos os textos do grupo. */
+const ASSINATURA_DA_IA = "assistente da Nexo IA";
+
+/** "o Mario" quando se sabe quem conduz; "o time" quando não se sabe. */
+function quemVaiConduzir(quemConduz: string | null | undefined): string {
+  const p = primeiroNome(quemConduz);
+  return p ? `o ${p}` : "o time";
+}
+
+/**
+ * A PRIMEIRA mensagem do grupo, logo depois de criá-lo.
+ *
+ * Faz quatro coisas e para. Cada uma paga uma parte do no-show:
+ *  1. repete dia e hora por extenso — o lead confirmou de cabeça;
+ *  2. diz quem é ela e quem vai conduzir — grupo sem dono vira grupo ignorado;
+ *  3. explica por que o grupo existe, na linguagem dele ("não ter que procurar
+ *     ninguém") — sem isso, um grupo criado do nada parece spam;
+ *  4. pede UMA palavra de volta.
+ *
+ * O pedido único é deliberado. A versão do privado pede o @ do Instagram junto;
+ * aqui não, porque a confirmação escrita NA FRENTE DO TIME é o compromisso que
+ * o grupo inteiro existe para produzir, e dois pedidos numa mensagem só dividem
+ * a resposta — a pessoa responde o mais fácil e ignora o outro. O @ o closer
+ * pede depois, no meio da conversa.
+ */
+export function mensagemDeAberturaDoGrupo(reuniao: Reuniao, ctx: ContextoDaMensagem): string {
+  const q = formatarReuniao(new Date(reuniao.em));
+  const conduz = quemVaiConduzir(ctx.quemConduz);
+
+  return [
+    `${vocativo(ctx.nomeDoContato)}tudo certo. Sua conversa com a Nexo ficou ${q.diaDaSemana} (${q.diaMes}) às ${q.hora}.`,
+    "",
+    `Sou a ${ASSINATURA_DA_IA}. Quem vai conversar com você é ${conduz} — ele já está levantando o que está acontecendo com ${aoNegocio(ctx.negocio)} pra te mostrar no dia.`,
+    "",
+    "Criei esse grupo pra você não ter que procurar ninguém. Qualquer coisa antes do dia, é só falar aqui.",
+    "",
+    'Uma coisa só: me responde "confirmado" que eu travo esse horário?',
+  ].join("\n");
+}
+
+/** 18h da véspera, no grupo. Mesma mecânica do privado, na voz da assistente. */
+export function mensagemDaVesperaNoGrupo(reuniao: Reuniao, ctx: ContextoDaMensagem): string {
+  const q = formatarReuniao(new Date(reuniao.em));
+  const conduz = quemVaiConduzir(ctx.quemConduz);
+
+  return [
+    `${vocativo(ctx.nomeDoContato)}amanhã às ${q.hora} — passando pra confirmar.`,
+    "",
+    `${conduz.charAt(0).toUpperCase() + conduz.slice(1)} já separou o que levantou ${doNegocio(ctx.negocio)} pra te mostrar. São 20 minutos, direto ao ponto.`,
+    "",
+    'Me responde "sim" que eu confirmo com ele. Se precisar mudar, fala hoje que a gente ajeita.',
+  ].join("\n");
+}
+
+/** ~1h antes, no grupo. */
+export function mensagemFinalNoGrupo(reuniao: Reuniao, ctx: ContextoDaMensagem): string {
+  const q = formatarReuniao(new Date(reuniao.em));
+  const conduz = quemVaiConduzir(ctx.quemConduz);
+
+  return [
+    `${vocativo(ctx.nomeDoContato)}é hoje às ${q.hora}. ${conduz.charAt(0).toUpperCase() + conduz.slice(1)} te chama aqui daqui a pouco.`,
+    "",
+    "Separa 20 minutos num lugar que dê pra falar.",
+  ].join("\n");
+}
+
+/** O texto de cada lembrete quando o lead tem grupo. */
+export const TEXTO_DO_LEMBRETE_NO_GRUPO = {
+  vespera: mensagemDaVesperaNoGrupo,
+  final: mensagemFinalNoGrupo,
+} as const;
+
+/**
+ * A ÚNICA resposta que a automação dá a algo que o lead escreveu.
+ *
+ * Sai quando `ehPedidoDeRemarcacao` casa (ver `lib/agendamento/grupo.ts`), e
+ * NÃO oferece horário nenhum de propósito. Oferecer slots parece melhor e é
+ * pior: o lead responde "quinta às 14h", ninguém do outro lado entende a
+ * escolha (isto é texto montado em código, não IA), e a conversa morre num
+ * beco com o lead achando que remarcou. Acusar o recebimento e entregar a um
+ * humano em seguida é mais lento no papel e mais rápido na prática.
+ *
+ * A última linha é a que faz o trabalho: reenquadra de "cancelei" para "mudei o
+ * dia". Sem ela, "sem problema" soa como permissão para sumir.
+ */
+export function mensagemDeRemarcacaoNoGrupo(ctx: ContextoDaMensagem): string {
+  const conduz = quemVaiConduzir(ctx.quemConduz);
+
+  return [
+    `${vocativo(ctx.nomeDoContato)}sem problema — acontece.`,
+    "",
+    `Já avisei ${conduz} aqui. Ele te manda dois horários novos pra você escolher.`,
+    "",
+    `A conversa sobre ${aoNegocio(ctx.negocio)} continua de pé, só muda o dia.`,
+  ].join("\n");
+}
+
 /**
  * O aviso INTERNO de 30 min antes — vai pro WhatsApp do Mario (e de quem mais
  * recebe o bom-dia), nunca pro lead. Pedido do Mario em 19/08/2026: os

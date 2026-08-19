@@ -18,6 +18,8 @@ export interface AgendarArgs {
    * cai no e-mail cadastrado do contato do lead.
    */
   convidados?: string[];
+  /** Criar o grupo do WhatsApp. Ausente = sim (o padrão da rota). */
+  criar_grupo?: boolean;
 }
 
 export interface RespostaDoAgendamento {
@@ -28,6 +30,13 @@ export interface RespostaDoAgendamento {
     | { criada: false; motivo: string; link_manual: string; configurada: boolean };
   /** A ligação de preparo: nasceu agora, teve o prazo movido, ou não coube. */
   tarefa_de_ligar: "criada" | "remarcada" | null;
+  /**
+   * O grupo do WhatsApp. `faltaram` é o que a tela NÃO pode engolir: participante
+   * que ficou de fora por privacidade de grupo precisa ser adicionado à mão.
+   */
+  grupo:
+    | { criado: true; nome: string; jaExistia: boolean; faltaram: string[] }
+    | { criado: false; motivo: string };
 }
 
 /**

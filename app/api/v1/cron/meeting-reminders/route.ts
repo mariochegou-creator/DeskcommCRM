@@ -40,8 +40,14 @@ import {
   type Reuniao,
 } from "@/lib/agendamento/reuniao";
 import { garantirContato } from "@/lib/agendamento/contato";
-import { automacaoDesligada, enviarTexto } from "@/lib/agendamento/envio";
-import { mensagemDaEquipe, TEXTO_DO_LEMBRETE } from "@/lib/agendamento/mensagens";
+import { automacaoDesligada, enviarNoGrupo, enviarTexto } from "@/lib/agendamento/envio";
+import { lerGrupo } from "@/lib/agendamento/grupo";
+import {
+  mensagemDaEquipe,
+  TEXTO_DO_LEMBRETE,
+  TEXTO_DO_LEMBRETE_NO_GRUPO,
+} from "@/lib/agendamento/mensagens";
+import { resolveUserNames } from "@/lib/mcp/tools/_users";
 import { sixtyDayBriefSchema, type SixtyDayBriefConfig } from "@/lib/schemas/settings";
 import { createAdminClient } from "@/lib/supabase/admin";
 
@@ -132,6 +138,11 @@ async function handle(req: NextRequest): Promise<Response> {
     return cfg;
   };
 
+  // Nome de quem marcou, por TICK. Só é consultado para lead com grupo (o texto
+  // do privado não cita ninguém), e o mesmo closer se repete em quase todos os
+  // leads da varredura — sem o cache seriam N idas ao auth para o mesmo nome.
+  const nomePorUsuario = new Map<string, string | null>();
+
   for (const linha of linhas) {
     const reuniao = lerReuniao(linha.custom_fields);
     if (!reuniao) {
@@ -168,6 +179,12 @@ async function handle(req: NextRequest): Promise<Response> {
       continue;
     }
 
+    // Tem grupo? Então é lá que o lembrete cai — e SÓ lá. Mandar no grupo e no
+    // privado entrega a mesma frase duas vezes e desfaz o efeito de "eles são
+    // organizados" que o grupo existe para produzir.
+    const grupo = lerGrupo(linha.custom_fields);
+    const conversaDoGrupo = grupo?.conversation_id ?? null;
+
     for (const lembrete of devidos) {
       const marcou = await carimbar(admin, linha, reuniao, lembrete, now.toISOString());
       if (!marcou) {
@@ -175,23 +192,39 @@ async function handle(req: NextRequest): Promise<Response> {
         continue;
       }
 
-      const corpo = TEXTO_DO_LEMBRETE[lembrete](reuniao, {
+      const contexto = {
         nomeDoContato,
         negocio: linha.title,
-      });
+        // No grupo quem fala é a assistente, e ela cita o closer em terceira
+        // pessoa. O nome vem de quem MARCOU a reunião.
+        quemConduz: conversaDoGrupo
+          ? ((await nomeDeQuemMarcou(admin, reuniao.criada_por ?? null, nomePorUsuario)) ?? null)
+          : null,
+      };
 
-      const envio = await enviarTexto(admin, {
-        organizationId: linha.organization_id,
-        contactId: linha.contact_id,
-        corpo,
-        metadata: {
-          meeting_lead_id: linha.id,
-          meeting_message: lembrete,
-          meeting_at: reuniao.em,
-        },
-        origem: `cron:meeting-reminders:${lembrete}`,
-        requestId,
-      });
+      const metadata = {
+        meeting_lead_id: linha.id,
+        meeting_message: lembrete,
+        meeting_at: reuniao.em,
+      };
+
+      const envio = conversaDoGrupo
+        ? await enviarNoGrupo(admin, {
+            organizationId: linha.organization_id,
+            conversationId: conversaDoGrupo,
+            corpo: TEXTO_DO_LEMBRETE_NO_GRUPO[lembrete](reuniao, contexto),
+            metadata,
+            origem: `cron:meeting-reminders:${lembrete}:grupo`,
+            requestId,
+          })
+        : await enviarTexto(admin, {
+            organizationId: linha.organization_id,
+            contactId: linha.contact_id,
+            corpo: TEXTO_DO_LEMBRETE[lembrete](reuniao, contexto),
+            metadata,
+            origem: `cron:meeting-reminders:${lembrete}`,
+            requestId,
+          });
 
       if (envio.ok) {
         enviados++;
@@ -204,6 +237,7 @@ async function handle(req: NextRequest): Promise<Response> {
           leadId: linha.id,
           lembrete,
           motivo: envio.motivo,
+          noGrupo: Boolean(conversaDoGrupo),
           requestId,
         });
       }
@@ -236,6 +270,21 @@ async function handle(req: NextRequest): Promise<Response> {
     },
     { requestId },
   );
+}
+
+/** O `full_name` de quem marcou a reunião, com cache por tick. */
+async function nomeDeQuemMarcou(
+  admin: ReturnType<typeof createAdminClient>,
+  userId: string | null,
+  cache: Map<string, string | null>,
+): Promise<string | null> {
+  if (!userId) return null;
+  const jaSabe = cache.get(userId);
+  if (jaSabe !== undefined) return jaSabe;
+  const nomes = await resolveUserNames(admin, [userId]);
+  const nome = nomes.get(userId) ?? null;
+  cache.set(userId, nome);
+  return nome;
 }
 
 /**

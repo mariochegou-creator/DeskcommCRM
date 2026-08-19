@@ -39,17 +39,25 @@ import {
 } from "@/lib/agendamento/reuniao";
 import {
   automacaoDesligada,
+  enviarNoGrupo,
   enviarTexto,
   type ResultadoDoEnvio,
 } from "@/lib/agendamento/envio";
 import { tipoDeReuniaoDaEtapa } from "@/lib/agendamento/etapa";
+import {
+  garantirGrupoDaReuniao,
+  type MotivoDoGrupo,
+} from "@/lib/agendamento/grupo-criar";
 import {
   agendaConfigurada,
   criarEventoNaAgenda,
   linkParaAdicionarNaAgenda,
   type ResultadoDoEvento,
 } from "@/lib/agendamento/google-calendar";
-import { mensagemDeConfirmacao } from "@/lib/agendamento/mensagens";
+import {
+  mensagemDeAberturaDoGrupo,
+  mensagemDeConfirmacao,
+} from "@/lib/agendamento/mensagens";
 import { agendarReuniaoSchema } from "@/lib/schemas/agendamento";
 import { validateRequest } from "@/lib/schemas";
 import { createAdminClient } from "@/lib/supabase/admin";
@@ -157,7 +165,11 @@ export async function POST(
     gcal_link: mesmoInstante ? (anterior?.gcal_link ?? null) : null,
   };
 
-  const camposAtuais =
+  // MUTÁVEL de propósito. Todo `update` daqui pra baixo escreve o jsonb INTEIRO
+  // (`{ ...camposAtuais, reuniao }`), então qualquer chave que outro passo grave
+  // no meio do caminho — e `garantirGrupoDaReuniao` grava `grupo` — seria
+  // apagada pelo próximo write se esta cópia local não acompanhasse.
+  let camposAtuais: Record<string, unknown> =
     lead.custom_fields && typeof lead.custom_fields === "object" && !Array.isArray(lead.custom_fields)
       ? (lead.custom_fields as Record<string, unknown>)
       : {};
@@ -262,11 +274,67 @@ export async function POST(
   // `confirmacao.motivo = "automacao_desligada"` e quem marcou escreve à mão.
   let envio: ResultadoDoEnvio;
 
+  // O GRUPO. Criado ANTES da confirmação porque é ele que decide para onde ela
+  // vai: existindo grupo, a confirmação sai lá e NÃO sai no privado (mandar nos
+  // dois dobra a mensagem e queima o efeito — ver `lib/agendamento/grupo.ts`).
+  //
+  // Nunca derruba o agendamento: a reunião já está gravada, e um WhatsApp que
+  // recusou a criação do grupo não pode custar a reunião. Quando falha, a
+  // confirmação cai de volta no privado, que é o comportamento de antes.
+  const querGrupo = input.criar_grupo !== false;
+  const automacaoOff = await automacaoDesligada(admin, lead.organization_id);
+  let grupo:
+    | { criado: true; nome: string; jaExistia: boolean; faltaram: string[] }
+    | { criado: false; motivo: MotivoDoGrupo | "nao_pedido" | "automacao_desligada" };
+  let conversaDoGrupo: string | null = null;
+
+  if (!querGrupo) {
+    grupo = { criado: false, motivo: "nao_pedido" };
+  } else if (automacaoOff) {
+    // Criar o grupo é falar com o cliente: aparece no celular dele na hora. O
+    // mesmo interruptor que cala as mensagens tem de calar isto.
+    grupo = { criado: false, motivo: "automacao_desligada" };
+  } else {
+    const resultado = await garantirGrupoDaReuniao(admin, {
+      organizationId: lead.organization_id,
+      leadId,
+      negocio,
+      contactId: lead.contact_id,
+      criadoPor: user.id,
+      requestId,
+    });
+    if (resultado.ok) {
+      conversaDoGrupo = resultado.grupo.conversation_id;
+      camposAtuais = { ...camposAtuais, grupo: resultado.grupo };
+      grupo = {
+        criado: true,
+        nome: resultado.grupo.nome,
+        jaExistia: resultado.jaExistia,
+        faltaram: resultado.grupo.faltaram ?? [],
+      };
+    } else {
+      grupo = { criado: false, motivo: resultado.motivo };
+    }
+  }
+
   if (mesmoInstante && reuniao.avisos?.confirmacao) {
     // Já saiu para este mesmo dia e hora — ver `mesmoInstante`.
     envio = { ok: false, motivo: "ja_confirmada" };
-  } else if (await automacaoDesligada(admin, lead.organization_id)) {
+  } else if (automacaoOff) {
     envio = { ok: false, motivo: "automacao_desligada" };
+  } else if (conversaDoGrupo) {
+    envio = await enviarNoGrupo(admin, {
+      organizationId: lead.organization_id,
+      conversationId: conversaDoGrupo,
+      corpo: mensagemDeAberturaDoGrupo(reuniao, {
+        nomeDoContato,
+        negocio,
+        quemConduz: user.full_name,
+      }),
+      metadata: { meeting_lead_id: leadId, meeting_message: "confirmacao", meeting_at: reuniao.em },
+      origem: "crm:meeting-group-open",
+      requestId,
+    });
   } else {
     const corpo = mensagemDeConfirmacao(reuniao, {
       nomeDoContato,
@@ -339,11 +407,22 @@ export async function POST(
     actor: { type: "user", id: user.id },
     reason: `${ROTULO_DO_TIPO[tipo]} marcada para ${q.diaDaSemana} (${q.diaMes}) às ${q.hora}${
       envio.ok
-        ? " — confirmação enviada ao lead"
+        ? conversaDoGrupo
+          ? ` — confirmação enviada no grupo "${grupo.criado ? grupo.nome : ""}"`
+          : " — confirmação enviada ao lead"
         : (RECADO_DA_CONFIRMACAO[envio.motivo] ??
           ` — confirmação NÃO enviada (${envio.motivo})`)
+    }${
+      grupo.criado && grupo.faltaram.length > 0
+        ? `. ATENÇÃO: ${grupo.faltaram.length} participante(s) não entraram no grupo (privacidade de grupo)`
+        : ""
     }.`,
-    payload: { reuniao_em: reuniao.em, tipo, confirmacao_enviada: envio.ok },
+    payload: {
+      reuniao_em: reuniao.em,
+      tipo,
+      confirmacao_enviada: envio.ok,
+      grupo: grupo.criado ? grupo.nome : null,
+    },
   });
   if (!atividade.ok) {
     logger.warn("[meeting] atividade não registrada", {
@@ -365,6 +444,7 @@ export async function POST(
       em: reuniao.em,
       confirmacao: envio.ok ? "sent" : envio.motivo,
       agenda: naAgenda.ok ? "created" : naAgenda.motivo,
+      grupo: grupo.criado ? (grupo.jaExistia ? "reused" : "created") : grupo.motivo,
     },
   });
 
@@ -384,6 +464,7 @@ export async function POST(
             configurada: agendaConfigurada(),
           },
       tarefa_de_ligar: tarefaDeLigar,
+      grupo,
     },
     { requestId },
   );

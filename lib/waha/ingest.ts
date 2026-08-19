@@ -323,6 +323,65 @@ async function upsertContact(
   return (data as string) ?? null;
 }
 
+/** A conversa-espelho de um grupo que o CRM criou, ou null se não conhece. */
+export interface ConversaDeGrupo {
+  conversationId: string;
+  contactId: string;
+  /** Telefone do contato dono da conversa (o lead). Usado no filtro de STOP. */
+  telefoneDoContato: string | null;
+}
+
+/**
+ * Acha a conversa-espelho de um grupo — e é ELA que decide se a mensagem entra.
+ *
+ * ⚠️ ESTA BUSCA É A TRAVA. Antes de 19/08/2026 toda mensagem de grupo era
+ * descartada (`return "grupo"`), o que era grosseiro mas SEGURO: o número da
+ * empresa está em dezenas de grupos que não têm nada a ver com o CRM — grupo de
+ * fornecedor, de condomínio, de família. Ingerir grupo indiscriminadamente
+ * despejaria tudo isso no inbox, cada mensagem carimbando uma conversa e
+ * gerando evento.
+ *
+ * A regra que substitui o descarte é estreita de propósito: **entra só o grupo
+ * cujo `…@g.us` o próprio CRM gravou** ao criar o grupo da reunião
+ * (`lib/agendamento/grupo-criar.ts`). Grupo desconhecido continua sendo
+ * descartado exatamente como antes.
+ */
+export async function conversaDoGrupo(
+  admin: Admin,
+  orgId: string,
+  chatId: string,
+): Promise<ConversaDeGrupo | null> {
+  const { data, error } = await admin
+    .from("conversations")
+    .select("id, contact_id, contacts:contact_id(phone_number)")
+    .eq("organization_id", orgId)
+    .eq("group_chat_id", chatId)
+    .limit(1)
+    .maybeSingle();
+
+  if (error || !data) return null;
+  const row = data as {
+    id: string;
+    contact_id: string;
+    contacts: { phone_number: string | null } | { phone_number: string | null }[] | null;
+  };
+  const contato = Array.isArray(row.contacts) ? row.contacts[0] : row.contacts;
+  return {
+    conversationId: row.id,
+    contactId: row.contact_id,
+    telefoneDoContato: contato?.phone_number ?? null,
+  };
+}
+
+/** Quem escreveu, dentro de um grupo. É o JID do participante, não do grupo. */
+export function autorNoGrupo(p: WahaPayload): string | null {
+  const bruto =
+    p.participant ??
+    p.author ??
+    (typeof p._data?.key?.participant === "string" ? p._data.key.participant : null);
+  return typeof bruto === "string" && bruto.length > 0 ? bruto : null;
+}
+
 async function upsertConversation(
   admin: Admin,
   orgId: string,
@@ -414,15 +473,27 @@ async function handleInbound(
 ): Promise<string | null> {
   const chatId = p.from ?? "";
   const parsed = parseChatIdComAlt(chatId, p);
-  if (parsed.kind === "group") return "grupo"; // grupos não fazem binding CRM
   if (!p.id || !chatId) return "sem_id_ou_chat";
+
+  // Grupo: só entra o que o CRM criou (ver `conversaDoGrupo`). O resto continua
+  // sendo descartado com o mesmo motivo de sempre.
+  const grupo =
+    parsed.kind === "group"
+      ? await conversaDoGrupo(admin, session.organization_id, chatId)
+      : null;
+  if (parsed.kind === "group" && !grupo) return "grupo";
+
   // WAHA emite eventos vazios p/ status/read-receipt/presence — não viram mensagem.
   const corpo = corpoDaMensagem(p);
   if (!corpo && !mediaUrlOf(p) && !p.hasMedia) return "sem_conteudo";
 
-  const contactId = await upsertContact(admin, session.organization_id, parsed, chatId, notifyNameOf(p));
+  const contactId =
+    grupo?.contactId ??
+    (await upsertContact(admin, session.organization_id, parsed, chatId, notifyNameOf(p)));
   if (!contactId) return "contato_upsert_falhou";
-  const conversationId = await upsertConversation(admin, session.organization_id, contactId, session.id);
+  const conversationId =
+    grupo?.conversationId ??
+    (await upsertConversation(admin, session.organization_id, contactId, session.id));
   if (!conversationId) return "conversa_upsert_falhou";
 
   const now = new Date().toISOString();
@@ -444,7 +515,16 @@ async function handleInbound(
       sent_via: "external_device",
       sent_at: p.timestamp ? new Date(p.timestamp * 1000).toISOString() : now,
       delivered_at: now,
-      metadata: { raw_type: p.type, ack_name: p.ackName },
+      metadata: {
+        raw_type: p.type,
+        ack_name: p.ackName,
+        // Num grupo, `contact_id` é o contato do LEAD (a coluna é NOT NULL e o
+        // grupo não tem contato próprio). Quem escreveu de verdade só existe
+        // aqui — sem isto, a mensagem do David apareceria como se fosse do lead.
+        ...(grupo
+          ? { autor_no_grupo: autorNoGrupo(p), autor_nome: notifyNameOf(p) }
+          : {}),
+      },
     })
     .select("id")
     .maybeSingle();
@@ -458,7 +538,23 @@ async function handleInbound(
 
   await markConversation(admin, session.organization_id, conversationId, "inbound", previewFromMessage(p), now);
 
-  if (ehPedidoDeOptOut(p.body)) {
+  // Num grupo, foi o LEAD que escreveu — ou foi alguém do nosso time?
+  //
+  // A pergunta decide duas coisas que não podem ser decididas por "chegou uma
+  // mensagem": bloquear o contato por STOP, e responder pedido de remarcação.
+  // Nas duas, agir sobre a frase de terceiro é errar em cima do lead — o STOP
+  // é IRREVERSÍVEL e apaga um lead vivo, e a resposta de remarcação sairia
+  // depois de o próprio Mario escrever no grupo. Autor desconhecido conta como
+  // "não foi o lead": a mensagem fica no inbox e um humano decide.
+  const oLeadEscreveu =
+    !grupo ||
+    (() => {
+      const autor = (autorNoGrupo(p) ?? "").replace(/\D/g, "");
+      const dono = (grupo.telefoneDoContato ?? "").replace(/\D/g, "");
+      return Boolean(autor) && Boolean(dono) && autor === dono;
+    })();
+
+  if (oLeadEscreveu && ehPedidoDeOptOut(p.body)) {
     await admin
       .from("contacts")
       .update({ is_blocked: true, blocked_reason: "stop_keyword", blocked_at: now })
@@ -481,26 +577,35 @@ async function handleInbound(
   });
 
   // Dispara o agent-dispatcher worker (fire-and-forget; falha não quebra o 200).
+  //
+  // NUNCA em grupo. O dispatcher já ignora conversa de grupo por padrão
+  // (`filters.ignore_groups`, lib/ai/dispatcher/triggers.ts) — não emitir aqui é
+  // a segunda tranca da mesma porta, e ela existe porque o custo de errar é
+  // conhecido: o LLM tem 4 a 8 chamadas por mensagem e um grupo de três pessoas
+  // conversando multiplicaria isso por cada linha. Quem responde no grupo é o
+  // texto montado em código (`mensagemDeRemarcacaoNoGrupo`), nunca a IA.
   if (insertedMessage?.id) {
     const inboundMessageId = insertedMessage.id;
-    admin
-      .rpc("emit_event" as never, {
-        p_event_type: "ai_agent.dispatch_requested",
-        p_entity_kind: "message",
-        p_entity_id: inboundMessageId,
-        p_payload: {
-          organization_id: session.organization_id,
-          conversation_id: conversationId,
-          contact_id: contactId,
-          channel_session_id: session.id,
-          inbound_message_id: inboundMessageId,
-        },
-        p_metadata: { source: "waha_webhook", request_id: requestId },
-        p_organization_id: session.organization_id,
-      } as never)
-      .then(({ error }) => {
-        if (error) console.error("[waha.ingest] emit dispatch_requested failed", error.message);
-      });
+    if (!grupo) {
+      admin
+        .rpc("emit_event" as never, {
+          p_event_type: "ai_agent.dispatch_requested",
+          p_entity_kind: "message",
+          p_entity_id: inboundMessageId,
+          p_payload: {
+            organization_id: session.organization_id,
+            conversation_id: conversationId,
+            contact_id: contactId,
+            channel_session_id: session.id,
+            inbound_message_id: inboundMessageId,
+          },
+          p_metadata: { source: "waha_webhook", request_id: requestId },
+          p_organization_id: session.organization_id,
+        } as never)
+        .then(({ error }) => {
+          if (error) console.error("[waha.ingest] emit dispatch_requested failed", error.message);
+        });
+    }
 
     admin
       .rpc("emit_event" as never, {
@@ -535,6 +640,27 @@ async function handleInbound(
         });
     }
   }
+
+  // A única resposta automática do grupo: "não vou poder" / "preciso remarcar".
+  // Awaited de propósito, ao contrário dos emits acima — é uma mensagem que sai
+  // no WhatsApp de um cliente, e disparar-e-esquecer dentro de um route handler
+  // serverless é como se perde o envio no meio quando o processo encerra.
+  // A função nunca lança; ver o cabeçalho de `grupo-reacao.ts`.
+  if (grupo && oLeadEscreveu) {
+    // IMPORT DINÂMICO, e não é estilo: `grupo-reacao` puxa o trilho de envio, que
+    // puxa o route handler de mensagens, que é `server-only`. Importado no topo,
+    // este módulo deixa de carregar em ambiente de teste e cinco arquivos de
+    // teste da ingestão param de rodar — foi o que aconteceu ao escrever isto.
+    // Ver `tests/unit/import-puro-sem-env.test.ts`, que guarda essa regra.
+    const { reagirAPedidoDeRemarcacao } = await import("@/lib/agendamento/grupo-reacao");
+    await reagirAPedidoDeRemarcacao(admin, {
+      organizationId: session.organization_id,
+      conversationId: grupo.conversationId,
+      texto: p.body,
+      requestId,
+    });
+  }
+
   return null;
 }
 
@@ -583,8 +709,18 @@ async function handleOutboundFromUserPhone(
 ): Promise<string | null> {
   const chatId = resolveOutboundChatId(p, me) ?? "";
   const parsed = parseChatIdComAlt(chatId, p);
-  if (parsed.kind === "group") return "grupo";
   if (!p.id || !chatId) return "sem_id_ou_chat";
+
+  // Mesma regra do inbound: só o grupo que o CRM criou. Sem este espelho, o
+  // grupo apareceria no inbox com metade da conversa — o que o lead escreve
+  // entrando e o que o Mario responde do celular dele sumindo, que foi
+  // exatamente o estrago dos 368 enviados perdidos, só que dentro do grupo.
+  const grupo =
+    parsed.kind === "group"
+      ? await conversaDoGrupo(admin, session.organization_id, chatId)
+      : null;
+  if (parsed.kind === "group" && !grupo) return "grupo";
+
   const corpo = corpoDaMensagem(p);
   if (!corpo && !mediaUrlOf(p) && !p.hasMedia) return "sem_conteudo";
 
@@ -619,9 +755,13 @@ async function handleOutboundFromUserPhone(
   // responde (aí `handleInbound` o grava). Até lá o contato fica sem nome — que
   // é honesto — e `fn_upsert_wa_contact` faz `coalesce(display_name, excluded)`,
   // então o nome real nunca é sobrescrito depois.
-  const contactId = await upsertContact(admin, session.organization_id, parsed, chatId, null);
+  const contactId =
+    grupo?.contactId ??
+    (await upsertContact(admin, session.organization_id, parsed, chatId, null));
   if (!contactId) return "contato_upsert_falhou";
-  const conversationId = await upsertConversation(admin, session.organization_id, contactId, session.id);
+  const conversationId =
+    grupo?.conversationId ??
+    (await upsertConversation(admin, session.organization_id, contactId, session.id));
   if (!conversationId) return "conversa_upsert_falhou";
 
   const now = new Date().toISOString();
@@ -642,7 +782,11 @@ async function handleOutboundFromUserPhone(
       media_mime: mediaMimeOf(p),
       sent_via: "external_device",
       sent_at: p.timestamp ? new Date(p.timestamp * 1000).toISOString() : now,
-      metadata: { raw_type: p.type, fromMe: true },
+      metadata: {
+        raw_type: p.type,
+        fromMe: true,
+        ...(grupo ? { autor_no_grupo: autorNoGrupo(p) } : {}),
+      },
     })
     .select("id")
     .maybeSingle();

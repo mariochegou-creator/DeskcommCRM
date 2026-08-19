@@ -207,6 +207,9 @@ export type AuditAction =
   | "task.created"
   | "task.updated"
   | "lead.meeting_scheduled"
+  // O grupo do WhatsApp da reunião: rastro de quando um grupo com o CLIENTE
+  // dentro passou a existir. `ja_existia` distingue criação de reaproveitamento.
+  | "lead.meeting_group_created"
   | "meetings.reminders_run"
   // Sala de Reuniões (0098) — o copiloto do Meet
   | "meeting.started"

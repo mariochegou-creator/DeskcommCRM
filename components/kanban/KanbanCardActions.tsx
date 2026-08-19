@@ -17,6 +17,8 @@ import { useAplicarTagsNoCliente, useClientTags } from "@/hooks/tags/useClientTa
 import { CLASSE_DA_BOLINHA, chaveDaTag } from "@/lib/tags/cores";
 import { cn } from "@/lib/utils";
 import { lerReuniao } from "@/lib/agendamento/reuniao";
+import { lerGrupo } from "@/lib/agendamento/grupo";
+import { useCriarGrupo } from "@/hooks/kanban/useCriarGrupo";
 import { AgendarReuniaoDialog } from "./AgendarReuniaoDialog";
 import { useWinLead, useEditLead } from "@/hooks/kanban/useUpdateLead";
 import { useAssignableMembers } from "@/hooks/inbox/useAssignableMembers";
@@ -40,6 +42,11 @@ export function KanbanCardActions({ lead, pipelineId }: KanbanCardActionsProps) 
   // exatamente a reunião que ninguém lembra de confirmar.
   const [agendarOpen, setAgendarOpen] = useState(false);
   const winMutation = useWinLead(pipelineId);
+  // O grupo da reunião, fora do fluxo de marcar. Existe para o card que já tem
+  // hora marcada e não tem grupo — remarcar só para ganhar o grupo mandaria uma
+  // confirmação nova pro lead. Ver a rota `.../meeting/grupo`.
+  const criarGrupo = useCriarGrupo(pipelineId);
+  const grupoDoCard = lerGrupo(lead.custom_fields);
   const editMutation = useEditLead(pipelineId);
   // spec 13 §4: escrita no funil é agent+ — viewer não reatribui (a rota
   // PATCH também recusa; aqui é só não oferecer o que seria negado).
@@ -204,6 +211,19 @@ export function KanbanCardActions({ lead, pipelineId }: KanbanCardActionsProps) 
           >
             <CalendarBlank size={14} className="mr-2" /> Marcar reunião
           </DropdownMenuItem>
+          {/* Some quando o card já tem grupo: item que não faz nada é item que
+              faz a pessoa clicar duas vezes procurando o que deu errado. */}
+          {!grupoDoCard && (
+            <DropdownMenuItem
+              disabled={criarGrupo.isPending}
+              onSelect={() => {
+                criarGrupo.mutate(lead.id);
+              }}
+            >
+              <Users size={14} className="mr-2" />{" "}
+              {criarGrupo.isPending ? "Criando grupo…" : "Criar grupo no WhatsApp"}
+            </DropdownMenuItem>
+          )}
           <DropdownMenuItem
             disabled={winMutation.isPending}
             onSelect={() => {

@@ -55,6 +55,14 @@ export function MessageBubble({ message, debugCitations, contactId }: Props) {
   const showCitationButton =
     isOutbound && aiGenerated && (debugCitations ?? false);
   const senderLabel = (() => {
+    // Num grupo, TODA bolha recebida tem o `contact_id` do lead (a coluna é NOT
+    // NULL e o grupo não tem contato próprio). Sem este rótulo, a mensagem do
+    // David e a do dono do negócio ficam idênticas na tela — e quem lê o
+    // histórico depois atribui ao cliente o que foi a gente que escreveu.
+    const noGrupo = message.metadata?.["autor_nome"];
+    if (!isOutbound && typeof noGrupo === "string" && noGrupo.trim()) {
+      return noGrupo.trim();
+    }
     if (!isOutbound) return null;
     if (message.sent_via === "ai") return "IA";
     return null;

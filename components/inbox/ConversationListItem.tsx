@@ -60,7 +60,18 @@ export function ConversationListItem({
   queuePosition,
 }: Props) {
   const c = conversation.contacts ?? null;
+  // Grupo tem nome próprio. Sem esta linha ele apareceria com o nome do LEAD —
+  // a mesma pessoa duas vezes na lista, uma delas sendo um grupo, sem nada que
+  // distinga as duas. O `contact_id` do grupo é o do lead porque a coluna é
+  // NOT NULL (ver `lib/agendamento/grupo-criar.ts`), não porque a conversa é dele.
+  const nomeDoGrupo =
+    conversation.is_group
+      ? (typeof conversation.metadata?.group_name === "string"
+          ? conversation.metadata.group_name.trim()
+          : "") || "Grupo"
+      : null;
   const displayName =
+    nomeDoGrupo ||
     c?.display_name?.trim() ||
     c?.name?.trim() ||
     c?.phone_number ||
