@@ -42,7 +42,18 @@ import {
   planStartInstant,
   previousBusinessDayWindow,
 } from "@/lib/plan/dates";
-import { buildMorningBrief, type BriefTask } from "@/lib/plan/morning-brief";
+import {
+  formatarReuniao,
+  lerReuniao,
+  ROTULO_DO_TIPO,
+} from "@/lib/agendamento/reuniao";
+import { garantirContato } from "@/lib/agendamento/contato";
+import {
+  buildMorningBrief,
+  type BriefMeeting,
+  type BriefTask,
+  type MorningBriefInput,
+} from "@/lib/plan/morning-brief";
 import { pickPlanNumbers, type PaceFunnelStage } from "@/lib/plan/pace";
 import { SIXTY_DAY_PLAN, type PlanOwner } from "@/lib/plan/sixty-day-plan";
 import { sixtyDayBriefSchema } from "@/lib/schemas/settings";
@@ -120,11 +131,17 @@ async function handle(req: NextRequest): Promise<Response> {
       continue;
     }
 
-    const briefText = await buildBriefForOrg(admin, org.id, now);
+    const dados = await coletarDadosDoBrief(admin, org.id, now);
 
     for (const recipient of cfg.recipients) {
       try {
-        const contactId = await ensureContact(admin, org.id, recipient.name, recipient.phone);
+        // Texto POR destinatário: saudação com o nome e só as tarefas dele.
+        const briefText = buildMorningBrief({
+          now,
+          recipientName: recipient.name,
+          ...dados,
+        });
+        const contactId = await garantirContato(admin, org.id, recipient.name, recipient.phone);
         const sessionId = await resolveSession(admin, org.id, cfg.session_name);
         if (!sessionId) {
           logger.warn("[plan-morning-brief] no WORKING session", {
@@ -180,12 +197,16 @@ async function handle(req: NextRequest): Promise<Response> {
   return ok({ orgs: orgsProcessed.length, sent, failed, skipped }, { requestId });
 }
 
-/** Coleta números + tarefas e monta o texto. Sem funil detectado, degrada. */
-async function buildBriefForOrg(
+/**
+ * Coleta números, tarefas e as reuniões de HOJE — tudo que o texto precisa,
+ * menos o destinatário (o texto é montado por pessoa, no loop de envio). Sem
+ * funil detectado, degrada.
+ */
+async function coletarDadosDoBrief(
   admin: ReturnType<typeof createAdminClient>,
   orgId: string,
   now: Date,
-): Promise<string> {
+): Promise<Omit<MorningBriefInput, "now" | "recipientName">> {
   const [{ data: pipelines }, { data: stages }] = await Promise.all([
     admin
       .from("crm_pipelines")
@@ -269,61 +290,57 @@ async function buildBriefForOrg(
     due_date: t.due_date,
   }));
 
-  return buildMorningBrief({
-    now,
+  const meetings = await reunioesDeHoje(admin, orgId, now);
+
+  return {
     yesterdayLabel: yesterdayWin.label,
     yesterday,
     weekOpenings,
     weekBusinessDaysDone: weekDaysDone,
     planXray,
     tasks,
-  });
+    meetings,
+  };
 }
 
-/** Contato do destinatário por (org, phone) — select-then-insert com corrida tratada. */
-async function ensureContact(
+/**
+ * As reuniões marcadas pra hoje (custom_fields.reuniao, mesmo lugar que o cron
+ * de lembretes varre). O filtro por `->>em` é comparação de texto e funciona
+ * porque `em` é sempre `toISOString()` — a mesma razão documentada no
+ * meeting-reminders.
+ */
+async function reunioesDeHoje(
   admin: ReturnType<typeof createAdminClient>,
   orgId: string,
-  name: string,
-  phone: string,
-): Promise<string> {
-  const { data: existing } = await admin
-    .from("contacts")
-    .select("id")
-    .eq("organization_id", orgId)
-    .eq("phone_number", phone)
-    .is("is_merged_into", null)
-    .limit(1)
-    .maybeSingle();
-  if (existing) return (existing as { id: string }).id;
+  now: Date,
+): Promise<BriefMeeting[]> {
+  const inicio = bahiaStartOfDay(now);
+  const fim = new Date(inicio.getTime() + 24 * 60 * 60 * 1000);
 
-  const { data: created, error } = await admin
-    .from("contacts")
-    .insert({
-      organization_id: orgId,
-      name,
-      display_name: name,
-      phone_number: phone,
-      source: "manual",
-    })
-    .select("id")
-    .single();
-  if (error || !created) {
-    // 23505 = outro processo criou entre o select e o insert (unique parcial
-    // org+phone). O vencedor serve.
-    if ((error as { code?: string } | null)?.code === "23505") {
-      const { data: winner } = await admin
-        .from("contacts")
-        .select("id")
-        .eq("organization_id", orgId)
-        .eq("phone_number", phone)
-        .limit(1)
-        .maybeSingle();
-      if (winner) return (winner as { id: string }).id;
-    }
-    throw new Error(error?.message ?? "contact_insert_failed");
+  const { data } = await admin
+    .from("crm_leads")
+    .select("title, custom_fields")
+    .eq("organization_id", orgId)
+    .not("custom_fields->reuniao", "is", null)
+    .gte("custom_fields->reuniao->>em", inicio.toISOString())
+    .lt("custom_fields->reuniao->>em", fim.toISOString())
+    .limit(50);
+
+  const reunioes: Array<{ em: string; meeting: BriefMeeting }> = [];
+  for (const linha of (data ?? []) as Array<{ title: string | null; custom_fields: unknown }>) {
+    const reuniao = lerReuniao(linha.custom_fields);
+    if (!reuniao) continue;
+    reunioes.push({
+      em: reuniao.em,
+      meeting: {
+        hora: formatarReuniao(new Date(reuniao.em)).hora,
+        tipo: ROTULO_DO_TIPO[reuniao.tipo],
+        negocio: linha.title,
+      },
+    });
   }
-  return (created as { id: string }).id;
+  reunioes.sort((a, b) => a.em.localeCompare(b.em));
+  return reunioes.map((r) => r.meeting);
 }
 
 /** Sessão preferida da config se estiver WORKING; senão a 1ª WORKING da org. */

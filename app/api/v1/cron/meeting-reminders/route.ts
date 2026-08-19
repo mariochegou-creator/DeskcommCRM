@@ -33,13 +33,16 @@ import { env } from "@/lib/env";
 import { logger } from "@/lib/logger";
 import {
   janelaDeVarredura,
+  lembreteEquipeDevido,
   lembretesDevidos,
   lerReuniao,
   type Lembrete,
   type Reuniao,
 } from "@/lib/agendamento/reuniao";
+import { garantirContato } from "@/lib/agendamento/contato";
 import { automacaoDesligada, enviarTexto } from "@/lib/agendamento/envio";
-import { TEXTO_DO_LEMBRETE } from "@/lib/agendamento/mensagens";
+import { mensagemDaEquipe, TEXTO_DO_LEMBRETE } from "@/lib/agendamento/mensagens";
+import { sixtyDayBriefSchema, type SixtyDayBriefConfig } from "@/lib/schemas/settings";
 import { createAdminClient } from "@/lib/supabase/admin";
 
 export const dynamic = "force-dynamic";
@@ -93,6 +96,7 @@ async function handle(req: NextRequest): Promise<Response> {
   let falhados = 0;
   let semNada = 0;
   let desligados = 0;
+  let equipeEnviados = 0;
 
   // Cache por TICK, não por processo: o interruptor é de banco e tem de valer no
   // minuto em que muda. Guardar no módulo obrigaria a reiniciar a VPS para
@@ -106,7 +110,50 @@ async function handle(req: NextRequest): Promise<Response> {
     return valor;
   };
 
+  // Config do bom-dia por org, lida uma vez por tick: os MESMOS destinatários
+  // do brief das 8h30 recebem o aviso interno de 30 min — telefone do time é
+  // dado de tenant e já mora em `sixty_day_brief`; uma segunda lista divergiria
+  // na primeira troca de chip.
+  const configPorOrg = new Map<string, SixtyDayBriefConfig>();
+  const configDaOrg = async (organizationId: string): Promise<SixtyDayBriefConfig> => {
+    const jaSabe = configPorOrg.get(organizationId);
+    if (jaSabe) return jaSabe;
+    const { data: org } = await admin
+      .from("organizations")
+      .select("settings")
+      .eq("id", organizationId)
+      .maybeSingle();
+    const cfg = sixtyDayBriefSchema.parse(
+      ((org as { settings?: unknown } | null)?.settings as Record<string, unknown> | null)?.[
+        "sixty_day_brief"
+      ],
+    );
+    configPorOrg.set(organizationId, cfg);
+    return cfg;
+  };
+
   for (const linha of linhas) {
+    const reuniao = lerReuniao(linha.custom_fields);
+    if (!reuniao) {
+      semNada++;
+      continue;
+    }
+
+    const contato = Array.isArray(linha.contacts) ? linha.contacts[0] : linha.contacts;
+    const nomeDoContato = contato?.display_name ?? contato?.name ?? null;
+
+    // Aviso interno ANTES do interruptor: `ai_dispatch_mode = 'external'` cala
+    // o que sai pro LEAD; o cutucão de 30 min vai pro time e tem de sair mesmo
+    // com a automação de atendimento desligada.
+    if (lembreteEquipeDevido(reuniao, now)) {
+      const resultado = await avisarEquipe(admin, linha, reuniao, nomeDoContato, {
+        configDaOrg,
+        requestId,
+      });
+      equipeEnviados += resultado.enviados;
+      falhados += resultado.falhados;
+    }
+
     // Antes do carimbo, de propósito: lead pulado por interruptor desligado não
     // pode ficar marcado como avisado. Se o Mario religar dentro da janela, o
     // lembrete ainda sai.
@@ -115,19 +162,11 @@ async function handle(req: NextRequest): Promise<Response> {
       continue;
     }
 
-    const reuniao = lerReuniao(linha.custom_fields);
-    if (!reuniao) {
-      semNada++;
-      continue;
-    }
     const devidos = lembretesDevidos(reuniao, now);
     if (devidos.length === 0) {
       semNada++;
       continue;
     }
-
-    const contato = Array.isArray(linha.contacts) ? linha.contacts[0] : linha.contacts;
-    const nomeDoContato = contato?.display_name ?? contato?.name ?? null;
 
     for (const lembrete of devidos) {
       const marcou = await carimbar(admin, linha, reuniao, lembrete, now.toISOString());
@@ -181,6 +220,7 @@ async function handle(req: NextRequest): Promise<Response> {
       falhados,
       sem_lembrete: semNada,
       automacao_desligada: desligados,
+      equipe_enviados: equipeEnviados,
     },
     requestId,
   });
@@ -192,9 +232,85 @@ async function handle(req: NextRequest): Promise<Response> {
       falhados,
       sem_lembrete: semNada,
       automacao_desligada: desligados,
+      equipe_enviados: equipeEnviados,
     },
     { requestId },
   );
+}
+
+/**
+ * O aviso de 30 min pro TIME: carimba `avisos.equipe` e manda pra cada
+ * destinatário do bom-dia. Sem destinatário configurado, nem carimba — a org
+ * que ligar o brief amanhã passa a receber os avisos das reuniões seguintes.
+ *
+ * O carimbo é UM por reunião (não por pessoa): se mandar pro Mario e falhar
+ * pro David, não repete pro Mario no próximo tick. Só quando NINGUÉM recebeu o
+ * carimbo é desfeito, pra reunião não ficar sem aviso por uma sessão WAHA fora
+ * do ar por 10 minutos.
+ */
+async function avisarEquipe(
+  admin: ReturnType<typeof createAdminClient>,
+  linha: LinhaDeLead,
+  reuniao: Reuniao,
+  nomeDoContato: string | null,
+  deps: {
+    configDaOrg: (organizationId: string) => Promise<SixtyDayBriefConfig>;
+    requestId: string;
+  },
+): Promise<{ enviados: number; falhados: number }> {
+  const cfg = await deps.configDaOrg(linha.organization_id);
+  if (cfg.recipients.length === 0) return { enviados: 0, falhados: 0 };
+
+  const marcou = await carimbar(admin, linha, reuniao, "equipe", new Date().toISOString());
+  if (!marcou) return { enviados: 0, falhados: 1 };
+
+  const corpo = mensagemDaEquipe(reuniao, { nomeDoContato, negocio: linha.title });
+  let enviados = 0;
+  let falhados = 0;
+
+  for (const destinatario of cfg.recipients) {
+    try {
+      const contactId = await garantirContato(
+        admin,
+        linha.organization_id,
+        destinatario.name,
+        destinatario.phone,
+      );
+      const envio = await enviarTexto(admin, {
+        organizationId: linha.organization_id,
+        contactId,
+        corpo,
+        metadata: {
+          meeting_lead_id: linha.id,
+          meeting_message: "equipe",
+          meeting_at: reuniao.em,
+        },
+        origem: "cron:meeting-reminders:equipe",
+        requestId: deps.requestId,
+      });
+      if (envio.ok) enviados++;
+      else {
+        falhados++;
+        logger.warn("[meeting-reminders] aviso interno não saiu", {
+          leadId: linha.id,
+          motivo: envio.motivo,
+          requestId: deps.requestId,
+        });
+      }
+    } catch (err) {
+      falhados++;
+      logger.warn("[meeting-reminders] aviso interno não saiu", {
+        leadId: linha.id,
+        motivo: err instanceof Error ? err.message : String(err),
+        requestId: deps.requestId,
+      });
+    }
+  }
+
+  if (enviados === 0) {
+    await carimbar(admin, linha, reuniao, "equipe", null);
+  }
+  return { enviados, falhados };
 }
 
 /**
@@ -206,7 +322,7 @@ async function carimbar(
   admin: ReturnType<typeof createAdminClient>,
   linha: LinhaDeLead,
   reuniao: Reuniao,
-  lembrete: Lembrete,
+  lembrete: Lembrete | "equipe",
   quando: string | null,
 ): Promise<boolean> {
   const avisos = { ...(reuniao.avisos ?? {}) };

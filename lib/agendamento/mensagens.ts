@@ -169,3 +169,21 @@ export const TEXTO_DO_LEMBRETE = {
   vespera: mensagemDaVespera,
   final: mensagemFinal,
 } as const;
+
+/**
+ * O aviso INTERNO de 30 min antes — vai pro WhatsApp do Mario (e de quem mais
+ * recebe o bom-dia), nunca pro lead. Pedido do Mario em 19/08/2026: os
+ * lembretes do anti-no-show cutucavam o lead e ninguém cutucava o closer.
+ *
+ * Direto de propósito: quem lê está no meio de outra coisa; nome do negócio,
+ * hora e contato — o resto está na Sala de Reuniões.
+ */
+export function mensagemDaEquipe(reuniao: Reuniao, ctx: ContextoDaMensagem): string {
+  const q = formatarReuniao(new Date(reuniao.em));
+  const nome = primeiroNome(ctx.nomeDoContato);
+  const linha1 = `Reunião em meia hora: ${ROTULO_DO_TIPO[reuniao.tipo]} com ${
+    (ctx.negocio ?? "").trim() || "(card sem nome)"
+  }, às ${q.hora}.`;
+  const linha2 = `${nome ? `Contato: ${nome}. ` : ""}O preparo está na Sala de Reuniões.`;
+  return [linha1, linha2].join("\n");
+}

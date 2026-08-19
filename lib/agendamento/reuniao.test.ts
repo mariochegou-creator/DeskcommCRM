@@ -4,9 +4,11 @@ import {
   dataCivilBahia,
   formatarReuniao,
   instanteDaReuniao,
+  instanteLembreteEquipe,
   instanteLembreteFinal,
   instanteLembreteVespera,
   janelaDeVarredura,
+  lembreteEquipeDevido,
   lembretesDevidos,
   lerReuniao,
   type Reuniao,
@@ -55,6 +57,10 @@ describe("instantes dos lembretes", () => {
 
   it("final é uma hora antes", () => {
     expect(instanteLembreteFinal(new Date(EM)).toISOString()).toBe("2026-08-12T16:00:00.000Z");
+  });
+
+  it("equipe é meia hora antes", () => {
+    expect(instanteLembreteEquipe(new Date(EM)).toISOString()).toBe("2026-08-12T16:30:00.000Z");
   });
 });
 
@@ -135,6 +141,40 @@ describe("lerReuniao", () => {
     const lida = lerReuniao({ reuniao: { em: EM, avisos: { vespera: "x", final: 3 } } });
     // `final: 3` não é carimbo — carimbo é ISO. Entra só o que é string.
     expect(lida?.avisos).toEqual({ vespera: "x" });
+  });
+
+  it("mantém o carimbo do aviso interno (a peneira que apaga campo esquecido)", () => {
+    const lida = lerReuniao({ reuniao: { em: EM, avisos: { equipe: "x" } } });
+    expect(lida?.avisos).toEqual({ equipe: "x" });
+  });
+});
+
+describe("lembreteEquipeDevido", () => {
+  it("dispara na meia hora antes", () => {
+    expect(lembreteEquipeDevido(reuniao(), new Date("2026-08-12T16:31:00.000Z"))).toBe(true);
+  });
+
+  it("não dispara antes da hora", () => {
+    expect(lembreteEquipeDevido(reuniao(), new Date("2026-08-12T16:29:00.000Z"))).toBe(false);
+  });
+
+  it("não repete o que já foi carimbado", () => {
+    const r = reuniao({ avisos: { equipe: "2026-08-12T16:30:00.000Z" } });
+    expect(lembreteEquipeDevido(r, new Date("2026-08-12T16:35:00.000Z"))).toBe(false);
+  });
+
+  it("cala a boca depois que a reunião começou", () => {
+    expect(lembreteEquipeDevido(reuniao(), new Date("2026-08-12T17:05:00.000Z"))).toBe(false);
+  });
+
+  it("não avisa quem acabou de marcar em cima da hora", () => {
+    // Reunião marcada faltando 20 min: o instante do aviso já nasceu vencido.
+    const r = reuniao({ criada_em: "2026-08-12T16:40:00.000Z" });
+    expect(lembreteEquipeDevido(r, new Date("2026-08-12T16:45:00.000Z"))).toBe(false);
+  });
+
+  it("ignora reunião com instante ilegível", () => {
+    expect(lembreteEquipeDevido(reuniao({ em: "ontem" }), new Date(EM))).toBe(false);
   });
 });
 

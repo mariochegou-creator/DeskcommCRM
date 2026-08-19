@@ -25,6 +25,8 @@ const HOUR_MS = 60 * 60 * 1000;
 export const HORA_LEMBRETE_VESPERA = 18;
 /** Antecedência do último toque, em horas. */
 export const HORAS_LEMBRETE_FINAL = 1;
+/** Antecedência do aviso INTERNO (pro closer, não pro lead), em minutos. */
+export const MINUTOS_LEMBRETE_EQUIPE = 30;
 
 /**
  * O expediente de reuniões: de hora em hora, das 10h às 18h (decisão do Mario
@@ -128,6 +130,12 @@ export interface AvisosDaReuniao {
   confirmacao?: string;
   vespera?: string;
   final?: string;
+  /**
+   * O aviso de 30 min antes que vai pro TIME (Mario/David), não pro lead —
+   * pedido do Mario em 19/08/2026. Mesmo objeto `avisos` de propósito: um
+   * carimbo por reunião, apagado junto quando a reunião é remarcada.
+   */
+  equipe?: string;
 }
 
 /** O que fica gravado em `custom_fields.reuniao`. */
@@ -201,6 +209,11 @@ export function instanteLembreteFinal(reuniao: Date): Date {
   return new Date(reuniao.getTime() - HORAS_LEMBRETE_FINAL * HOUR_MS);
 }
 
+/** Meia hora antes da reunião — o aviso interno pro closer. */
+export function instanteLembreteEquipe(reuniao: Date): Date {
+  return new Date(reuniao.getTime() - MINUTOS_LEMBRETE_EQUIPE * 60_000);
+}
+
 const DIAS_DA_SEMANA = [
   "domingo",
   "segunda-feira",
@@ -271,6 +284,7 @@ export function lerReuniao(customFields: unknown): Reuniao | null {
     if (typeof a.confirmacao === "string") avisos.confirmacao = a.confirmacao;
     if (typeof a.vespera === "string") avisos.vespera = a.vespera;
     if (typeof a.final === "string") avisos.final = a.final;
+    if (typeof a.equipe === "string") avisos.equipe = a.equipe;
   }
   const checklistRaw = obj.checklist;
   const checklist: Record<string, string> = {};
@@ -334,6 +348,34 @@ export function lembretesDevidos(
     devidos.push(nome);
   }
   return devidos;
+}
+
+/**
+ * O aviso interno de 30 min deve sair AGORA? Mesmas guardas de
+ * `lembretesDevidos` — inclusive a de nascimento: reunião marcada em cima da
+ * hora (faltando menos de 30 min) não gera aviso, quem acabou de marcar sabe.
+ * Guarda separada do lead de propósito: este aviso NÃO passa pelo interruptor
+ * `ai_dispatch_mode` — desligar a automação cala o que vai pro LEAD, não o
+ * cutucão interno.
+ */
+export function lembreteEquipeDevido(
+  reuniao: Reuniao,
+  now: Date,
+  atrasoMaximoMs: number = 3 * HOUR_MS,
+): boolean {
+  const quando = new Date(reuniao.em);
+  if (Number.isNaN(quando.getTime())) return false;
+  if (now.getTime() >= quando.getTime()) return false;
+
+  const criada = Date.parse(reuniao.criada_em);
+  const nasceuEm = Number.isNaN(criada) ? 0 : criada;
+  const instante = instanteLembreteEquipe(quando);
+
+  if (reuniao.avisos?.equipe) return false;
+  if (instante.getTime() < nasceuEm) return false;
+  if (now.getTime() < instante.getTime()) return false;
+  if (now.getTime() - instante.getTime() > atrasoMaximoMs) return false;
+  return true;
 }
 
 /**

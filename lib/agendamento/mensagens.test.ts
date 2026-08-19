@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 
 import type { Reuniao } from "./reuniao";
 import {
+  mensagemDaEquipe,
   mensagemDaVespera,
   mensagemDeConfirmacao,
   mensagemFinal,
@@ -91,5 +92,20 @@ describe("nome do negócio na frase", () => {
     const texto = mensagemDaVespera(REUNIAO, { nomeDoContato: "Marcos" });
     expect(texto).toContain("com o seu negócio");
     expect(texto).not.toContain("com o o seu");
+  });
+});
+
+describe("mensagemDaEquipe", () => {
+  it("diz tipo, negócio, hora e contato — o essencial de quem vai atender", () => {
+    const texto = mensagemDaEquipe(REUNIAO, CTX);
+    expect(texto).toContain("Reunião em meia hora: R1 com Pizzaria Dom Luigi, às 14h.");
+    expect(texto).toContain("Contato: Marcos.");
+    expect(texto).toContain("Sala de Reuniões");
+  });
+
+  it("sobrevive a card sem nome e contato sem nome", () => {
+    const texto = mensagemDaEquipe(REUNIAO, {});
+    expect(texto).toContain("R1 com (card sem nome), às 14h.");
+    expect(texto).not.toContain("Contato:");
   });
 });
