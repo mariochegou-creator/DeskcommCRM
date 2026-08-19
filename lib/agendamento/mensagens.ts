@@ -224,6 +224,29 @@ export function mensagemDeAberturaDoGrupo(reuniao: Reuniao, ctx: ContextoDaMensa
   ].join("\n");
 }
 
+/**
+ * REMARCAÇÃO num grupo que já existe.
+ *
+ * Existe porque a abertura não serve duas vezes: ela diz "criei esse grupo pra
+ * você não ter que procurar ninguém", e essa frase chegando num grupo de duas
+ * semanas atrás é a definição de sistema quebrado. O caminho de remarcar passa
+ * pela MESMA rota que marca (é o mesmo verbo, por desenho), então sem este
+ * texto a segunda passada reenviaria a primeira mensagem.
+ *
+ * Pede confirmação de novo de propósito: horário remarcado é justamente o que
+ * o lead menos anotou.
+ */
+export function mensagemDeRemarcadaNoGrupo(reuniao: Reuniao, ctx: ContextoDaMensagem): string {
+  const q = formatarReuniao(new Date(reuniao.em));
+  const conduz = quemVaiConduzir(ctx.quemConduz);
+
+  return [
+    `${vocativo(ctx.nomeDoContato)}mudou o horário: agora é ${q.diaDaSemana} (${q.diaMes}) às ${q.hora}.`,
+    "",
+    `Já ajustei aqui e ${conduz} está avisado. Me confirma que esse novo horário funciona?`,
+  ].join("\n");
+}
+
 /** 18h da véspera, no grupo. Mesma mecânica do privado, na voz da assistente. */
 export function mensagemDaVesperaNoGrupo(reuniao: Reuniao, ctx: ContextoDaMensagem): string {
   const q = formatarReuniao(new Date(reuniao.em));

@@ -57,6 +57,7 @@ import {
 import {
   mensagemDeAberturaDoGrupo,
   mensagemDeConfirmacao,
+  mensagemDeRemarcadaNoGrupo,
 } from "@/lib/agendamento/mensagens";
 import { agendarReuniaoSchema } from "@/lib/schemas/agendamento";
 import { validateRequest } from "@/lib/schemas";
@@ -323,10 +324,18 @@ export async function POST(
   } else if (automacaoOff) {
     envio = { ok: false, motivo: "automacao_desligada" };
   } else if (conversaDoGrupo) {
+    // Grupo NOVO recebe a abertura; grupo que já existia recebe o texto de
+    // remarcação. A rota é a mesma para marcar e remarcar (é o mesmo verbo, por
+    // desenho) — sem esta escolha, remarcar mandaria "criei esse grupo" num
+    // grupo de duas semanas atrás.
+    const texto =
+      grupo.criado && grupo.jaExistia
+        ? mensagemDeRemarcadaNoGrupo
+        : mensagemDeAberturaDoGrupo;
     envio = await enviarNoGrupo(admin, {
       organizationId: lead.organization_id,
       conversationId: conversaDoGrupo,
-      corpo: mensagemDeAberturaDoGrupo(reuniao, {
+      corpo: texto(reuniao, {
         nomeDoContato,
         negocio,
         quemConduz: user.full_name,
