@@ -20,6 +20,7 @@
  *
  * Módulo PURO. A criação de verdade está em `grupo-criar.ts`.
  */
+import { chaveWhatsAppBR } from "@/lib/calls/phone";
 import { chatIdDeTelefone } from "@/lib/waha/grupo";
 
 /** O que fica gravado em `custom_fields.grupo`. */
@@ -79,24 +80,41 @@ export interface ParticipantesInput {
  * A lista de convites, em chatId (`…@c.us`), sem repetição e sem o próprio
  * número.
  *
+ * ⚠️ TODO NÚMERO PASSA POR `chaveWhatsAppBR` ANTES DE VIRAR ENDEREÇO, e isso
+ * não é higiene — é a diferença entre o David entrar no grupo e não entrar.
+ * Para DDD >= 31 o WhatsApp trata o celular SEM o nono dígito (migration 0102):
+ * o número dele é `+5577991577662` na lista do time e `557791577662` no
+ * WhatsApp. Convidar a forma errada não dá erro — o grupo nasce, o convite
+ * simplesmente não pega, e ninguém percebe até o dia da reunião. DDD 11–28 fica
+ * intacto, que é o caso do telefone do Mario.
+ *
+ * O telefone do LEAD já vem canônico do banco (a 0102 normalizou a base
+ * inteira); passar por aqui é no-op e protege o dia em que entrar por outro
+ * caminho.
+ *
  * O lead vem PRIMEIRO por um motivo prático: se o WhatsApp cortar a criação por
  * limite, o participante que não pode faltar é ele. E o número da sessão é
  * excluído porque ele já é o dono — convidar a si mesmo volta como participante
  * que falhou, e faria o CRM avisar de um problema que não existe.
- *
- * A comparação é por DÍGITOS, não por string: o mesmo número aparece como
- * `+5575…` no contato e `5575…` na sessão, e comparar cru deixaria o dono
- * entrar duas vezes.
  */
 export function participantesDoGrupo(input: ParticipantesInput): string[] {
-  const soDigitos = (v: string | null | undefined) => (v ?? "").replace(/\D/g, "");
-  const proprio = soDigitos(input.telefoneDaSessao);
+  /** Canônico do WhatsApp, só dígitos. Vazio quando não dá pra normalizar. */
+  const canonico = (v: string | null | undefined): string => {
+    const bruto = (v ?? "").trim();
+    if (!bruto) return "";
+    // `chaveWhatsAppBR` exige E.164; a sessão guarda `557799325325` sem o `+`,
+    // e `toE164BR` lá dentro dá conta dos dois formatos.
+    const chave = chaveWhatsAppBR(bruto.startsWith("+") ? bruto : `+${bruto.replace(/\D/g, "")}`);
+    return (chave ?? bruto).replace(/\D/g, "");
+  };
+
+  const proprio = canonico(input.telefoneDaSessao);
 
   const vistos = new Set<string>();
   const chatIds: string[] = [];
 
   for (const telefone of [input.telefoneDoLead, ...input.telefonesDaEquipe]) {
-    const digitos = soDigitos(telefone);
+    const digitos = canonico(telefone);
     if (!digitos) continue;
     if (proprio && digitos === proprio) continue;
     if (vistos.has(digitos)) continue;

@@ -47,8 +47,11 @@ describe("participantesDoGrupo", () => {
   };
 
   it("devolve chatId de todo mundo, com o lead primeiro", () => {
+    // O 9 so sai quando os 8 digitos seguintes comecam em 6-9 (prefixo real de
+    // celular). `...988887777` perde; `...911112222` fica, porque `1111...` nao
+    // e celular e a regra NAO adivinha — mesma doutrina de `lib/calls/phone.ts`.
     expect(participantesDoGrupo(base)).toEqual([
-      "5575988887777@c.us",
+      "557588887777@c.us",
       "5575911112222@c.us",
       "5575933334444@c.us",
     ]);
@@ -59,8 +62,8 @@ describe("participantesDoGrupo", () => {
       ...base,
       telefonesDaEquipe: ["+55 75 90000-0000", "+5575911112222"],
     });
-    expect(r).not.toContain("5575900000000@c.us");
-    expect(r).toEqual(["5575988887777@c.us", "5575911112222@c.us"]);
+    expect(r).not.toContain("557500000000@c.us");
+    expect(r).toEqual(["557588887777@c.us", "5575911112222@c.us"]);
   });
 
   it("compara por dígitos: o mesmo número em formatos diferentes entra uma vez", () => {
@@ -69,7 +72,45 @@ describe("participantesDoGrupo", () => {
       telefonesDaEquipe: ["5575988887777", "+5575988887777"],
       telefoneDaSessao: null,
     });
-    expect(r).toEqual(["5575988887777@c.us"]);
+    expect(r).toEqual(["557588887777@c.us"]);
+  });
+
+  it("TIRA o nono digito de DDD >= 31 — o numero do David so entra assim", () => {
+    // +55 77 9 9157-7662 na lista do time; 55 77 9157-7662 no WhatsApp.
+    const r = participantesDoGrupo({
+      telefoneDoLead: "+5573999818151",
+      telefonesDaEquipe: ["+5577991577662"],
+      telefoneDaSessao: null,
+    });
+    expect(r).toEqual(["557399818151@c.us", "557791577662@c.us"]);
+  });
+
+  it("DDD 11-28 fica intacto — la o WhatsApp usa o 9 mesmo", () => {
+    const r = participantesDoGrupo({
+      telefoneDoLead: "+5511930582384",
+      telefonesDaEquipe: [],
+      telefoneDaSessao: null,
+    });
+    expect(r).toEqual(["5511930582384@c.us"]);
+  });
+
+  it("o mesmo numero com e sem o 9 conta uma vez so", () => {
+    const r = participantesDoGrupo({
+      telefoneDoLead: "+5577991577662",
+      telefonesDaEquipe: ["+557791577662"],
+      telefoneDaSessao: null,
+    });
+    expect(r).toEqual(["557791577662@c.us"]);
+  });
+
+  it("a sessao e reconhecida mesmo escrita com o 9 a mais", () => {
+    const r = participantesDoGrupo({
+      telefoneDoLead: "+5573999818151",
+      telefonesDaEquipe: ["+5577991577662"],
+      // a sessao guarda sem `+` e ja canonica
+      telefoneDaSessao: "557791577662",
+    });
+    expect(r).toEqual(["557399818151@c.us"]);
   });
 
   it("ignora vazio e lixo em vez de mandar '@c.us' pro WhatsApp", () => {
