@@ -182,10 +182,13 @@
   real, já com GIN index). Vazio/ausente = todos os contatos silenciosos —
   documentado como interpretação deferida no header do módulo.
   **Idempotência:** `insertEnrollment` é INSERT puro — 23505 (índice único
-  `idx_followup_enrollments_one_live`) vira `skipped_existing`, nunca erro. Um
-  contato que completou/cancelou pode re-enrollar na varredura seguinte se
-  continuar silencioso — aceitável no MVP, sem cooldown table (fora de escopo
-  por instrução explícita do brief).
+  `idx_followup_enrollments_one_live`) vira `skipped_existing`, nunca erro.
+  **Cooldown de re-inscrição (pós-incidente 10/08/2026):** contato com QUALQUER
+  enrollment iniciado há menos de 24h (`SILENCE_REENROLL_COOLDOWN_MS`, org-wide,
+  qualquer status, régua = `started_at`) é pulado (`skipped_cooldown`) — fecha o
+  loop sweep→job dead→re-enroll do incidente (38 leads → 4.5k enrollments).
+  Sem tabela nova; método opcional `loadRecentEnrollmentContactIds` na
+  `SilenceSweepDb` (fakes antigos seguem compilando, sem cooldown).
   **`app/api/v1/cron/followup-flow-worker/route.ts`** — chama `runSilenceSweep`
   com `createSupabaseSilenceSweepDb(admin)` + `createSupabaseFollowupGateDb(admin)`
   depois do tick; audita `followup.silence_sweep_run` (nova action em

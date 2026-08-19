@@ -45,11 +45,13 @@ import {
 import {
   claimJobs,
   completeJob,
+  deadLetterJob,
   failJob,
   reapExpiredJobs,
   type JobKind,
   type JobRow,
 } from '@/lib/agent-engine/queue/queue';
+import { permanentLlmErrorReason } from '@/lib/agent-engine/edge/llm/permanent-error';
 
 export interface JobHandlerContext {
   workerId: string;
@@ -276,8 +278,16 @@ export async function startWorker(
       }
     } catch (err) {
       log.error('job falhou', { job_id: job.id, kind: job.kind, error: errMsg(err) });
+      // Erro PERMANENTE de LLM (saldo/chave/modelo/config): retry não resolve —
+      // dead-letter imediato com alerta 1-por-episódio em vez de queimar as 5
+      // tentativas e abrir 1 alerta crítico por job.
+      const permanent = permanentLlmErrorReason(err);
       try {
-        await failJob(pool, job.id, workerId, err);
+        if (permanent !== null) {
+          await deadLetterJob(pool, job.id, workerId, permanent);
+        } else {
+          await failJob(pool, job.id, workerId, err);
+        }
       } catch (failErr) {
         log.error('failJob indisponível — lease expira via reaper', {
           job_id: job.id,

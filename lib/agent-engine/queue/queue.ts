@@ -246,6 +246,48 @@ export async function failJob(
 }
 
 /**
+ * Dead-letter IMEDIATO — erro PERMANENTE de LLM (saldo, chave, modelo, config):
+ * retry não resolve, então nem consome as tentativas restantes (o incidente de
+ * 10/08/2026 queimava 5 tentativas por job num poll de 250 ms). Vira 'dead' na
+ * hora (a mensagem do lead ficou de fato sem resposta — precisa aparecer), mas
+ * o alerta crítico é 1 POR EPISÓDIO por org (dedupe por título aberto, mesmo
+ * padrão do 'budget_exceeded' em run-model-call.ts), não 1 por job — 38 leads
+ * não podem virar 9 mil alertas de novo. Devolve null se o lease não era deste
+ * worker.
+ */
+export async function deadLetterJob(
+  db: Queryable,
+  jobId: string,
+  workerId: string,
+  reason: string,
+): Promise<JobRow | null> {
+  const { rows } = await db.query<JobRow>(
+    `with updated as (
+       update job_queue
+       set status = 'dead', locked_by = null, locked_at = null, last_error = $3
+       where id = $1 and status = 'running' and locked_by = $2
+       returning *
+     ),
+     alert as (
+       insert into agent_inbox_items (organization_id, kind, severity, title, body, ref_kind, ref_id)
+       select organization_id, 'job_dead', 'critical',
+              'IA parada: erro permanente de LLM (saldo, chave ou configuração)',
+              'kind=' || kind || '; ' || $3, 'job_queue', id
+       from updated
+       where not exists (
+         select 1 from agent_inbox_items a
+         where a.organization_id = updated.organization_id
+           and a.kind = 'job_dead' and a.status = 'open'
+           and a.title = 'IA parada: erro permanente de LLM (saldo, chave ou configuração)'
+       )
+     )
+     select * from updated`,
+    [jobId, workerId, normalizeError(reason)],
+  );
+  return rows[0] ?? null;
+}
+
+/**
  * Cancela o job em definitivo (status 'failed', terminal) — veto PERMANENTE de
  * negócio (ex.: 403 is_blocked no sink, F2-06): não é incidente de sistema, então
  * nem retry nem 'dead' + alerta crítico (seria ruído de inbox para um opt-out).

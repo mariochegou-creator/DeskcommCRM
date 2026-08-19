@@ -22,9 +22,17 @@
  * é ORG-WIDE `(organization_id, contact_id)` (migration 0062, Task 8.6) — um
  * contato já vivo em QUALQUER fluxo da org barra novo enrollment (1 follow-up
  * vivo por lead), 23505 vira skip silencioso (`insertEnrollment` devolve
- * `inserted:false`), nunca erro. Um contato que COMPLETOU ou foi cancelado
- * pode ser re-enrollado na varredura seguinte se continuar silencioso —
- * aceitável no MVP, sem cooldown table.
+ * `inserted:false`), nunca erro.
+ *
+ * COOLDOWN de re-inscrição (incidente de 10/08/2026): o índice só barra
+ * enrollment VIVO — com o LLM quebrado, o enrollment morria em minutos e o
+ * tick seguinte re-inscrevia o MESMO contato (38 leads → 4.566 enrollments em
+ * 24h). Agora um contato com QUALQUER enrollment iniciado há menos de
+ * `SILENCE_REENROLL_COOLDOWN_MS` (24h, org-wide, qualquer status) é pulado —
+ * sem tabela nova: a régua é `followup_enrollments.started_at`. O check é
+ * best-effort (fora de transação com o insert); a corrida residual de 1 tick
+ * é inócua — o índice unique-live segura duplicata viva, e o custo de 1
+ * re-inscrição precoce é 1 job, não um loop.
  *
  * agent_id: cada pointer é gateado por `resolveAgentForAutomaticTrigger`, que
  * devolve o agente publicado que ARMA o pointer (menor uuid se >1) — esse
@@ -70,6 +78,13 @@ export interface SilenceSweepDb {
   ): Promise<string[]>;
   /** id do nó `trigger` do grafo pinado da version; `null` se version/nó não existir (defensivo — não deveria acontecer, validate-publish garante 1 trigger). */
   loadTriggerNodeId(orgId: string, versionId: string): Promise<string | null>;
+  /**
+   * Contact ids da org com QUALQUER enrollment (qualquer pointer, qualquer
+   * status) iniciado em/depois de `sinceIso` — o cooldown de re-inscrição.
+   * Opcional para não quebrar adapters/fakes antigos (mesmo padrão de
+   * `includeNeverReplied`); ausente = sem cooldown.
+   */
+  loadRecentEnrollmentContactIds?(orgId: string, sinceIso: string): Promise<string[]>;
   /** Insere o enrollment nascendo no nó trigger; `inserted:false` = 23505 (já vivo nesse pointer) → skip. */
   insertEnrollment(input: {
     organization_id: string;
@@ -87,7 +102,12 @@ export interface SilenceSweepSummary {
   pointers_gated_out: number;
   enrolled: number;
   skipped_existing: number;
+  /** Pulados pelo cooldown de 24h — tiveram enrollment iniciado há pouco. */
+  skipped_cooldown: number;
 }
+
+/** Cooldown org-wide de re-inscrição por contato (ver header). */
+export const SILENCE_REENROLL_COOLDOWN_MS = 24 * 60 * 60 * 1000;
 
 export interface SilenceSweepDeps {
   db: SilenceSweepDb;
@@ -102,6 +122,7 @@ export async function runSilenceSweep(deps: SilenceSweepDeps): Promise<SilenceSw
     pointers_gated_out: 0,
     enrolled: 0,
     skipped_existing: 0,
+    skipped_cooldown: 0,
   };
 
   const pointers = await db.loadActiveSilencePointers();
@@ -119,6 +140,26 @@ export async function runSilenceSweep(deps: SilenceSweepDeps): Promise<SilenceSw
     if (!hit) {
       hit = resolveAgentForAutomaticTrigger(gateDb, orgId, pointerId);
       agentCache.set(key, hit);
+    }
+    return hit;
+  };
+
+  // Cooldown é ORG-WIDE — memoiza o Set por org dentro desta varredura (2
+  // pointers na mesma org não repetem a query), mesmo racional do agentCache.
+  const cooldownCache = new Map<string, Promise<Set<string>>>();
+  const loadCooldownSet = (orgId: string): Promise<Set<string>> => {
+    let hit = cooldownCache.get(orgId);
+    if (!hit) {
+      hit =
+        db.loadRecentEnrollmentContactIds === undefined
+          ? Promise.resolve(new Set<string>())
+          : db
+              .loadRecentEnrollmentContactIds(
+                orgId,
+                new Date(clock().getTime() - SILENCE_REENROLL_COOLDOWN_MS).toISOString(),
+              )
+              .then((ids) => new Set(ids));
+      cooldownCache.set(orgId, hit);
     }
     return hit;
   };
@@ -141,8 +182,13 @@ export async function runSilenceSweep(deps: SilenceSweepDeps): Promise<SilenceSw
       pointer.includeNeverReplied,
     );
     const nextEvalAt = clock().toISOString();
+    const emCooldown = await loadCooldownSet(pointer.organization_id);
 
     for (const contactId of contactIds) {
+      if (emCooldown.has(contactId)) {
+        summary.skipped_cooldown++;
+        continue;
+      }
       const { inserted } = await db.insertEnrollment({
         organization_id: pointer.organization_id,
         pointer_id: pointer.id,
@@ -273,6 +319,16 @@ export function createSupabaseSilenceSweepDb(admin: SupabaseClient): SilenceSwee
       if (!data) return null;
       const graph = flowGraphSchema.parse(data.graph);
       return graph.nodes.find((n) => n.type === "trigger")?.id ?? null;
+    },
+
+    async loadRecentEnrollmentContactIds(orgId, sinceIso) {
+      const { data, error } = await admin
+        .from("followup_enrollments")
+        .select("contact_id")
+        .eq("organization_id", orgId)
+        .gte("started_at", sinceIso);
+      if (error) throw new Error(error.message);
+      return [...new Set(((data ?? []) as Array<{ contact_id: string }>).map((r) => r.contact_id))];
     },
 
     async insertEnrollment(input) {
