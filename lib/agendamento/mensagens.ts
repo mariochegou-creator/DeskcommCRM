@@ -20,7 +20,12 @@
  *
  * Módulo PURO: a rota (confirmação) e o cron (lembretes) montam o mesmo texto.
  */
-import { formatarReuniao, ROTULO_DO_TIPO, type Reuniao } from "./reuniao";
+import {
+  formatarReuniao,
+  ROTULO_DO_TIPO,
+  type Reuniao,
+  type RoteiroDaReuniao,
+} from "./reuniao";
 
 export interface ContextoDaMensagem {
   /** Nome do contato como está no CRM. Só o primeiro nome é usado. */
@@ -305,19 +310,76 @@ export function mensagemDeRemarcacaoNoGrupo(ctx: ContextoDaMensagem): string {
 }
 
 /**
- * O aviso INTERNO de 30 min antes — vai pro WhatsApp do Mario (e de quem mais
+ * O aviso INTERNO de 1 hora antes — vai pro WhatsApp do Mario (e de quem mais
  * recebe o bom-dia), nunca pro lead. Pedido do Mario em 19/08/2026: os
  * lembretes do anti-no-show cutucavam o lead e ninguém cutucava o closer.
  *
- * Direto de propósito: quem lê está no meio de outra coisa; nome do negócio,
- * hora e contato — o resto está na Sala de Reuniões.
+ * Desde 20/08/2026 ele PERGUNTA em vez de só avisar. A razão é do próprio
+ * Mario: "às vezes não compensa fazer o material, porque o lead não vai
+ * comparecer". Gerar o roteiro de toda reunião marcada queimaria LLM em call
+ * que nem acontece — a pergunta devolve essa decisão a quem sabe respondê-la,
+ * e custa uma palavra.
+ *
+ * Direto de propósito: quem lê está no meio de outra coisa. Nome do negócio,
+ * hora, contato e a pergunta; o resto está na Sala de Reuniões.
  */
 export function mensagemDaEquipe(reuniao: Reuniao, ctx: ContextoDaMensagem): string {
   const q = formatarReuniao(new Date(reuniao.em));
   const nome = primeiroNome(ctx.nomeDoContato);
-  const linha1 = `Reunião em meia hora: ${ROTULO_DO_TIPO[reuniao.tipo]} com ${
+  const linha1 = `Reunião daqui a 1 hora: ${ROTULO_DO_TIPO[reuniao.tipo]} com ${
     (ctx.negocio ?? "").trim() || "(card sem nome)"
   }, às ${q.hora}.`;
-  const linha2 = `${nome ? `Contato: ${nome}. ` : ""}O preparo está na Sala de Reuniões.`;
-  return [linha1, linha2].join("\n");
+  const linha2 = nome ? `Contato: ${nome}.` : null;
+  const linha3 = 'Quer que eu prepare o material? Responde "sim" que eu monto e mando aqui.';
+  return [linha1, linha2, linha3].filter(Boolean).join("\n");
+}
+
+/**
+ * O material pronto, do jeito que cabe no WhatsApp: o essencial para conduzir,
+ * e o roteiro inteiro atrás de um link.
+ *
+ * A escolha de 20/08/2026 é do Mario ("resumo + link"). Roteiro SPIN completo
+ * em texto de WhatsApp vira parede de mil caracteres que ninguém lê no minuto
+ * antes de entrar na call — e é exatamente nesse minuto que ele é lido.
+ */
+export function mensagemDoMaterial(
+  reuniao: Reuniao,
+  ctx: ContextoDaMensagem,
+  roteiro: RoteiroDaReuniao,
+  link: string,
+): string {
+  const q = formatarReuniao(new Date(reuniao.em));
+  const negocio = (ctx.negocio ?? "").trim() || "(card sem nome)";
+  const partes: string[] = [
+    `Material da ${ROTULO_DO_TIPO[reuniao.tipo]} com ${negocio}, às ${q.hora}.`,
+    "",
+  ];
+
+  if (roteiro.resumo.trim()) partes.push(`Quem é: ${roteiro.resumo.trim()}`);
+  if (roteiro.dor.trim()) partes.push(`Dor provável: ${roteiro.dor.trim()}`);
+  if (roteiro.gancho.trim()) partes.push(`Abre por: ${roteiro.gancho.trim()}`);
+
+  const perguntas = roteiro.perguntas.map((x) => x.trim()).filter(Boolean).slice(0, 5);
+  if (perguntas.length > 0) {
+    partes.push("", "Perguntas:");
+    perguntas.forEach((pergunta, indice) => partes.push(`${indice + 1}. ${pergunta}`));
+  }
+
+  if (roteiro.atencao?.trim()) partes.push("", `Atenção: ${roteiro.atencao.trim()}`);
+
+  partes.push("", `Roteiro completo: ${link}`);
+
+  // O aviso de reserva vai por ÚLTIMO e existe para não enganar: material
+  // montado sem LLM é o que o card já dizia, reorganizado. Sem esta linha o
+  // closer entraria na call achando que alguém pensou no negócio dele.
+  if (roteiro.reserva) {
+    partes.push("(Montado direto do card — a IA não respondeu agora.)");
+  }
+
+  return partes.join("\n");
+}
+
+/** Quando o closer dispensa o material. Uma linha, para ele saber que foi ouvido. */
+export function mensagemDeMaterialDispensado(): string {
+  return "Beleza, não preparo. Se mudar de ideia, o preparo está na Sala de Reuniões.";
 }

@@ -3,6 +3,7 @@ import { describe, expect, it } from "vitest";
 import type { Reuniao } from "./reuniao";
 import {
   mensagemDaEquipe,
+  mensagemDoMaterial,
   mensagemDaVespera,
   mensagemDeConfirmacao,
   mensagemFinal,
@@ -98,14 +99,53 @@ describe("nome do negócio na frase", () => {
 describe("mensagemDaEquipe", () => {
   it("diz tipo, negócio, hora e contato — o essencial de quem vai atender", () => {
     const texto = mensagemDaEquipe(REUNIAO, CTX);
-    expect(texto).toContain("Reunião em meia hora: R1 com Pizzaria Dom Luigi, às 14h.");
+    expect(texto).toContain("Reunião daqui a 1 hora: R1 com Pizzaria Dom Luigi, às 14h.");
     expect(texto).toContain("Contato: Marcos.");
-    expect(texto).toContain("Sala de Reuniões");
+  });
+
+  it("pergunta pelo material — é o que dispara o resto", () => {
+    expect(mensagemDaEquipe(REUNIAO, CTX)).toContain("Quer que eu prepare o material?");
   });
 
   it("sobrevive a card sem nome e contato sem nome", () => {
     const texto = mensagemDaEquipe(REUNIAO, {});
     expect(texto).toContain("R1 com (card sem nome), às 14h.");
     expect(texto).not.toContain("Contato:");
+  });
+});
+
+describe("mensagemDoMaterial", () => {
+  const ROTEIRO = {
+    gerado_em: "2026-08-12T16:05:00.000Z",
+    resumo: "Pizzaria em Serrinha.",
+    dor: "perde pedido no pico",
+    gancho: "a entrega até Feira",
+    perguntas: ["quantos pedidos por noite?", "quem responde o WhatsApp?"],
+    situacao: [],
+    problema: [],
+    implicacao: [],
+    necessidade: [],
+    proximo_passo: "mostrar o demo",
+    atencao: null,
+  };
+
+  it("leva o essencial e o link, numerando as perguntas", () => {
+    const texto = mensagemDoMaterial(REUNIAO, CTX, ROTEIRO, "https://crm.x/app/reuniao/1");
+    expect(texto).toContain("Material da R1 com Pizzaria Dom Luigi, às 14h.");
+    expect(texto).toContain("Quem é: Pizzaria em Serrinha.");
+    expect(texto).toContain("1. quantos pedidos por noite?");
+    expect(texto).toContain("2. quem responde o WhatsApp?");
+    expect(texto).toContain("Roteiro completo: https://crm.x/app/reuniao/1");
+    expect(texto).not.toContain("Montado direto do card");
+  });
+
+  it("avisa quando o material é de reserva — não pode se passar por pensado", () => {
+    const texto = mensagemDoMaterial(
+      REUNIAO,
+      CTX,
+      { ...ROTEIRO, reserva: true },
+      "https://crm.x/app/reuniao/1",
+    );
+    expect(texto).toContain("Montado direto do card");
   });
 });

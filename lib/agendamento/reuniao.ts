@@ -25,8 +25,15 @@ const HOUR_MS = 60 * 60 * 1000;
 export const HORA_LEMBRETE_VESPERA = 18;
 /** Antecedência do último toque, em horas. */
 export const HORAS_LEMBRETE_FINAL = 1;
-/** Antecedência do aviso INTERNO (pro closer, não pro lead), em minutos. */
-export const MINUTOS_LEMBRETE_EQUIPE = 30;
+/**
+ * Antecedência do aviso INTERNO (pro closer, não pro lead), em minutos.
+ *
+ * Era 30 até 20/08/2026. Virou 60 quando o aviso deixou de ser só um cutucão e
+ * passou a PERGUNTAR se o material da reunião deve ser preparado: meia hora não
+ * dá tempo de ler a resposta, gerar o roteiro e ainda reler antes de entrar na
+ * sala. Uma hora dá.
+ */
+export const MINUTOS_LEMBRETE_EQUIPE = 60;
 
 /**
  * O expediente de reuniões: de hora em hora, das 10h às 18h (decisão do Mario
@@ -136,6 +143,19 @@ export interface AvisosDaReuniao {
    * carimbo por reunião, apagado junto quando a reunião é remarcada.
    */
   equipe?: string;
+  /**
+   * Quando o MATERIAL da reunião foi enviado, depois de o closer responder
+   * "sim" ao aviso interno. Carimbo separado do `equipe` de propósito: um diz
+   * que a pergunta saiu, o outro que a resposta foi atendida — e sem os dois o
+   * cron não sabe distinguir "ninguém respondeu" de "já mandei".
+   */
+  preparo?: string;
+  /**
+   * Quando o closer respondeu que NÃO quer o material. Fecha a pergunta sem
+   * gastar LLM: sem este carimbo, "não precisa" ficaria indistinguível de
+   * silêncio e o cron seguiria varrendo a conversa até a hora da reunião.
+   */
+  preparo_dispensado?: string;
 }
 
 /** O que fica gravado em `custom_fields.reuniao`. */
@@ -160,6 +180,36 @@ export interface Reuniao {
    * aqui é só armazenamento, para o cron não precisar conhecer a lista.
    */
   checklist?: Record<string, string>;
+  /**
+   * O material da reunião, gerado sob demanda (ver lib/agendamento/material.ts).
+   * Mora aqui, e não em tabela nova, pela mesma razão do resto do agendamento:
+   * campo de negócio entra por custom_fields até provar que merece coluna. É o
+   * que a página /app/reuniao/[leadId] lê.
+   */
+  roteiro?: RoteiroDaReuniao | null;
+}
+
+/** O material que o closer recebe antes da reunião. Gerado uma vez, relido à vontade. */
+export interface RoteiroDaReuniao {
+  gerado_em: string;
+  /** Quem é o negócio, em uma ou duas frases. */
+  resumo: string;
+  /** A dor mais provável, na forma como o dono dela falaria. */
+  dor: string;
+  /** Por onde abrir a conversa. */
+  gancho: string;
+  /** As 5 perguntas que vão no WhatsApp — o mínimo pra conduzir. */
+  perguntas: string[];
+  /** O roteiro SPIN completo, o que a página mostra. */
+  situacao: string[];
+  problema: string[];
+  implicacao: string[];
+  necessidade: string[];
+  /** O que propor no fim, e o que evitar. */
+  proximo_passo: string;
+  atencao: string | null;
+  /** `true` quando saiu sem LLM (chave fora do ar, crédito acabado). */
+  reserva?: boolean;
 }
 
 const DATA_RE = /^\d{4}-\d{2}-\d{2}$/;
@@ -285,6 +335,10 @@ export function lerReuniao(customFields: unknown): Reuniao | null {
     if (typeof a.vespera === "string") avisos.vespera = a.vespera;
     if (typeof a.final === "string") avisos.final = a.final;
     if (typeof a.equipe === "string") avisos.equipe = a.equipe;
+    if (typeof a.preparo === "string") avisos.preparo = a.preparo;
+    if (typeof a.preparo_dispensado === "string") {
+      avisos.preparo_dispensado = a.preparo_dispensado;
+    }
   }
   const checklistRaw = obj.checklist;
   const checklist: Record<string, string> = {};
@@ -304,6 +358,39 @@ export function lerReuniao(customFields: unknown): Reuniao | null {
     gcal_event_id: typeof obj.gcal_event_id === "string" ? obj.gcal_event_id : null,
     gcal_link: typeof obj.gcal_link === "string" ? obj.gcal_link : null,
     checklist,
+    roteiro: lerRoteiro(obj.roteiro),
+  };
+}
+
+/** Lista de strings vinda do jsonb, sem confiar no formato. */
+function lerLinhas(raw: unknown): string[] {
+  if (!Array.isArray(raw)) return [];
+  return raw.filter((v): v is string => typeof v === "string" && v.trim().length > 0);
+}
+
+/**
+ * Lê o roteiro gravado. Devolve `null` ao menor sinal de formato estranho: o
+ * material é opcional em toda parte que o consome, e meio roteiro na tela é
+ * pior que nenhum — o closer confiaria numa lista truncada.
+ */
+export function lerRoteiro(raw: unknown): RoteiroDaReuniao | null {
+  if (!raw || typeof raw !== "object" || Array.isArray(raw)) return null;
+  const o = raw as Record<string, unknown>;
+  const resumo = typeof o.resumo === "string" ? o.resumo : "";
+  if (!resumo.trim()) return null;
+  return {
+    gerado_em: typeof o.gerado_em === "string" ? o.gerado_em : "",
+    resumo,
+    dor: typeof o.dor === "string" ? o.dor : "",
+    gancho: typeof o.gancho === "string" ? o.gancho : "",
+    perguntas: lerLinhas(o.perguntas),
+    situacao: lerLinhas(o.situacao),
+    problema: lerLinhas(o.problema),
+    implicacao: lerLinhas(o.implicacao),
+    necessidade: lerLinhas(o.necessidade),
+    proximo_passo: typeof o.proximo_passo === "string" ? o.proximo_passo : "",
+    atencao: typeof o.atencao === "string" && o.atencao.trim() ? o.atencao : null,
+    reserva: o.reserva === true,
   };
 }
 
@@ -376,6 +463,24 @@ export function lembreteEquipeDevido(
   if (now.getTime() < instante.getTime()) return false;
   if (now.getTime() - instante.getTime() > atrasoMaximoMs) return false;
   return true;
+}
+
+/**
+ * Esta reunião ainda ESPERA uma resposta do closer sobre o material?
+ *
+ * Três condições, e a ordem importa pouco porque todas são baratas:
+ * a pergunta já saiu (`avisos.equipe`), ninguém a respondeu ainda (nem `sim`
+ * nem `não`), e a reunião não começou. Depois da hora o material não adianta
+ * mais nada — e é justamente aí que o cron pararia de gastar leitura de
+ * conversa à toa, tick após tick, por causa de um "sim" que nunca veio.
+ */
+export function respostaDePreparoPendente(reuniao: Reuniao, now: Date): boolean {
+  if (!reuniao.avisos?.equipe) return false;
+  if (reuniao.avisos.preparo) return false;
+  if (reuniao.avisos.preparo_dispensado) return false;
+  const quando = new Date(reuniao.em);
+  if (Number.isNaN(quando.getTime())) return false;
+  return now.getTime() < quando.getTime();
 }
 
 /**

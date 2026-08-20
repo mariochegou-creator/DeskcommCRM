@@ -3,7 +3,9 @@
  * aparecer na reunião.
  *
  * Roda de 5 em 5 minutos e olha só as reuniões da janela útil (ver
- * `janelaDeVarredura`): a véspera às 18h e o toque de ~1h antes. Quem decide o
+ * `janelaDeVarredura`): a véspera às 18h e o toque de ~1h antes. No mesmo
+ * passeio saem o aviso interno de 1 hora antes (que PERGUNTA se o material da
+ * reunião deve ser preparado) e a resposta a esse pedido. Quem decide o
  * QUE deve sair é `lembretesDevidos` — módulo puro, testado sem relógio; esta
  * rota só faz I/O.
  *
@@ -17,9 +19,16 @@
  * nenhum (ver `automacaoDesligada`). É a mesma chave que cala a IA nas
  * respostas — quem desliga a IA espera silêncio total, inclusive daqui.
  *
- * ZERO LLM: o texto é montado em código (lib/agendamento/mensagens.ts). Os
- * agentes da NEXO seguem sem versão publicada e isto tem de funcionar assim
- * mesmo — a mesma escolha feita no bom-dia do plano de 60 dias.
+ * ZERO LLM NOS LEMBRETES: os textos que vão pro lead são montados em código
+ * (lib/agendamento/mensagens.ts). Os agentes da NEXO seguem sem versão
+ * publicada e isto tem de funcionar assim mesmo — a mesma escolha do bom-dia
+ * do plano de 60 dias.
+ *
+ * A ÚNICA chamada de modelo daqui é o MATERIAL da reunião, e só depois de o
+ * closer responder "sim" ao aviso de 1 hora antes (ver
+ * `atenderPedidoDeMaterial`). Uma chamada por reunião pedida, e com material
+ * de reserva pronto para quando a chave falhar — nenhum lembrete depende
+ * disso para sair.
  *
  * Auth: mesmo contrato dos demais crons (Bearer INTERNAL_CRON_SECRET |
  * INTERNAL_SECRET, fail-closed).
@@ -36,14 +45,24 @@ import {
   lembreteEquipeDevido,
   lembretesDevidos,
   lerReuniao,
+  respostaDePreparoPendente,
   type Lembrete,
   type Reuniao,
 } from "@/lib/agendamento/reuniao";
+import { linkDoRoteiro } from "@/lib/agendamento/material";
+import {
+  carregarDadosDoLead,
+  gerarMaterial,
+  gravarRoteiro,
+  lerRespostaDoCloser,
+} from "@/lib/agendamento/material-gerar";
 import { garantirContato } from "@/lib/agendamento/contato";
 import { automacaoDesligada, enviarNoGrupo, enviarTexto } from "@/lib/agendamento/envio";
 import { lerGrupo } from "@/lib/agendamento/grupo";
 import {
   mensagemDaEquipe,
+  mensagemDeMaterialDispensado,
+  mensagemDoMaterial,
   TEXTO_DO_LEMBRETE,
   TEXTO_DO_LEMBRETE_NO_GRUPO,
 } from "@/lib/agendamento/mensagens";
@@ -61,6 +80,8 @@ interface LinhaDeLead {
   organization_id: string;
   contact_id: string | null;
   title: string | null;
+  description: string | null;
+  tags: string[] | null;
   custom_fields: unknown;
   contacts: { name: string | null; display_name: string | null } | null;
 }
@@ -86,7 +107,9 @@ async function handle(req: NextRequest): Promise<Response> {
   // hora civil viver em campos separados.
   const { data, error } = await admin
     .from("crm_leads")
-    .select("id, organization_id, contact_id, title, custom_fields, contacts:contact_id(name, display_name)")
+    .select(
+      "id, organization_id, contact_id, title, description, tags, custom_fields, contacts:contact_id(name, display_name)",
+    )
     .not("custom_fields->reuniao", "is", null)
     .gte("custom_fields->reuniao->>em", janela.de)
     .lte("custom_fields->reuniao->>em", janela.ate)
@@ -103,6 +126,8 @@ async function handle(req: NextRequest): Promise<Response> {
   let semNada = 0;
   let desligados = 0;
   let equipeEnviados = 0;
+  let materiaisEnviados = 0;
+  let materiaisDispensados = 0;
 
   // Cache por TICK, não por processo: o interruptor é de banco e tem de valer no
   // minuto em que muda. Guardar no módulo obrigaria a reiniciar a VPS para
@@ -162,6 +187,19 @@ async function handle(req: NextRequest): Promise<Response> {
         requestId,
       });
       equipeEnviados += resultado.enviados;
+      falhados += resultado.falhados;
+    } else if (respostaDePreparoPendente(reuniao, now)) {
+      // A pergunta já saiu num tick anterior; aqui só se lê a resposta. Fica
+      // no `else` de propósito: no tick em que o aviso NASCE não existe
+      // resposta possível, e a leitura seria uma ida ao banco garantidamente
+      // vazia para toda reunião do dia.
+      const resultado = await atenderPedidoDeMaterial(admin, linha, reuniao, nomeDoContato, {
+        configDaOrg,
+        requestId,
+        now,
+      });
+      materiaisEnviados += resultado.enviados;
+      materiaisDispensados += resultado.dispensados;
       falhados += resultado.falhados;
     }
 
@@ -255,6 +293,8 @@ async function handle(req: NextRequest): Promise<Response> {
       sem_lembrete: semNada,
       automacao_desligada: desligados,
       equipe_enviados: equipeEnviados,
+      materiais_enviados: materiaisEnviados,
+      materiais_dispensados: materiaisDispensados,
     },
     requestId,
   });
@@ -267,6 +307,8 @@ async function handle(req: NextRequest): Promise<Response> {
       sem_lembrete: semNada,
       automacao_desligada: desligados,
       equipe_enviados: equipeEnviados,
+      materiais_enviados: materiaisEnviados,
+      materiais_dispensados: materiaisDispensados,
     },
     { requestId },
   );
@@ -363,6 +405,151 @@ async function avisarEquipe(
 }
 
 /**
+ * O outro lado da pergunta de 1 hora antes: lê a resposta do closer e, se ele
+ * pediu, monta o material e manda.
+ *
+ * A ORDEM É CARIMBA-DEPOIS-FAZ, igual ao resto deste cron. O carimbo sai antes
+ * da chamada ao modelo porque gerar o roteiro leva dezenas de segundos e o
+ * tick seguinte chega em 5 minutos: sem ele, uma geração lenta viraria duas
+ * gerações e dois materiais no WhatsApp — o dobro do custo e a metade da
+ * confiança. Falhando o envio para TODO mundo, o carimbo é desfeito e o
+ * próximo tick tenta de novo.
+ *
+ * A resposta é lida nas conversas dos MESMOS destinatários do bom-dia: quem
+ * recebeu a pergunta é quem pode respondê-la. Um "sim" vindo de outro número
+ * não é ignorado por desconfiança — é que ele não chegaria a esta conversa.
+ */
+async function atenderPedidoDeMaterial(
+  admin: ReturnType<typeof createAdminClient>,
+  linha: LinhaDeLead,
+  reuniao: Reuniao,
+  nomeDoContato: string | null,
+  deps: {
+    configDaOrg: (organizationId: string) => Promise<SixtyDayBriefConfig>;
+    requestId: string;
+    now: Date;
+  },
+): Promise<{ enviados: number; dispensados: number; falhados: number }> {
+  const nada = { enviados: 0, dispensados: 0, falhados: 0 };
+  const perguntadoEm = reuniao.avisos?.equipe;
+  if (!perguntadoEm) return nada;
+
+  const cfg = await deps.configDaOrg(linha.organization_id);
+  if (cfg.recipients.length === 0) return nada;
+
+  const contatos: string[] = [];
+  for (const destinatario of cfg.recipients) {
+    try {
+      contatos.push(
+        await garantirContato(
+          admin,
+          linha.organization_id,
+          destinatario.name,
+          destinatario.phone,
+        ),
+      );
+    } catch {
+      // Um destinatário sem contato resolvível não pode calar os outros.
+    }
+  }
+  if (contatos.length === 0) return nada;
+
+  const resposta = await lerRespostaDoCloser(
+    admin,
+    linha.organization_id,
+    contatos,
+    perguntadoEm,
+  );
+  if (!resposta) return nada;
+
+  const agora = deps.now.toISOString();
+
+  if (resposta === "nao") {
+    if (!(await carimbar(admin, linha, reuniao, "preparo_dispensado", agora))) {
+      return { ...nada, falhados: 1 };
+    }
+    await responderNoWhatsApp(admin, linha, reuniao, contatos, mensagemDeMaterialDispensado(), {
+      tipo: "material_dispensado",
+      requestId: deps.requestId,
+    });
+    return { ...nada, dispensados: 1 };
+  }
+
+  if (!(await carimbar(admin, linha, reuniao, "preparo", agora))) {
+    return { ...nada, falhados: 1 };
+  }
+
+  const dados = await carregarDadosDoLead(admin, linha, nomeDoContato);
+  const roteiro = await gerarMaterial(dados, reuniao, linha.organization_id, deps.now);
+  await gravarRoteiro(admin, linha, roteiro);
+  // Mantém o objeto em memória em dia: um rollback de carimbo regrava
+  // `{ ...reuniao }` e apagaria o roteiro recém-escrito.
+  reuniao.roteiro = roteiro;
+
+  const corpo = mensagemDoMaterial(
+    reuniao,
+    { nomeDoContato, negocio: linha.title },
+    roteiro,
+    linkDoRoteiro(env.NEXT_PUBLIC_APP_URL, linha.id),
+  );
+  const { enviados, falhados } = await responderNoWhatsApp(admin, linha, reuniao, contatos, corpo, {
+    tipo: "material",
+    requestId: deps.requestId,
+  });
+
+  if (enviados === 0) {
+    await carimbar(admin, linha, reuniao, "preparo", null);
+  }
+  return { enviados, dispensados: 0, falhados };
+}
+
+/** Manda o mesmo texto para todos os destinatários do brief. Nunca lança. */
+async function responderNoWhatsApp(
+  admin: ReturnType<typeof createAdminClient>,
+  linha: LinhaDeLead,
+  reuniao: Reuniao,
+  contatos: string[],
+  corpo: string,
+  ctx: { tipo: string; requestId: string },
+): Promise<{ enviados: number; falhados: number }> {
+  let enviados = 0;
+  let falhados = 0;
+  for (const contactId of contatos) {
+    try {
+      const envio = await enviarTexto(admin, {
+        organizationId: linha.organization_id,
+        contactId,
+        corpo,
+        metadata: {
+          meeting_lead_id: linha.id,
+          meeting_message: ctx.tipo,
+          meeting_at: reuniao.em,
+        },
+        origem: `cron:meeting-reminders:${ctx.tipo}`,
+        requestId: ctx.requestId,
+      });
+      if (envio.ok) enviados++;
+      else {
+        falhados++;
+        logger.warn("[meeting-reminders] material não saiu", {
+          leadId: linha.id,
+          motivo: envio.motivo,
+          requestId: ctx.requestId,
+        });
+      }
+    } catch (err) {
+      falhados++;
+      logger.warn("[meeting-reminders] material não saiu", {
+        leadId: linha.id,
+        motivo: err instanceof Error ? err.message : String(err),
+        requestId: ctx.requestId,
+      });
+    }
+  }
+  return { enviados, falhados };
+}
+
+/**
  * Escreve (ou apaga) o carimbo de um lembrete dentro de
  * `custom_fields.reuniao.avisos`. Mantém o objeto em memória em sincronia para
  * o segundo lembrete do mesmo lead no mesmo tick não apagar o primeiro.
@@ -371,7 +558,7 @@ async function carimbar(
   admin: ReturnType<typeof createAdminClient>,
   linha: LinhaDeLead,
   reuniao: Reuniao,
-  lembrete: Lembrete | "equipe",
+  lembrete: Lembrete | "equipe" | "preparo" | "preparo_dispensado",
   quando: string | null,
 ): Promise<boolean> {
   const avisos = { ...(reuniao.avisos ?? {}) };

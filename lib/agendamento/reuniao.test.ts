@@ -11,6 +11,7 @@ import {
   lembreteEquipeDevido,
   lembretesDevidos,
   lerReuniao,
+  respostaDePreparoPendente,
   type Reuniao,
 } from "./reuniao";
 
@@ -59,8 +60,8 @@ describe("instantes dos lembretes", () => {
     expect(instanteLembreteFinal(new Date(EM)).toISOString()).toBe("2026-08-12T16:00:00.000Z");
   });
 
-  it("equipe é meia hora antes", () => {
-    expect(instanteLembreteEquipe(new Date(EM)).toISOString()).toBe("2026-08-12T16:30:00.000Z");
+  it("equipe é uma hora antes (era meia hora até 20/08/2026)", () => {
+    expect(instanteLembreteEquipe(new Date(EM)).toISOString()).toBe("2026-08-12T16:00:00.000Z");
   });
 });
 
@@ -147,20 +148,69 @@ describe("lerReuniao", () => {
     const lida = lerReuniao({ reuniao: { em: EM, avisos: { equipe: "x" } } });
     expect(lida?.avisos).toEqual({ equipe: "x" });
   });
+
+  it("mantém os carimbos do material — mesma peneira, mesmo risco", () => {
+    const lida = lerReuniao({
+      reuniao: { em: EM, avisos: { equipe: "a", preparo: "b", preparo_dispensado: "c" } },
+    });
+    expect(lida?.avisos).toEqual({ equipe: "a", preparo: "b", preparo_dispensado: "c" });
+  });
+
+  it("mantém o roteiro gravado", () => {
+    const lida = lerReuniao({
+      reuniao: {
+        em: EM,
+        roteiro: { resumo: "Pizzaria.", perguntas: ["quantos pedidos?"], atencao: "" },
+      },
+    });
+    expect(lida?.roteiro?.resumo).toBe("Pizzaria.");
+    expect(lida?.roteiro?.perguntas).toEqual(["quantos pedidos?"]);
+    // Campo vazio vira null: o painel decide mostrar pelo null, não pela string.
+    expect(lida?.roteiro?.atencao).toBeNull();
+  });
+
+  it("roteiro sem resumo não é roteiro", () => {
+    const lida = lerReuniao({ reuniao: { em: EM, roteiro: { perguntas: ["x"] } } });
+    expect(lida?.roteiro).toBeNull();
+  });
+});
+
+describe("respostaDePreparoPendente", () => {
+  it("espera resposta depois que a pergunta saiu", () => {
+    const r = reuniao({ avisos: { equipe: "2026-08-12T16:00:00.000Z" } });
+    expect(respostaDePreparoPendente(r, new Date("2026-08-12T16:10:00.000Z"))).toBe(true);
+  });
+
+  it("não espera nada antes de a pergunta sair", () => {
+    expect(respostaDePreparoPendente(reuniao(), new Date("2026-08-12T16:10:00.000Z"))).toBe(false);
+  });
+
+  it("para de esperar depois de atendida ou dispensada", () => {
+    const feito = reuniao({ avisos: { equipe: "a", preparo: "b" } });
+    const dispensado = reuniao({ avisos: { equipe: "a", preparo_dispensado: "b" } });
+    const t = new Date("2026-08-12T16:10:00.000Z");
+    expect(respostaDePreparoPendente(feito, t)).toBe(false);
+    expect(respostaDePreparoPendente(dispensado, t)).toBe(false);
+  });
+
+  it("para de esperar depois que a reunião começou — material atrasado não serve", () => {
+    const r = reuniao({ avisos: { equipe: "2026-08-12T16:00:00.000Z" } });
+    expect(respostaDePreparoPendente(r, new Date("2026-08-12T17:01:00.000Z"))).toBe(false);
+  });
 });
 
 describe("lembreteEquipeDevido", () => {
-  it("dispara na meia hora antes", () => {
-    expect(lembreteEquipeDevido(reuniao(), new Date("2026-08-12T16:31:00.000Z"))).toBe(true);
+  it("dispara na hora antes", () => {
+    expect(lembreteEquipeDevido(reuniao(), new Date("2026-08-12T16:01:00.000Z"))).toBe(true);
   });
 
   it("não dispara antes da hora", () => {
-    expect(lembreteEquipeDevido(reuniao(), new Date("2026-08-12T16:29:00.000Z"))).toBe(false);
+    expect(lembreteEquipeDevido(reuniao(), new Date("2026-08-12T15:59:00.000Z"))).toBe(false);
   });
 
   it("não repete o que já foi carimbado", () => {
-    const r = reuniao({ avisos: { equipe: "2026-08-12T16:30:00.000Z" } });
-    expect(lembreteEquipeDevido(r, new Date("2026-08-12T16:35:00.000Z"))).toBe(false);
+    const r = reuniao({ avisos: { equipe: "2026-08-12T16:00:00.000Z" } });
+    expect(lembreteEquipeDevido(r, new Date("2026-08-12T16:05:00.000Z"))).toBe(false);
   });
 
   it("cala a boca depois que a reunião começou", () => {
