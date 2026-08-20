@@ -63,6 +63,26 @@ export const sixtyDayBriefSchema = z
   .catch({ enabled: false, session_name: null, recipients: [] });
 export type SixtyDayBriefConfig = z.infer<typeof sixtyDayBriefSchema>;
 
+/**
+ * organizations.settings.grupo_da_reuniao — QUEM fala no grupo da reunião.
+ *
+ * Sem isto o grupo nasce pela conexão que já conversa com o lead (o número do
+ * Mario), e aí o dono da conexão NÃO entra como participante: ele vira a voz da
+ * assistente e perde a voz própria dentro do grupo. Apontando aqui uma conexão
+ * dedicada ("Nexo IA"), o grupo nasce por ela e o time inteiro entra como gente.
+ *
+ * `session_name` é o `channel_sessions.waha_session_name` — a MESMA chave que
+ * `sixty_day_brief.session_name` usa. null (ou sessão fora do ar) ⇒ volta ao
+ * comportamento antigo, que funciona; degradar para o número do lead é
+ * infinitamente melhor do que não criar o grupo.
+ */
+export const grupoDaReuniaoSchema = z
+  .object({
+    session_name: z.string().min(1).max(120).nullable().catch(null),
+  })
+  .catch({ session_name: null });
+export type GrupoDaReuniaoConfig = z.infer<typeof grupoDaReuniaoSchema>;
+
 export type Locale = (typeof LOCALES)[number];
 
 export const profileSchema = z.object({

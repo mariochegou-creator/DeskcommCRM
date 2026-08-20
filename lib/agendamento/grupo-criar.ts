@@ -15,7 +15,7 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 
 import { logger } from "@/lib/logger";
-import { sixtyDayBriefSchema } from "@/lib/schemas/settings";
+import { grupoDaReuniaoSchema, sixtyDayBriefSchema } from "@/lib/schemas/settings";
 import { getWahaClient } from "@/lib/waha/client";
 
 import { resolverSessao } from "./envio";
@@ -69,15 +69,36 @@ export async function garantirGrupoDaReuniao(
     .maybeSingle();
   const telefoneDoLead = (contatoRow as { phone_number: string | null } | null)?.phone_number ?? null;
 
-  const sessionId = await resolverSessao(admin, entrada.organizationId, entrada.contactId);
+  // As settings da org saem numa leitura só: decidem QUEM cria o grupo
+  // (`grupo_da_reuniao.session_name`) e QUEM entra nele
+  // (`sixty_day_brief.recipients`).
+  const { data: orgRow } = await admin
+    .from("organizations")
+    .select("settings")
+    .eq("id", entrada.organizationId)
+    .maybeSingle();
+  const settingsDaOrg = objeto((orgRow as { settings?: unknown } | null)?.settings);
+
+  const escolhida = await sessaoDaAssistente(
+    admin,
+    entrada.organizationId,
+    grupoDaReuniaoSchema.parse(settingsDaOrg["grupo_da_reuniao"]).session_name,
+  );
+
+  const sessionId =
+    escolhida?.id ??
+    (await resolverSessao(admin, entrada.organizationId, entrada.contactId));
   if (!sessionId) return { ok: false, motivo: "sem_sessao" };
 
-  const { data: sessaoRow } = await admin
-    .from("channel_sessions")
-    .select("waha_session_name, phone_number")
-    .eq("id", sessionId)
-    .maybeSingle();
-  const sessao = sessaoRow as { waha_session_name: string; phone_number: string | null } | null;
+  let sessao = escolhida?.sessao ?? null;
+  if (!sessao) {
+    const { data: sessaoRow } = await admin
+      .from("channel_sessions")
+      .select("waha_session_name, phone_number")
+      .eq("id", sessionId)
+      .maybeSingle();
+    sessao = sessaoRow as { waha_session_name: string; phone_number: string | null } | null;
+  }
   if (!sessao) return { ok: false, motivo: "sem_sessao" };
 
   // Grupo já existe: só falta (talvez) o espelho no inbox. Não se chama o WAHA.
@@ -108,14 +129,7 @@ export async function garantirGrupoDaReuniao(
   // O time sai da MESMA lista do bom-dia (`sixty_day_brief.recipients`) — a
   // decisão é a mesma do aviso de 30 min no cron: telefone do time é dado de
   // tenant e uma segunda lista divergiria na primeira troca de chip.
-  const { data: orgRow } = await admin
-    .from("organizations")
-    .select("settings")
-    .eq("id", entrada.organizationId)
-    .maybeSingle();
-  const cfg = sixtyDayBriefSchema.parse(
-    objeto((orgRow as { settings?: unknown } | null)?.settings)["sixty_day_brief"],
-  );
+  const cfg = sixtyDayBriefSchema.parse(settingsDaOrg["sixty_day_brief"]);
 
   const participantes = participantesDoGrupo({
     telefoneDoLead,
@@ -184,6 +198,53 @@ export async function garantirGrupoDaReuniao(
  * contato próprio. Quem de fato escreveu cada mensagem fica em
  * `messages.metadata.autor_no_grupo`.
  */
+/**
+ * A conexão dedicada da assistente, quando o tenant apontou uma.
+ *
+ * Devolve null — e o chamador cai na conexão que já fala com o lead — em três
+ * casos: nada configurado, nome que não existe mais, e sessão fora do ar. O
+ * último é o que mais vai acontecer na prática (chip sem bateria, sessão caída)
+ * e é justamente onde degradar importa: um grupo criado pelo número errado é um
+ * arranhão; reunião sem grupo nenhum é o no-show que tudo isto existe para
+ * evitar.
+ */
+async function sessaoDaAssistente(
+  admin: SupabaseClient,
+  organizationId: string,
+  sessionName: string | null,
+): Promise<{ id: string; sessao: { waha_session_name: string; phone_number: string | null } } | null> {
+  if (!sessionName) return null;
+
+  const { data } = await admin
+    .from("channel_sessions")
+    .select("id, waha_session_name, phone_number, status, archived_at")
+    .eq("organization_id", organizationId)
+    .eq("waha_session_name", sessionName)
+    .is("archived_at", null)
+    .maybeSingle();
+
+  const linha = data as {
+    id: string;
+    waha_session_name: string;
+    phone_number: string | null;
+    status: string;
+  } | null;
+
+  if (!linha || linha.status !== "WORKING") {
+    logger.warn("[grupo] conexão da assistente indisponível — usando a do lead", {
+      organizationId,
+      sessionName,
+      status: linha?.status ?? "inexistente",
+    });
+    return null;
+  }
+
+  return {
+    id: linha.id,
+    sessao: { waha_session_name: linha.waha_session_name, phone_number: linha.phone_number },
+  };
+}
+
 async function espelharNoInbox(
   admin: SupabaseClient,
   args: {
