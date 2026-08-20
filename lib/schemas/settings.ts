@@ -79,8 +79,18 @@ export type SixtyDayBriefConfig = z.infer<typeof sixtyDayBriefSchema>;
 export const grupoDaReuniaoSchema = z
   .object({
     session_name: z.string().min(1).max(120).nullable().catch(null),
+    /**
+     * A conexão da assistente entra no CRM SÓ pelos grupos: mensagem 1:1 dela é
+     * descartada antes de virar conversa — e antes de o corpo ser registrado.
+     *
+     * Existe porque a primeira conexão apontada aqui pode ser um WhatsApp
+     * pessoal emprestado: sem isto, conversa de família viraria ficha de lead no
+     * inbox. Vem ligado por padrão; desligar só faz sentido num chip dedicado,
+     * onde um lead pode responder no privado e a mensagem precisa entrar.
+     */
+    so_grupo: z.boolean().catch(true),
   })
-  .catch({ session_name: null });
+  .catch({ session_name: null, so_grupo: true });
 export type GrupoDaReuniaoConfig = z.infer<typeof grupoDaReuniaoSchema>;
 
 export type Locale = (typeof LOCALES)[number];

@@ -16,7 +16,12 @@ import type { NextRequest, NextResponse } from "next/server";
 import { fail, ok } from "@/lib/api/wrappers";
 import { audit } from "@/lib/audit";
 import { createAdminClient } from "@/lib/supabase/admin";
-import { dispatchWahaEvent, verifyHmacSha512, type WahaEnvelope } from "@/lib/waha/ingest";
+import {
+  dispatchWahaEvent,
+  ehConexaoSoDeGrupo,
+  verifyHmacSha512,
+  type WahaEnvelope,
+} from "@/lib/waha/ingest";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
@@ -139,6 +144,32 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
       attempts: 0,
     });
     return fail("unauthenticated", "invalid_signature", 401, { requestId });
+  }
+
+  // A conexão da assistente entra SÓ pelos grupos. O corte é aqui, antes do
+  // log: `raw_body` guarda o corpo cru de todo evento, e sem esta saída uma
+  // conversa pessoal no número emprestado ficaria escrita no banco do CRM
+  // mesmo sem nunca aparecer no inbox. Fica o registro de que chegou — sem o
+  // conteúdo.
+  if (await ehConexaoSoDeGrupo(admin, session, envelope)) {
+    await admin.from("webhook_events_log").insert({
+      organization_id: session.organization_id,
+      channel_session_id: session.id,
+      provider: "waha",
+      webhook_path_token: null,
+      http_method: "POST",
+      raw_body: "",
+      payload_parsed: { event: envelope.event ?? "unknown" },
+      signature_header: sigHeader ?? null,
+      valid_signature: validSignature || hmacSkipped,
+      event_type: envelope.event ?? "unknown",
+      external_id: null,
+      status: "processed",
+      processed_at: new Date().toISOString(),
+      error_message: "skip:so_grupo",
+      attempts: 0,
+    });
+    return ok({ accepted: true }, { requestId });
   }
 
   const eventType = envelope.event ?? "unknown";

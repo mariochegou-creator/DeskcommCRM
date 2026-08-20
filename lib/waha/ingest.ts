@@ -16,6 +16,7 @@ import { analisarVCard } from "@/lib/contacts/vcard";
 import type { createAdminClient } from "@/lib/supabase/admin";
 import { ackToStatus } from "@/lib/types/messaging";
 import { bareWaMessageId } from "@/lib/waha/message-id";
+import { grupoDaReuniaoSchema } from "@/lib/schemas/settings";
 import { ehPedidoDeOptOut } from "@/lib/waha/opt-out";
 
 type Admin = ReturnType<typeof createAdminClient>;
@@ -871,6 +872,49 @@ async function handleSessionStatus(
   // atrasado do WAHA ressuscita a linha arquivada para WORKING — foi o que
   // aconteceu no primeiro número removido em 09/08/2026.
   await admin.from("channel_sessions").update(update).eq("id", session.id).is("archived_at", null);
+}
+
+/**
+ * A conexão da assistente é MUDA fora dos grupos — e este é o corte mais cedo
+ * possível, ANTES de `webhook_events_log` gravar `raw_body`.
+ *
+ * Descartar só na ingestão não bastaria: o log guarda o corpo cru de todo
+ * evento que chega, então uma conversa de família no número emprestado ficaria
+ * escrita no banco do CRM mesmo sem nunca aparecer no inbox. Quem chama registra
+ * o evento sem corpo, com `skip:so_grupo`.
+ *
+ * Só corta `message`/`message.any`: o `message.ack` de uma fala do grupo pode
+ * chegar sem chat identificável, e barrá-lo tiraria o "entregue/lido" das
+ * mensagens que a assistente de fato mandou. Ack não carrega texto.
+ */
+export async function ehConexaoSoDeGrupo(
+  admin: Admin,
+  session: { organization_id: string; waha_session_name: string },
+  envelope: WahaEnvelope,
+): Promise<boolean> {
+  const evento = envelope.event ?? "";
+  if (evento !== "message" && evento !== "message.any") return false;
+
+  const p = envelope.payload ?? {};
+  const chatId = (p.fromMe ? p.to : p.from) ?? "";
+  // Grupo já tem a sua própria trava (`conversaDoGrupo`): entra só o que o CRM
+  // criou. Aqui cuida-se do resto — o 1:1.
+  if (chatId.endsWith("@g.us")) return false;
+
+  const { data } = await admin
+    .from("organizations")
+    .select("settings")
+    .eq("id", session.organization_id)
+    .maybeSingle();
+
+  const settings = (data as { settings?: unknown } | null)?.settings;
+  const cfg = grupoDaReuniaoSchema.parse(
+    settings && typeof settings === "object" && !Array.isArray(settings)
+      ? (settings as Record<string, unknown>)["grupo_da_reuniao"]
+      : undefined,
+  );
+
+  return cfg.so_grupo && cfg.session_name === session.waha_session_name;
 }
 
 /**
