@@ -21,6 +21,25 @@ describe("nomeDoGrupo", () => {
     expect(nomeDoGrupo("Pizzaria Dom Luigi")).toBe("Nexo IA ✕ Pizzaria Dom Luigi");
   });
 
+  it("com reunião marcada, a hora abre o nome — é o lembrete permanente", () => {
+    // 26/08/2026 14:00 na Bahia = 17:00 UTC.
+    const quando = new Date("2026-08-26T17:00:00.000Z");
+    expect(nomeDoGrupo("Pizzaria Dom Luigi", quando)).toBe(
+      "Reunião 26/08 às 14h — Nexo IA ✕ Pizzaria Dom Luigi",
+    );
+  });
+
+  it("meia hora aparece — 14h30, não 14h", () => {
+    const quando = new Date("2026-08-26T17:30:00.000Z");
+    expect(nomeDoGrupo("Loja do João", quando)).toBe(
+      "Reunião 26/08 às 14h30 — Nexo IA ✕ Loja do João",
+    );
+  });
+
+  it("data inválida não vira 'Reunião NaN' — cai no nome simples", () => {
+    expect(nomeDoGrupo("Pizzaria", new Date("lixo"))).toBe("Nexo IA ✕ Pizzaria");
+  });
+
   it("card sem título não vira 'Nexo IA ✕ '", () => {
     expect(nomeDoGrupo("")).toBe("Nexo IA");
     expect(nomeDoGrupo(null)).toBe("Nexo IA");

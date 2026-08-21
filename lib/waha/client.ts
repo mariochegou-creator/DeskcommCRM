@@ -187,6 +187,25 @@ export class WahaClient {
   }
 
   /**
+   * Renomeia um grupo. Existe por causa da hora no nome ("Reunião 26/08 às
+   * 14h — …"): remarcar sem renomear deixaria o grupo anunciando a hora velha.
+   */
+  async setGroupSubject(session: string, groupId: string, subject: string): Promise<void> {
+    const res = await fetch(
+      `${this.baseUrl}/api/${encodeURIComponent(session)}/groups/${encodeURIComponent(groupId)}/subject`,
+      {
+        method: "PUT",
+        headers: { "X-Api-Key": this.apiKey, "Content-Type": "application/json" },
+        body: JSON.stringify({ subject }),
+      },
+    );
+    if (!res.ok) {
+      const body = await res.text().catch(() => "");
+      throw new Error(`waha_group_subject_${res.status}: ${body.slice(0, 200)}`);
+    }
+  }
+
+  /**
    * A foto de perfil que o próprio WhatsApp mostra para este contato.
    *
    * `null` é resposta normal, não erro: contato sem foto, ou com privacidade

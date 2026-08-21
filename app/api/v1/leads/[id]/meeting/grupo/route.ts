@@ -63,10 +63,13 @@ export async function POST(
   }
 
   const admin = createAdminClient();
+  const reuniaoDoCard = lerReuniao(lead.custom_fields);
   const resultado = await garantirGrupoDaReuniao(admin, {
     organizationId: lead.organization_id,
     leadId,
     negocio: lead.title,
+    // Card com reunião marcada ganha a hora no nome; sem reunião, nome simples.
+    reuniaoEm: reuniaoDoCard ? new Date(reuniaoDoCard.em) : null,
     contactId: lead.contact_id,
     criadoPor: user.id,
     requestId,
@@ -82,7 +85,7 @@ export async function POST(
   const { grupo, jaExistia } = resultado;
 
   // A abertura só sai em grupo NOVO e com reunião marcada — ver o cabeçalho.
-  const reuniao = lerReuniao(lead.custom_fields);
+  const reuniao = reuniaoDoCard;
   let aberturaEnviada = false;
   if (!jaExistia && reuniao && grupo.conversation_id) {
     const { data: contato } = lead.contact_id

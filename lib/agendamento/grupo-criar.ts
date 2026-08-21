@@ -39,6 +39,11 @@ export interface EntradaDoGrupo {
   leadId: string;
   /** Título do card — vira o nome do grupo. */
   negocio: string | null | undefined;
+  /**
+   * Instante da reunião, quando há uma marcada — entra no NOME do grupo
+   * ("Reunião 26/08 às 14h — …"). Null/ausente = nome sem hora.
+   */
+  reuniaoEm?: Date | null;
   contactId: string | null;
   criadoPor?: string | null;
   requestId: string;
@@ -103,8 +108,44 @@ export async function garantirGrupoDaReuniao(
   }
   if (!sessao) return { ok: false, motivo: "sem_sessao" };
 
-  // Grupo já existe: só falta (talvez) o espelho no inbox. Não se chama o WAHA.
+  // Grupo já existe: garante o espelho no inbox e, com a hora no nome, o
+  // ÚNICO toque no WAHA é renomear quando a reunião mudou — sem isso, remarcar
+  // deixaria o grupo anunciando a hora velha na lista de conversas do lead.
+  // Melhor-esforço: renomear falhando (sessão caída, motor sem o endpoint), o
+  // nome antigo fica e nada mais é afetado.
   if (jaGravado) {
+    const nomeAlvo = nomeDoGrupo(entrada.negocio, entrada.reuniaoEm);
+    let nomeAtual = jaGravado.nome;
+    if (entrada.reuniaoEm && nomeAlvo !== jaGravado.nome) {
+      const client = getWahaClient();
+      if (client) {
+        try {
+          await client.setGroupSubject(sessao.waha_session_name, jaGravado.chat_id, nomeAlvo);
+          nomeAtual = nomeAlvo;
+          // O espelho no inbox mostra `metadata.group_name` — atualiza junto,
+          // senão a lista de conversas segue com a hora velha.
+          if (jaGravado.conversation_id) {
+            const { data: conv } = await admin
+              .from("conversations")
+              .select("metadata")
+              .eq("id", jaGravado.conversation_id)
+              .maybeSingle();
+            const meta = objeto((conv as { metadata?: unknown } | null)?.metadata);
+            await admin
+              .from("conversations")
+              .update({ metadata: { ...meta, group_name: nomeAlvo } })
+              .eq("id", jaGravado.conversation_id);
+          }
+        } catch (err) {
+          logger.warn("[grupo] renomear para a hora nova falhou — nome antigo fica", {
+            leadId: entrada.leadId,
+            error: err instanceof Error ? err.message : String(err),
+            requestId: entrada.requestId,
+          });
+        }
+      }
+    }
+
     const conversationId =
       jaGravado.conversation_id ??
       (await espelharNoInbox(admin, {
@@ -112,12 +153,12 @@ export async function garantirGrupoDaReuniao(
         contactId: entrada.contactId,
         sessionId,
         chatId: jaGravado.chat_id,
-        nome: jaGravado.nome,
+        nome: nomeAtual,
         leadId: entrada.leadId,
       }));
 
-    const grupo = { ...jaGravado, conversation_id: conversationId };
-    if (conversationId !== jaGravado.conversation_id) {
+    const grupo = { ...jaGravado, nome: nomeAtual, conversation_id: conversationId };
+    if (conversationId !== jaGravado.conversation_id || nomeAtual !== jaGravado.nome) {
       await gravar(admin, entrada, camposAtuais, grupo);
     }
     return { ok: true, grupo, jaExistia: true };
@@ -139,7 +180,7 @@ export async function garantirGrupoDaReuniao(
     telefoneDaSessao: sessao.phone_number,
   });
 
-  const nome = nomeDoGrupo(entrada.negocio);
+  const nome = nomeDoGrupo(entrada.negocio, entrada.reuniaoEm);
 
   let criado: { chatId: string; faltaram: string[] };
   try {

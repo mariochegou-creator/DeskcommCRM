@@ -23,6 +23,8 @@
 import { chaveWhatsAppBR } from "@/lib/calls/phone";
 import { chatIdDeTelefone } from "@/lib/waha/grupo";
 
+import { formatarReuniao } from "./reuniao";
+
 /** O que fica gravado em `custom_fields.grupo`. */
 export interface GrupoDaReuniao {
   /** Endereço do grupo no WhatsApp (`…@g.us`). É a chave de tudo. */
@@ -52,19 +54,36 @@ export const LIMITE_NOME_DO_GRUPO = 100;
 const PREFIXO_DO_GRUPO = "Nexo IA";
 
 /**
- * "Nexo IA ✕ Pizzaria Dom Luigi".
+ * "Reunião 26/08 às 14h — Nexo IA ✕ Pizzaria Dom Luigi".
  *
- * O nome do negócio vem DEPOIS do nosso porque a lista de conversas do
- * WhatsApp corta o fim: o dono precisa reconhecer de quem é o grupo pelo começo.
+ * A reunião vem PRIMEIRO por pedido do Mario (21/08): o nome do grupo é o
+ * lembrete que o lead não consegue ignorar — está na lista de conversas dele o
+ * dia inteiro, antes de qualquer mensagem. A lista do WhatsApp corta o FIM do
+ * nome, então a ordem é exatamente a ordem de importância: a hora (para o
+ * lead), quem somos (para os dois lados), o negócio (para o time, que tem
+ * vários grupos iguais).
+ *
+ * Sem `quando` (grupo criado à mão num card sem reunião marcada), volta ao
+ * formato antigo "Nexo IA ✕ negócio" — inventar hora seria pior que não ter.
+ *
+ * ⚠️ Como a hora agora faz parte do nome, REMARCAR tem que RENOMEAR — senão o
+ * grupo vira um lembrete da hora errada. Quem cuida é `grupo-criar.ts`.
  */
-export function nomeDoGrupo(negocio: string | null | undefined): string {
+export function nomeDoGrupo(negocio: string | null | undefined, quando?: Date | null): string {
   const limpo = (negocio ?? "").trim().replace(/\s+/g, " ");
-  if (!limpo) return PREFIXO_DO_GRUPO;
-  const cheio = `${PREFIXO_DO_GRUPO} ✕ ${limpo}`;
+
+  let prefixo = PREFIXO_DO_GRUPO;
+  if (quando && !Number.isNaN(quando.getTime())) {
+    const f = formatarReuniao(quando);
+    prefixo = `Reunião ${f.diaMes} às ${f.hora} — ${PREFIXO_DO_GRUPO}`;
+  }
+
+  if (!limpo) return prefixo;
+  const cheio = `${prefixo} ✕ ${limpo}`;
   if (cheio.length <= LIMITE_NOME_DO_GRUPO) return cheio;
   const cortado = cheio.slice(0, LIMITE_NOME_DO_GRUPO);
   const ultimoEspaco = cortado.lastIndexOf(" ");
-  return (ultimoEspaco > PREFIXO_DO_GRUPO.length + 3 ? cortado.slice(0, ultimoEspaco) : cortado).trim();
+  return (ultimoEspaco > prefixo.length + 3 ? cortado.slice(0, ultimoEspaco) : cortado).trim();
 }
 
 export interface ParticipantesInput {

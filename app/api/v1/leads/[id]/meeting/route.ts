@@ -300,6 +300,8 @@ export async function POST(
       organizationId: lead.organization_id,
       leadId,
       negocio,
+      // A hora no nome do grupo — e o que faz a remarcação renomear.
+      reuniaoEm: quando,
       contactId: lead.contact_id,
       criadoPor: user.id,
       requestId,
