@@ -186,6 +186,46 @@ export class WahaClient {
     return { chatId, faltaram: participantesQueFaltaram(json) };
   }
 
+  /**
+   * A foto de perfil que o próprio WhatsApp mostra para este contato.
+   *
+   * `null` é resposta normal, não erro: contato sem foto, ou com privacidade
+   * "só meus contatos" — a sessão da assistente quase nunca está na agenda do
+   * lead. Quem chama decide o que fazer sem foto (em geral, nada).
+   */
+  async getProfilePictureUrl(session: string, contactId: string): Promise<string | null> {
+    const res = await fetch(
+      `${this.baseUrl}/api/contacts/profile-picture?contactId=${encodeURIComponent(contactId)}&session=${encodeURIComponent(session)}`,
+      { headers: { "X-Api-Key": this.apiKey }, cache: "no-store" },
+    );
+    if (!res.ok) return null;
+    const json = (await res.json().catch(() => null)) as { profilePictureURL?: string | null } | null;
+    const url = json?.profilePictureURL;
+    return typeof url === "string" && url.length > 0 ? url : null;
+  }
+
+  /**
+   * Troca a foto do grupo. A URL é baixada pelo PRÓPRIO WAHA (campo `file.url`),
+   * então serve a URL do CDN do WhatsApp direto — nada passa pelo Next.
+   *
+   * 501 = o motor não implementa. Vira erro normal e quem chama trata como
+   * enfeite que falhou, nunca como grupo quebrado.
+   */
+  async setGroupPicture(session: string, groupId: string, url: string): Promise<void> {
+    const res = await fetch(
+      `${this.baseUrl}/api/${encodeURIComponent(session)}/groups/${encodeURIComponent(groupId)}/picture`,
+      {
+        method: "PUT",
+        headers: { "X-Api-Key": this.apiKey, "Content-Type": "application/json" },
+        body: JSON.stringify({ file: { url } }),
+      },
+    );
+    if (!res.ok) {
+      const body = await res.text().catch(() => "");
+      throw new Error(`waha_group_picture_${res.status}: ${body.slice(0, 200)}`);
+    }
+  }
+
   async sendMedia(
     session: string,
     chatId: string,

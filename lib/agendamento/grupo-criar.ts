@@ -18,6 +18,8 @@ import { logger } from "@/lib/logger";
 import { grupoDaReuniaoSchema, sixtyDayBriefSchema } from "@/lib/schemas/settings";
 import { getWahaClient } from "@/lib/waha/client";
 
+import { chatIdDeTelefone } from "@/lib/waha/grupo";
+
 import { resolverSessao } from "./envio";
 import { lerGrupo, nomeDoGrupo, participantesDoGrupo, type GrupoDaReuniao } from "./grupo";
 
@@ -151,6 +153,27 @@ export async function garantirGrupoDaReuniao(
       requestId: entrada.requestId,
     });
     return { ok: false, motivo: "falhou", detalhe };
+  }
+
+  // A capa do grupo é a logo do cliente — isto é, a foto que o WhatsApp DELE
+  // já usa, que em negócio é a logo na esmagadora maioria. O CRM não guarda
+  // logo de empresa em campo nenhum; a foto de perfil é a única fonte que
+  // existe sem inventar cadastro. Melhor-esforço por inteiro: contato sem
+  // foto, privacidade "só meus contatos" (a assistente não está na agenda do
+  // lead) ou motor sem o endpoint — em todos, o grupo segue com a capa padrão
+  // e nada disso pode derrubar a criação que já deu certo.
+  try {
+    const chatIdDoLead = chatIdDeTelefone(telefoneDoLead);
+    const foto = chatIdDoLead
+      ? await client.getProfilePictureUrl(sessao.waha_session_name, chatIdDoLead)
+      : null;
+    if (foto) await client.setGroupPicture(sessao.waha_session_name, criado.chatId, foto);
+  } catch (err) {
+    logger.warn("[grupo] capa com a logo do cliente falhou — grupo segue sem", {
+      leadId: entrada.leadId,
+      error: err instanceof Error ? err.message : String(err),
+      requestId: entrada.requestId,
+    });
   }
 
   const conversationId = await espelharNoInbox(admin, {
