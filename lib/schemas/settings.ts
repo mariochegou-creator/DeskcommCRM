@@ -89,8 +89,17 @@ export const grupoDaReuniaoSchema = z
      * onde um lead pode responder no privado e a mensagem precisa entrar.
      */
     so_grupo: z.boolean().catch(true),
+    /**
+     * QUEM entra no grupo, em E.164 — quando vazio, cai na lista do bom-dia
+     * (`sixty_day_brief.recipients`). Divergir das duas listas era proibido de
+     * propósito, e deixou de ser a pedido do Mario (21/08/2026): o bom-dia vai
+     * no pessoal dele (DDD 11), mas pessoal dele em grupo com cliente não —
+     * no grupo entra o número de atendimento. São duas perguntas diferentes:
+     * "onde o Mario lê" e "que número o cliente vê".
+     */
+    participantes: z.array(z.string().min(8).max(20)).max(5).catch([]),
   })
-  .catch({ session_name: null, so_grupo: true });
+  .catch({ session_name: null, so_grupo: true, participantes: [] });
 export type GrupoDaReuniaoConfig = z.infer<typeof grupoDaReuniaoSchema>;
 
 export type Locale = (typeof LOCALES)[number];

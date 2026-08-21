@@ -86,11 +86,8 @@ export async function garantirGrupoDaReuniao(
     .maybeSingle();
   const settingsDaOrg = objeto((orgRow as { settings?: unknown } | null)?.settings);
 
-  const escolhida = await sessaoDaAssistente(
-    admin,
-    entrada.organizationId,
-    grupoDaReuniaoSchema.parse(settingsDaOrg["grupo_da_reuniao"]).session_name,
-  );
+  const cfgGrupo = grupoDaReuniaoSchema.parse(settingsDaOrg["grupo_da_reuniao"]);
+  const escolhida = await sessaoDaAssistente(admin, entrada.organizationId, cfgGrupo.session_name);
 
   const sessionId =
     escolhida?.id ??
@@ -169,14 +166,18 @@ export async function garantirGrupoDaReuniao(
   const client = getWahaClient();
   if (!client) return { ok: false, motivo: "waha_desligado" };
 
-  // O time sai da MESMA lista do bom-dia (`sixty_day_brief.recipients`) — a
-  // decisão é a mesma do aviso de 30 min no cron: telefone do time é dado de
-  // tenant e uma segunda lista divergiria na primeira troca de chip.
+  // O time sai de `grupo_da_reuniao.participantes` quando o tenant separou as
+  // listas; vazio, cai na do bom-dia (`sixty_day_brief.recipients`). A
+  // separação existe porque o bom-dia vai no pessoal do Mario e o pessoal dele
+  // NÃO entra em grupo com cliente — ver o schema.
   const cfg = sixtyDayBriefSchema.parse(settingsDaOrg["sixty_day_brief"]);
 
   const participantes = participantesDoGrupo({
     telefoneDoLead,
-    telefonesDaEquipe: cfg.recipients.map((r) => r.phone),
+    telefonesDaEquipe:
+      cfgGrupo.participantes.length > 0
+        ? cfgGrupo.participantes
+        : cfg.recipients.map((r) => r.phone),
     telefoneDaSessao: sessao.phone_number,
   });
 
@@ -196,21 +197,22 @@ export async function garantirGrupoDaReuniao(
     return { ok: false, motivo: "falhou", detalhe };
   }
 
-  // A capa do grupo é a logo do cliente — isto é, a foto que o WhatsApp DELE
-  // já usa, que em negócio é a logo na esmagadora maioria. O CRM não guarda
-  // logo de empresa em campo nenhum; a foto de perfil é a única fonte que
-  // existe sem inventar cadastro. Melhor-esforço por inteiro: contato sem
-  // foto, privacidade "só meus contatos" (a assistente não está na agenda do
-  // lead) ou motor sem o endpoint — em todos, o grupo segue com a capa padrão
-  // e nada disso pode derrubar a criação que já deu certo.
+  // A capa do grupo é a foto de perfil da PRÓPRIA conexão que o criou — a do
+  // NexoOS, que carrega a marca da Nexo. A primeira versão usava a foto do
+  // LEAD e o Mario corrigiu na hora (21/08): o grupo é a Nexo recebendo o
+  // cliente, a cara dele tem que ser a da Nexo. E a fonte ser o perfil do
+  // chip é de propósito — trocar a foto no celular do NexoOS troca a capa dos
+  // grupos seguintes, sem mexer em código. Melhor-esforço por inteiro: chip
+  // sem foto ou motor sem o endpoint, o grupo segue com a capa padrão e nada
+  // disso pode derrubar a criação que já deu certo.
   try {
-    const chatIdDoLead = chatIdDeTelefone(telefoneDoLead);
-    const foto = chatIdDoLead
-      ? await client.getProfilePictureUrl(sessao.waha_session_name, chatIdDoLead)
+    const chatIdDaSessao = chatIdDeTelefone(sessao.phone_number);
+    const foto = chatIdDaSessao
+      ? await client.getProfilePictureUrl(sessao.waha_session_name, chatIdDaSessao)
       : null;
     if (foto) await client.setGroupPicture(sessao.waha_session_name, criado.chatId, foto);
   } catch (err) {
-    logger.warn("[grupo] capa com a logo do cliente falhou — grupo segue sem", {
+    logger.warn("[grupo] capa com a marca da Nexo falhou — grupo segue sem", {
       leadId: entrada.leadId,
       error: err instanceof Error ? err.message : String(err),
       requestId: entrada.requestId,
