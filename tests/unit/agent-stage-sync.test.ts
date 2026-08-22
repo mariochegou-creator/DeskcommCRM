@@ -182,16 +182,34 @@ function fakeAdmin(c: Cenario) {
       const b = {
         _update: false,
         _select: false,
-        select: () => {
+        _cols: "",
+        select: (cols?: string) => {
           b._select = true;
+          b._cols = cols ?? "";
           return b;
         },
-        update: () => {
+        _patch: null as Record<string, unknown> | null,
+        update: (patch?: Record<string, unknown>) => {
           b._update = true;
+          b._patch = patch ?? null;
           return b;
         },
         eq: () => b,
-        maybeSingle: () => Promise.resolve({ data: { name: "Primeiro contato" }, error: null }),
+        // A busca do TOPO da coluna de destino usa `.neq/.order/.limit`; o
+        // duplo precisa conhecê-los, senão a única coisa que o teste prova é
+        // que o duplo ficou para trás.
+        neq: () => b,
+        order: () => b,
+        limit: () => b,
+        // Os dois `maybeSingle` do código pedem colunas DIFERENTES — o nome da
+        // etapa de origem e a posição do topo. Devolver a mesma linha para os
+        // dois faria o teste aprovar um código que confunde um com o outro.
+        maybeSingle: () =>
+          Promise.resolve(
+            b._cols.includes("position_in_stage")
+              ? { data: { position_in_stage: 3000 }, error: null }
+              : { data: { name: "Primeiro contato" }, error: null },
+          ),
         then(onF: (v: unknown) => unknown, onR?: (e: unknown) => unknown) {
           const r = b._update
             ? b._select
@@ -205,12 +223,36 @@ function fakeAdmin(c: Cenario) {
       };
       return b;
     },
+    /** O barramento de automações — o código só olha o `error`. */
+    rpc: () => Promise.resolve({ error: null }),
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
   } as any;
 }
 
 const sincroniza = (c: Cenario) =>
   sincronizaEstagioDoAgente(fakeAdmin(c), { organizationId: ORG, contactId: CONTATO, passo: "negotiating" });
+
+/** O mesmo, guardando o admin para inspecionar o que foi escrito. */
+function sincronizaEspiando(c: Cenario) {
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const admin = fakeAdmin(c) as any;
+  const patches: Array<Record<string, unknown>> = [];
+  const fromOriginal = admin.from.bind(admin);
+  admin.from = (tabela: string) => {
+    const b = fromOriginal(tabela);
+    const updateOriginal = b.update.bind(b);
+    b.update = (patch: Record<string, unknown>) => {
+      patches.push(patch);
+      return updateOriginal(patch);
+    };
+    return b;
+  };
+  return sincronizaEstagioDoAgente(admin, {
+    organizationId: ORG,
+    contactId: CONTATO,
+    passo: "negotiating",
+  }).then((r) => ({ r, patches }));
+}
 
 describe("sincronizaEstagioDoAgente", () => {
   beforeEach(() => vi.mocked(emitLeadActivity).mockClear());
@@ -219,6 +261,20 @@ describe("sincronizaEstagioDoAgente", () => {
     const r = await sincroniza(cenario());
     expect(r).toMatchObject({ moveu: true, motivo: "movido", stageName: "Proposta enviada" });
     expect(vi.mocked(emitLeadActivity)).toHaveBeenCalledTimes(1);
+  });
+
+  it("o card vai para o TOPO da coluna de destino, não para a posição antiga", async () => {
+    // Um card que andou SOZINHO é justamente o que precisa estar à vista. Sem
+    // esta linha o negócio mantinha a posição da coluna de origem e caía num
+    // lugar qualquer do meio da nova — onde ninguém olha, e sem nada errado
+    // aparecendo na tela.
+    const { r, patches } = await sincronizaEspiando(cenario());
+    expect(r.moveu).toBe(true);
+    const patch = patches.find((p) => "stage_id" in p);
+    expect(patch?.stage_id).toBe("s2");
+    // O topo da coluna no duplo é 3000, então a posição tem que ficar ACIMA dele.
+    expect(typeof patch?.position_in_stage).toBe("number");
+    expect(patch?.position_in_stage as number).toBeLessThan(3000);
   });
 
   it("SELECT de leads com erro é INDISPONIBILIDADE, não 'sem_negocio'", async () => {

@@ -32,8 +32,16 @@ export interface EntradaDasTarefasDaEtapa {
   leadTitulo: string | null;
   contactId: string | null;
   etapa: EtapaComNome;
-  /** Quem arrastou: fica como quem pediu, e é o dono de reserva. */
-  autorUserId: string;
+  /**
+   * Quem arrastou: fica como quem pediu, e é o dono de reserva.
+   *
+   * `null` quando quem moveu foi o AGENTE — e aí não há dono de reserva. A
+   * tarefa cujo papel não tem pessoa configurada simplesmente não nasce (ver o
+   * filtro em `criarTarefasDaEtapa`): inventar um dono poria trabalho no colo de
+   * alguém que ninguém escolheu, e `assigned_to_user_id` é NOT NULL de propósito
+   * — tarefa sem dono é tarefa que ninguém faz.
+   */
+  autorUserId: string | null;
   agora: Date;
 }
 
@@ -142,12 +150,28 @@ export async function criarTarefasDaEtapa(
     conversaDoContato(supabase, entrada.organizationId, entrada.contactId),
   ]);
 
-  const linhas = faltando.map((m) => ({
+  // ⚠️ O FILTRO É O QUE DEIXA O AGENTE MOVER O CARD SEM QUEBRAR O CHECKLIST.
+  //
+  // `assigned_to_user_id` é NOT NULL. Quando quem move é o agente não existe
+  // dono de reserva, então um papel sem pessoa configurada produziria `null` —
+  // e um `null` numa das linhas derruba o INSERT INTEIRO, levando junto as
+  // tarefas que TINHAM dono. Descartar só a linha órfã é a diferença entre
+  // "faltou uma tarefa porque falta configurar o papel" e "o checklist inteiro
+  // sumiu, sem erro em lugar nenhum".
+  //
+  // No arrasto humano nada muda: `autorUserId` está sempre preenchido, então o
+  // filtro nunca descarta nada.
+  const comDono = faltando
+    .map((m) => ({ modelo: m, dono: papeis[m.papel] ?? entrada.autorUserId }))
+    .filter((x): x is { modelo: (typeof faltando)[number]; dono: string } => x.dono !== null);
+  if (comDono.length === 0) return NADA;
+
+  const linhas = comDono.map(({ modelo: m, dono }) => ({
     organization_id: entrada.organizationId,
     title: titulos.get(m.chave) ?? m.oQue,
     kind: m.kind,
     due_at: m.prazo(entrada.agora).toISOString(),
-    assigned_to_user_id: papeis[m.papel] ?? entrada.autorUserId,
+    assigned_to_user_id: dono,
     created_by_user_id: entrada.autorUserId,
     lead_id: entrada.leadId,
     contact_id: entrada.contactId,
@@ -157,5 +181,5 @@ export async function criarTarefasDaEtapa(
   const { data, error } = await supabase.from("crm_tasks").insert(linhas).select("id");
   if (error) return NADA;
 
-  return { criadas: data?.length ?? 0, chaves: faltando.map((m) => m.chave) };
+  return { criadas: data?.length ?? 0, chaves: comDono.map(({ modelo }) => modelo.chave) };
 }

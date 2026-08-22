@@ -118,6 +118,8 @@ import { emitLeadActivity, type ActivityEvidence } from "@/lib/leads/activity-em
 import { registraFalhaDeAtividade } from "@/lib/leads/activity-write-failure";
 import { resolveActiveLeadForContact } from "@/lib/leads/active-lead";
 import { stageChangeReason } from "@/lib/leads/activity-emitter";
+import { midpoint } from "@/lib/kanban/fractional-indexing";
+import { criarTarefasDaEtapa } from "@/lib/tarefas/criar-da-etapa";
 
 export interface ResultadoDaSincronizacao {
   moveu: boolean;
@@ -182,7 +184,11 @@ export async function sincronizaEstagioDoAgente(
   // Supabase indistinguível do estado normal de um contato sem negócio aberto.
   const { data: leadRows, error: erroLeads } = await admin
     .from("crm_leads")
-    .select("id, organization_id, pipeline_id, stage_id, status, created_at, last_activity_at")
+    // `title` entra por causa do checklist: é ele que nomeia a tarefa ("Preparar
+    // roteiro da R1 — GNG Solar") e é o título que serve de trava contra
+    // duplicata. Sem ele, cinco cards na mesma coluna virariam cinco tarefas de
+    // nome idêntico — e a trava apagaria quatro delas.
+    .select("id, organization_id, pipeline_id, stage_id, status, title, created_at, last_activity_at")
     .eq("organization_id", input.organizationId)
     .eq("contact_id", input.contactId);
   if (erroLeads) {
@@ -194,6 +200,7 @@ export async function sincronizaEstagioDoAgente(
     pipeline_id: string;
     stage_id: string;
     status: string;
+    title: string | null;
     created_at: string;
     last_activity_at: string | null;
   }>;
@@ -250,9 +257,30 @@ export async function sincronizaEstagioDoAgente(
     .eq("id", lead.stage_id)
     .maybeSingle();
 
+  // O TOPO DA COLUNA DE DESTINO, pela mesma razão do arrasto humano — e aqui a
+  // razão é ainda mais forte: um card que andou SOZINHO é justamente o que
+  // precisa estar à vista. Sem isto o negócio mantinha a posição da coluna
+  // antiga e caía num lugar qualquer do meio da nova, onde ninguém olha.
+  //
+  // O erro é descartado de propósito: `midpoint(null, null)` devolve uma
+  // posição válida, e recusar o movimento por causa de um número de ordenação
+  // seria deixar o funil parado por causa de layout.
+  const { data: topoDaColuna } = await admin
+    .from("crm_leads")
+    .select("position_in_stage")
+    .eq("stage_id", destino.stageId)
+    .neq("status", "archived")
+    .order("position_in_stage", { ascending: true })
+    .limit(1)
+    .maybeSingle();
+  const topo = (topoDaColuna as { position_in_stage: number | null } | null)?.position_in_stage;
+
   const { data: atualizadas, error } = await admin
     .from("crm_leads")
-    .update({ stage_id: destino.stageId })
+    .update({
+      stage_id: destino.stageId,
+      position_in_stage: midpoint(null, typeof topo === "number" ? topo : null),
+    })
     .eq("id", lead.id)
     // Trava otimista pelo estágio de ORIGEM: se um humano arrastou o card entre
     // a leitura e a escrita, o agente não atropela a decisão dele.
@@ -307,6 +335,65 @@ export async function sincronizaEstagioDoAgente(
       erro: atividade.error,
     });
   }
+
+  // ⚠️ O QUE VEM ABAIXO É O QUE FALTAVA PARA "MOVIDO PELO AGENTE" SER A MESMA
+  // COISA QUE "MOVIDO POR UMA PESSOA".
+  //
+  // Enquanto este bloco não existia, o agente mudava a coluna e mais nada
+  // acontecia: nenhum checklist da etapa, nenhuma automação, nenhum webhook. O
+  // card chegava em «Respondeu» sem as tarefas que o mesmo card ganha quando um
+  // humano o arrasta para lá — e o buraco só apareceria semanas depois, na forma
+  // de lead qualificado que ninguém seguiu, sem nada na tela explicando por quê.
+  //
+  // Meia automação é pior que nenhuma: quem confia no checklist confia nele
+  // sempre, e "só quando foi humano" não é uma regra que alguém carregue na
+  // cabeça.
+
+  // Nunca derruba o movimento — o card JÁ mudou de coluna. Mesma política do
+  // arrasto humano, onde o checklist também vive dentro de um try.
+  try {
+    await criarTarefasDaEtapa(admin, {
+      organizationId: input.organizationId,
+      leadId: lead.id,
+      leadTitulo: lead.title,
+      contactId: input.contactId,
+      etapa: { name: destino.stageName },
+      // Não houve pessoa nenhuma nisto. O dono de cada tarefa sai do PAPEL
+      // configurado na organização (closer/SDR); papel sem pessoa não vira
+      // tarefa órfã — ver o filtro em `criarTarefasDaEtapa`.
+      autorUserId: null,
+      agora: new Date(),
+    });
+  } catch {
+    // Silêncio deliberado: o motivo já está no comentário acima, e um throw
+    // aqui desfaria (para quem chama) um movimento que aconteceu de verdade.
+  }
+
+  // O barramento de automações e webhooks, com a MESMA forma de payload da rota
+  // de move: quem consome não deve precisar saber se quem moveu foi gente ou
+  // agente — isso está no `metadata`, que é onde a informação pertence.
+  await admin
+    .rpc("emit_event", {
+      p_event_type: "lead.stage_changed",
+      p_entity_kind: "crm_lead",
+      p_entity_id: lead.id,
+      p_payload: {
+        from_stage_id: lead.stage_id,
+        to_stage_id: destino.stageId,
+        status: lead.status,
+      },
+      p_metadata: {
+        actor_kind: "ai",
+        actor_agent_id: input.agentId ?? null,
+        passo_do_agente: input.passo,
+      },
+      p_organization_id: input.organizationId,
+    })
+    .then(({ error: erroEvento }: { error: { message: string } | null }) => {
+      if (erroEvento) {
+        console.error("[agent-stage-sync] emit_event falhou", erroEvento.message);
+      }
+    });
 
   return { moveu: true, motivo: "movido", leadId: lead.id, stageName: destino.stageName };
 }
