@@ -4,7 +4,7 @@ import { describe, it, expect, vi } from "vitest";
 // Mesmo contorno do tests/unit/waha-outbound-espelhado.test.ts.
 vi.mock("@/lib/audit", () => ({ audit: vi.fn() }));
 
-import { parseChatIdComAlt, type WahaPayload } from "@/lib/waha/ingest";
+import { autorNoGrupo, parseChatIdComAlt, type WahaPayload } from "@/lib/waha/ingest";
 
 /** Payload mínimo com a WAMessageKey — o resto do envelope não importa aqui. */
 function payloadCom(key: Record<string, unknown>): WahaPayload {
@@ -48,5 +48,32 @@ describe("parseChatIdComAlt — o véu do LID", () => {
       phone: null,
       lid: "77124778107040",
     });
+  });
+});
+
+describe("autorNoGrupo — o véu do LID no autor", () => {
+  it("participant @lid com participantAlt de telefone devolve o telefone", () => {
+    // Caso real de 22/08/2026: o "Confirmado" do lead chegou com o autor em
+    // pseudônimo e o obrigado nunca saiu — o telefone estava em participantAlt.
+    const p = {
+      participant: "113705517891769@lid",
+      _data: {
+        key: { participant: "113705517891769@lid", participantAlt: "5511930582384@s.whatsapp.net" },
+      },
+    } as WahaPayload;
+    expect(autorNoGrupo(p)).toBe("5511930582384@s.whatsapp.net");
+  });
+
+  it("sem alt, fica o participant como veio — desconhecido conta como 'não foi o lead'", () => {
+    const p = { participant: "113705517891769@lid", _data: { key: {} } } as WahaPayload;
+    expect(autorNoGrupo(p)).toBe("113705517891769@lid");
+  });
+
+  it("alt que não é telefone não engana — segue o participant", () => {
+    const p = {
+      participant: "557799990000@c.us",
+      _data: { key: { participantAlt: "algo@lid" } },
+    } as WahaPayload;
+    expect(autorNoGrupo(p)).toBe("557799990000@c.us");
   });
 });

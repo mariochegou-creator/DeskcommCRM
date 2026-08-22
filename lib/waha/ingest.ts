@@ -61,6 +61,10 @@ export interface WahaPayload {
       fromMe?: boolean;
       remoteJid?: string;
       remoteJidAlt?: string;
+      /** NOWEB, mensagem de grupo: quem escreveu (pode vir como `@lid`). */
+      participant?: string;
+      /** O telefone real do autor quando `participant` é `@lid` — par do `remoteJidAlt`. */
+      participantAlt?: string;
     } & Record<string, unknown>;
   } & Record<string, unknown>;
 }
@@ -389,6 +393,14 @@ export async function conversaDoGrupo(
 
 /** Quem escreveu, dentro de um grupo. É o JID do participante, não do grupo. */
 export function autorNoGrupo(p: WahaPayload): string | null {
+  // Grupo em modo `lid` (todo grupo novo): `participant` é o PSEUDÔNIMO de
+  // privacidade e o telefone real chega em `participantAlt` — a mesma dança do
+  // `remoteJidAlt` em `parseChatIdComAlt`. O telefone tem preferência porque é
+  // ele que casa com o contato do CRM: sem isso, "o lead escreveu?" dava sempre
+  // não, e o obrigado do "confirmado" (e a reação de remarcação) nunca saía —
+  // visto no ar em 22/08/2026, no primeiro grupo de teste em modo lid.
+  const alt = p._data?.key?.participantAlt;
+  if (typeof alt === "string" && parseChatId(alt).kind === "phone") return alt;
   const bruto =
     p.participant ??
     p.author ??
