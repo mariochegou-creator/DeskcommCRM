@@ -330,6 +330,17 @@ export interface ConversaDeGrupo {
   contactId: string;
   /** Telefone do contato dono da conversa (o lead). Usado no filtro de STOP. */
   telefoneDoContato: string | null;
+  /**
+   * A conexão DONA do espelho — a única por onde mensagem deste grupo entra.
+   *
+   * Existe porque o grupo pode ter DUAS conexões do CRM dentro (a NexoOS, que
+   * cria, e o número de atendimento, participante desde 21/08). Cada mensagem
+   * do grupo chega pelo webhook das duas — e os ids externos das duas entregas
+   * NÃO batem entre si nem com o do envio, então a unique de external_id não
+   * segura: a abertura da assistente apareceu em dobro no inbox, uma como
+   * enviada e outra como "recebida do NexoOS". Uma porta só, zero duplicata.
+   */
+  channelSessionId: string | null;
 }
 
 /**
@@ -354,7 +365,7 @@ export async function conversaDoGrupo(
 ): Promise<ConversaDeGrupo | null> {
   const { data, error } = await admin
     .from("conversations")
-    .select("id, contact_id, contacts:contact_id(phone_number)")
+    .select("id, contact_id, channel_session_id, contacts:contact_id(phone_number)")
     .eq("organization_id", orgId)
     .eq("group_chat_id", chatId)
     .limit(1)
@@ -364,6 +375,7 @@ export async function conversaDoGrupo(
   const row = data as {
     id: string;
     contact_id: string;
+    channel_session_id: string | null;
     contacts: { phone_number: string | null } | { phone_number: string | null }[] | null;
   };
   const contato = Array.isArray(row.contacts) ? row.contacts[0] : row.contacts;
@@ -371,6 +383,7 @@ export async function conversaDoGrupo(
     conversationId: row.id,
     contactId: row.contact_id,
     telefoneDoContato: contato?.phone_number ?? null,
+    channelSessionId: row.channel_session_id,
   };
 }
 
@@ -483,6 +496,11 @@ async function handleInbound(
       ? await conversaDoGrupo(admin, session.organization_id, chatId)
       : null;
   if (parsed.kind === "group" && !grupo) return "grupo";
+  // Grupo com duas conexões do CRM dentro: a mesma mensagem chega pelos dois
+  // webhooks. Só a conexão dona do espelho ingere — ver `ConversaDeGrupo`.
+  if (grupo?.channelSessionId && grupo.channelSessionId !== session.id) {
+    return "grupo_de_outra_conexao";
+  }
 
   // WAHA emite eventos vazios p/ status/read-receipt/presence — não viram mensagem.
   const corpo = corpoDaMensagem(p);
@@ -721,6 +739,12 @@ async function handleOutboundFromUserPhone(
       ? await conversaDoGrupo(admin, session.organization_id, chatId)
       : null;
   if (parsed.kind === "group" && !grupo) return "grupo";
+  // Mesma trava do inbound: o grupo entra por UMA conexão só, a dona do
+  // espelho. O que o atendimento escrever no grupo não se perde — chega pela
+  // conexão dona como mensagem de participante, com autoria certa.
+  if (grupo?.channelSessionId && grupo.channelSessionId !== session.id) {
+    return "grupo_de_outra_conexao";
+  }
 
   const corpo = corpoDaMensagem(p);
   if (!corpo && !mediaUrlOf(p) && !p.hasMedia) return "sem_conteudo";
