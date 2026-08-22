@@ -18,6 +18,7 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 import { sendMessageHandler } from "@/app/api/v1/messages/_handler";
 import { ensureConversation } from "@/lib/automation/start-conversation";
 import { logger } from "@/lib/logger";
+import { getWahaClient } from "@/lib/waha/client";
 
 export type ResultadoDoEnvio =
   | { ok: true; messageId: string; conversationId: string }
@@ -134,6 +135,58 @@ export interface EnvioDeTexto {
 }
 
 /**
+ * O "digitando…" antes da fala — o que separa resposta de gente de resposta
+ * de robô. O pedido é do Mario (22/08): o obrigado do "confirmado" chegou no
+ * MESMO segundo da mensagem do lead, e resposta instantânea denuncia máquina
+ * exatamente na conversa em que a Nexo quer parecer bem atendida.
+ *
+ * A duração acompanha o tamanho do texto (45ms por caractere, entre 2s e 5s) —
+ * "digitou" 3 segundos e soltou um parágrafo também denuncia. O teto de 5s é
+ * deliberado: isto roda DENTRO do webhook da mensagem recebida, e segurar a
+ * resposta HTTP por muito tempo faria o WAHA reenviar o evento.
+ *
+ * MELHOR-ESFORÇO por inteiro: qualquer falha aqui (WAHA sem o endpoint, sessão
+ * caída, conversa sem grupo) é engolida com log e o envio segue — o teatro
+ * nunca pode custar a mensagem.
+ */
+async function digitarAntes(
+  admin: SupabaseClient,
+  conversationId: string,
+  corpo: string,
+  requestId: string,
+): Promise<void> {
+  try {
+    const client = getWahaClient();
+    if (!client) return;
+
+    const { data } = await admin
+      .from("conversations")
+      .select("group_chat_id, channel_sessions:channel_session_id(waha_session_name)")
+      .eq("id", conversationId)
+      .maybeSingle();
+    const row = data as {
+      group_chat_id: string | null;
+      channel_sessions: { waha_session_name: string } | { waha_session_name: string }[] | null;
+    } | null;
+    const sessao = Array.isArray(row?.channel_sessions)
+      ? row?.channel_sessions[0]
+      : row?.channel_sessions;
+    if (!row?.group_chat_id || !sessao?.waha_session_name) return;
+
+    await client.startTyping(sessao.waha_session_name, row.group_chat_id);
+    const ms = Math.min(5000, Math.max(2000, corpo.length * 45));
+    await new Promise((r) => setTimeout(r, ms));
+    await client.stopTyping(sessao.waha_session_name, row.group_chat_id);
+  } catch (err) {
+    logger.warn("[agendamento] 'digitando' falhou — mensagem sai sem o teatro", {
+      conversationId,
+      error: err instanceof Error ? err.message : String(err),
+      requestId,
+    });
+  }
+}
+
+/**
  * Manda um texto NUMA CONVERSA que já existe — o caso do grupo da reunião.
  *
  * Separado de `enviarTexto` porque lá o alvo é um CONTATO e a conversa é
@@ -147,9 +200,16 @@ export interface EnvioDeTexto {
  */
 export async function enviarNoGrupo(
   admin: SupabaseClient,
-  envio: Omit<EnvioDeTexto, "contactId"> & { conversationId: string },
+  envio: Omit<EnvioDeTexto, "contactId"> & {
+    conversationId: string;
+    /** Mostra "digitando…" antes de enviar — só para RESPOSTA a alguém (ver `digitarAntes`). */
+    digitando?: boolean;
+  },
 ): Promise<ResultadoDoEnvio> {
   try {
+    if (envio.digitando) {
+      await digitarAntes(admin, envio.conversationId, envio.corpo, envio.requestId);
+    }
     const message = await sendMessageHandler(
       admin,
       {

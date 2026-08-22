@@ -187,6 +187,29 @@ export class WahaClient {
   }
 
   /**
+   * Liga o "digitando…" no chat. Par de `stopTyping`; quem chama decide
+   * quanto tempo o teatro dura. Erro aqui NUNCA pode segurar um envio — trate
+   * no chamador como enfeite que falhou.
+   */
+  async startTyping(session: string, chatId: string): Promise<void> {
+    const res = await fetch(`${this.baseUrl}/api/startTyping`, {
+      method: "POST",
+      headers: { "X-Api-Key": this.apiKey, "Content-Type": "application/json" },
+      body: JSON.stringify({ session, chatId }),
+    });
+    if (!res.ok) throw new Error(`waha_typing_${res.status}`);
+  }
+
+  async stopTyping(session: string, chatId: string): Promise<void> {
+    const res = await fetch(`${this.baseUrl}/api/stopTyping`, {
+      method: "POST",
+      headers: { "X-Api-Key": this.apiKey, "Content-Type": "application/json" },
+      body: JSON.stringify({ session, chatId }),
+    });
+    if (!res.ok) throw new Error(`waha_typing_${res.status}`);
+  }
+
+  /**
    * Renomeia um grupo. Existe por causa da hora no nome ("Reunião 26/08 às
    * 14h — …"): remarcar sem renomear deixaria o grupo anunciando a hora velha.
    */

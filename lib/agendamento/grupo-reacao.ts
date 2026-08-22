@@ -105,6 +105,9 @@ export async function reagirAPedidoDeRemarcacao(
     const envio = await enviarNoGrupo(admin, {
       organizationId: entrada.organizationId,
       conversationId: grupo.conversation_id,
+      // Resposta a uma pessoa que acabou de escrever: sem o "digitando…" ela
+      // chega no mesmo segundo e denuncia o robô (pedido do Mario, 22/08).
+      digitando: true,
       corpo: mensagemDeRemarcacaoNoGrupo({
         nomeDoContato: contato?.display_name ?? contato?.name ?? null,
         negocio: lead.title,
@@ -211,6 +214,8 @@ export async function reagirAConfirmacao(
     const envio = await enviarNoGrupo(admin, {
       organizationId: entrada.organizationId,
       conversationId: grupo.conversation_id,
+      // Mesmo teatro da remarcação: é resposta a alguém, digita antes.
+      digitando: true,
       corpo: mensagemDeConfirmacaoRecebida({
         nomeDoContato: contato?.display_name ?? contato?.name ?? null,
         negocio: lead.title,
