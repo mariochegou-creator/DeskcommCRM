@@ -126,6 +126,55 @@ DeskcommCRM é um sistema operacional de vendas open source com agentes de IA na
 
 ---
 
+## Conhecimento do agente — onde mora de verdade
+
+Antes de escrever "vou colocar isso na base de conhecimento", leia esta seção.
+O caminho óbvio está incompleto e falha em silêncio.
+
+### O que funciona hoje: `organizations.settings.cola_do_mercado`
+
+Texto livre (teto de 12.000 caracteres) editável em **Configurações →
+Organização → "Cola do mercado"**. É lido por
+`lib/agent-engine/agent/draft-reply.ts` e vai **inteiro** para o prompt do
+rascunho — o botão "Sugerir resposta" do composer.
+
+Inteiro, e não por top-K, de propósito: num documento de duas páginas o recorte
+por relevância traz o trecho que casou com a pergunta e deixa de fora as travas
+("o que nunca dizer"), que moram longe dela e são justamente o que segura o
+modelo.
+
+Vive no `settings` jsonb (molde do `lost_reasons_extra`) porque é conteúdo de
+operação, não de código: muda quando o mercado do tenant muda, e quem muda é
+quem vende — sem deploy, sem migration.
+
+### O que NÃO funciona: a Base de Conhecimento (RAG)
+
+Três elos quebrados, e nenhum deles grita:
+
+1. A tela `app/app/ai/knowledge/sources` tem o botão de configurar fonte
+   **desabilitado** (`toast.info("Em breve.")`). A API de upload existe; a UI
+   não a chama.
+2. `workers/rag-indexer.ts` só indexa produto Nuvemshop. O evento
+   `knowledge_source.updated` retorna `reindex_deferred` — arquivo de política
+   nunca vira chunk.
+3. Sem `AI_GATEWAY_API_KEY` ou `OPENAI_API_KEY` no ambiente, `embedText` lança e
+   `searchKnowledge` devolve `{ ok: false }` em TODA busca. O turno segue sem a
+   base e sem erro visível.
+
+As tabelas (`ai_knowledge_sources`, `ai_knowledge_versions`, `ai_chunks`) e a
+RPC `retrieve_top_k_chunks` existem e estão corretas — o que falta é o caminho
+de escrita. Enquanto os três elos não fecharem, texto que precisa chegar ao
+modelo vai por prompt, não por RAG.
+
+### Onde NÃO colocar conhecimento
+
+No `system_prompt` da versão publicada do agente. Ele governa o **turno
+automático** (`inbound-turn.ts`), que responde o cliente sozinho: qualquer coisa
+escrita ali para ajudar o vendedor também muda o que o bot fala com quem está do
+outro lado. Conteúdo que serve só ao humano entra pelo modo rascunho.
+
+---
+
 ## Paths importantes
 
 | Path | Conteúdo |
@@ -143,6 +192,9 @@ DeskcommCRM é um sistema operacional de vendas open source com agentes de IA na
 | `lib/supabase/{browser,server,admin}.ts` | Clients canônicos |
 | `app/api/v1/health/route.ts` | Health check (Supabase + Redis + WAHA) |
 | `supabase/migrations/` | Schema versionado |
+| `lib/agent-engine/agent/draft-reply.ts` | Rascunho sob demanda do composer ("Sugerir resposta") |
+| `lib/agent-engine/agent/inbound-turn.ts` | Turno automático completo (tools, guardrails, envio) |
+| `workers/rag-indexer.ts` | Indexador da KB — hoje só Nuvemshop (ver seção acima) |
 
 ---
 
