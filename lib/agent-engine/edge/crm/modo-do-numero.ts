@@ -26,6 +26,13 @@
  * decisão do modelo, nem por engano de prompt. É a mesma técnica que o repo já
  * usa para `search_knowledge` sem base de conhecimento.
  *
+ * ⚠️ O FREIO NÃO PEGA A CADÊNCIA (`job.kind = 'followup_turn'`), e a distinção é
+ * do dono do negócio, não técnica: no turno de conversa quem decide o que dizer
+ * é o modelo, na hora, sobre o que o cliente acabou de falar — é isso que ele
+ * não quer terceirizar. O toque da cadência é texto que ELE redigiu, num dia que
+ * ELE escolheu, para quem sumiu. A exceção vive no chamador (inbound-turn.ts),
+ * onde `job.kind` existe.
+ *
  * Mora em `channel_sessions.metadata` (jsonb que já existe) e não em coluna
  * nova: é knob de operação, muda com um `update`, e uma migration para um
  * booleano seria um passo a mais entre o Mario querer calar um número e o número

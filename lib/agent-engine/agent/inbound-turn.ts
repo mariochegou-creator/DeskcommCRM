@@ -1487,11 +1487,27 @@ export async function runAgentTurn(
   // as MCP não podem repor um envio (mcp-tools.ts já bloqueia
   // crm_send_whatsapp_message), e deixar este corte por último faria parecer que
   // ele depende disso.
+  // ⚠️ A CADÊNCIA É EXCEÇÃO, E A DISTINÇÃO É DO DONO DO NEGÓCIO, NÃO TÉCNICA.
+  //
+  // "A IA não responde meu cliente" e "a esteira de follow-up que eu escrevi
+  // continua rodando" não se contradizem: no turno de conversa quem decide o que
+  // dizer é o modelo, na hora, em cima do que o cliente acabou de falar — é isso
+  // que ele não quer terceirizar. O toque da cadência é texto que ELE redigiu,
+  // num dia que ELE escolheu, para quem sumiu. Frear os dois com a mesma trava
+  // trataria autoria e automação como a mesma coisa.
+  //
+  // O corte é `job.kind` e não uma flag nova: quem enfileira já sabe qual dos
+  // dois é, e uma segunda fonte para "que tipo de turno é este" divergiria da
+  // fila no primeiro ajuste. `case_reply_turn` fica DENTRO do freio de
+  // propósito — ali a IA fala com o cliente em nome de um humano, que é
+  // exatamente o que o copiloto existe para impedir.
   const modoDoNumero = await lerModoDoNumero(pool, tenantId, input.channelSessionId);
-  if (modoDoNumero === 'copiloto') {
+  const freiaEsteTurno = modoDoNumero === 'copiloto' && job.kind !== 'followup_turn';
+  if (freiaEsteTurno) {
     delete rawTools.send_message;
     runLog.info('numero em modo copiloto — a IA organiza o CRM e não responde', {
       channel_session_id: input.channelSessionId,
+      job_kind: job.kind,
     });
   }
 
@@ -1610,7 +1626,7 @@ export async function runAgentTurn(
   // O bloco do copiloto entra PRIMEIRO entre os sufixos: ele muda o que o turno
   // inteiro significa, e um modelo que lê "responda em mensagens curtas" antes
   // de "você não responde" passa o turno tentando conciliar as duas coisas.
-  const copilotoBlock = modoDoNumero === 'copiloto' ? BLOCO_COPILOTO : '';
+  const copilotoBlock = freiaEsteTurno ? BLOCO_COPILOTO : '';
   const openingSuffixes = [
     copilotoBlock,
     matchedSkillsBlock,
