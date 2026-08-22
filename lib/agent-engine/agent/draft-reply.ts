@@ -10,6 +10,7 @@ import type pg from 'pg';
 import type { ModelMessage } from 'ai';
 
 import { loadPublishedAgentConfig } from './agent-config';
+import { searchKnowledge } from './search-knowledge';
 import { getLeadContext } from '../edge/crm/get-lead-context';
 import type { CrmEdgeConfig } from '../edge/crm/mcp-client';
 import { runModelCall, type LlmEdgeConfig } from '../edge/llm/run-model-call';
@@ -74,17 +75,66 @@ export async function generateDraftReply(
         `A sugestão deve APOIAR essa ação, não propor outra em lugar dela.`
     : '';
 
-  const system =
-    `${agent.systemPrompt}\n\n` +
-    `[MODO RASCUNHO] Gere UMA resposta pronta para o vendedor humano enviar ao cliente. ` +
-    `Escreva como o vendedor (NÃO se identifique como assistente/IA, NÃO use disclosure de bot). ` +
-    `Responda só com o texto da mensagem, sem aspas nem comentários.` +
-    blocoDecisao;
-
   const messages: ModelMessage[] = ctx.context.messages.map((m) => ({
     role: m.direction === 'inbound' ? 'user' : 'assistant',
     content: m.body,
   }));
+
+  // [COLA DO MERCADO] — o motivo do botão existir.
+  //
+  // O vendedor clica na estrela justamente quando NÃO sabe o que responder. Com
+  // só o systemPrompt do agente (que é de ATENDIMENTO: "agende 30 minutos"), a
+  // sugestão saía genérica — uma pergunta solta que ignora o que o lead acabou
+  // de falar. Genérico é pior que nada: ele lê, não usa, e o botão morre.
+  //
+  // A KB publicada do agente já guarda o material de nicho (dores, jogadas,
+  // números públicos) e já é editável na tela /app/ai/knowledge/sources — então
+  // o conteúdo se atualiza SEM deploy. O que faltava era a estrela consultá-la.
+  //
+  // Diferente do turno completo, aqui a busca NÃO é uma tool: sem tools o modelo
+  // não teria como pedir, e um step a mais dobraria a espera de quem está com o
+  // cliente na tela. A query é a última fala do lead — é exatamente sobre ela
+  // que o vendedor travou.
+  //
+  // Sem KB ativa, ou com a base fora do ar (searchKnowledge devolve ok:false,
+  // nunca lança), o rascunho sai sem cola: sugestão pior, não erro na cara dele.
+  const ultimaDoLead = [...ctx.context.messages].reverse().find((m) => m.direction === 'inbound');
+  let blocoCola = '';
+  if (agent.activeKbVersionId !== null && ultimaDoLead !== undefined) {
+    const kb = await searchKnowledge(db, {
+      organizationId: input.tenantId,
+      kbVersionId: agent.activeKbVersionId,
+      query: ultimaDoLead.body,
+      topK: agent.ragTopK,
+      threshold: agent.ragSimilarityThreshold,
+    });
+    if (kb.ok && kb.results.length > 0) {
+      blocoCola =
+        `\n\n[COLA DO MERCADO] Material da nossa base sobre o mercado deste cliente. ` +
+        `Use UM fato ou UM número daqui para dar peso à resposta. ` +
+        `Se nada aqui servir para o que ele falou, ignore o bloco — não force.\n` +
+        kb.results.map((r) => r.content).join('\n---\n');
+    }
+  }
+
+  const system =
+    `${agent.systemPrompt}\n\n` +
+    `[MODO RASCUNHO] Gere UMA resposta pronta para o vendedor humano enviar ao cliente. ` +
+    `Escreva como o vendedor (NÃO se identifique como assistente/IA, NÃO use disclosure de bot). ` +
+    `Responda só com o texto da mensagem, sem aspas nem comentários.\n\n` +
+    `[COMO RESPONDER] Antes de escrever, leia a ÚLTIMA mensagem do cliente e ` +
+    `identifique o que ela é: uma objeção (não tenho interesse, tá caro, já tenho ` +
+    `quem faça), um sinal de rotina (só atendo em horário comercial, me manda por ` +
+    `e-mail), um sinal de saturação (minha agenda tá cheia), ou uma dúvida real. ` +
+    `A resposta tem que atacar ESSE ponto — nunca uma pergunta genérica que ` +
+    `serviria para qualquer conversa.\n` +
+    `Regras da mensagem: no máximo 4 linhas; concorde antes de virar o ângulo ` +
+    `(nunca comece discordando); uma única pergunta, e no fim; nada de "presença ` +
+    `digital", "funil" ou "automação"; nunca insinue que ele não entende do ` +
+    `negócio dele. Não invente número, porcentagem nem caso de cliente: use só os ` +
+    `que estiverem na COLA DO MERCADO abaixo.` +
+    blocoCola +
+    blocoDecisao;
 
   // Sem histórico não há o que rascunhar — e o AI SDK lança com messages vazio
   // (viraria 500 cru). Retorna 'empty' (a UI mostra um aviso amigável).
