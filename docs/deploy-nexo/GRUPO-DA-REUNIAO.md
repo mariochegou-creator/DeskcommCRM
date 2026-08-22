@@ -23,19 +23,30 @@ mostram quem escreveu.
 
 ---
 
-## As 4 falas da assistente
+## As 4 falas do Claudio
 
-Ela fala **só** nestes quatro momentos. Em todo o resto, cala a boca.
+O assistente se chama **Claudio** e fala **só** nestes quatro momentos. Em todo
+o resto, cala a boca.
 
 | Quando | O que diz |
 |---|---|
-| Ao criar o grupo | Parabéns pelo horário, dia e hora, quem conduz, e pede "confirmado" |
+| Ao criar o grupo | Três mensagens: texto com dia/hora e quem conduz → **áudio do Claudio** (gravado uma vez, sai como nota de voz) → a pergunta do "confirmado" por escrito |
 | 18h da véspera | Confirma o horário de amanhã, pede "sim" |
 | ~1h antes | "É hoje às Xh, o Mario te chama daqui a pouco" |
 | Lead pede pra remarcar | "Sem problema, já avisei o Mario, ele te manda dois horários" + cria a tarefa |
 
 **Remarcar não desfaz o grupo.** Ele continua, só muda a hora. A mensagem que
 sai é outra ("mudou o horário: agora é…"), não a de abertura.
+
+### O áudio do Claudio
+
+O áudio da abertura é **um só, gravado uma vez** — ele não fala nome, data nem
+negócio (isso vai nas mensagens de texto), então nunca fica velho. Mora no
+Supabase Storage (`whatsapp-media`, pasta `library/grupo/`) e o caminho fica em
+`settings.grupo_da_reuniao.audio_abertura` da organização. Pra trocar a voz:
+subir um MP3 novo no mesmo caminho. Pra desligar e voltar ao texto único:
+apagar essa configuração. Se o envio do áudio falhar, o texto completo sai no
+lugar sozinho — o lead nunca fica sem o pedido de confirmação.
 
 ### O que ela NÃO faz
 
