@@ -68,10 +68,10 @@ export async function enviarAberturaDoGrupo(
     return enviarNoGrupo(admin, {
       organizationId,
       conversationId,
-      // O "digitando…" vale pra TODA fala do Claudio desde 22/08 (pedido do
-      // Mario): grupo recém-criado despejando texto no mesmo segundo tem o
-      // mesmo cheiro de robô que a resposta instantânea.
-      digitando: true,
+      // SEM "digitando…" na abertura, por decisão do Mario (22/08): grupo
+      // recém-criado não é resposta a ninguém, e o teatro aqui só deixava a
+      // tela de marcar reunião segundos mais lenta. As RESPOSTAS e os
+      // lembretes digitam; a abertura sai direto.
       corpo: mensagemDeAberturaDoGrupo(reuniao, ctx),
       metadata: metadataBase,
       origem,
@@ -82,7 +82,6 @@ export async function enviarAberturaDoGrupo(
   const primeiro = await enviarNoGrupo(admin, {
     organizationId,
     conversationId,
-    digitando: true,
     corpo: mensagemCurtaDeAberturaDoGrupo(reuniao, ctx),
     metadata: metadataBase,
     origem,
@@ -111,7 +110,6 @@ export async function enviarAberturaDoGrupo(
   const fechamento = await enviarNoGrupo(admin, {
     organizationId,
     conversationId,
-    digitando: true,
     corpo: envioDoAudio.ok ? PERGUNTA_DE_CONFIRMACAO_DO_GRUPO : COMPLEMENTO_DA_ABERTURA_SEM_AUDIO,
     metadata: { ...metadataBase, meeting_message: "confirmacao_pergunta" },
     origem,
