@@ -17,7 +17,12 @@ import type { Queryable } from '../../queue/queue';
 import type { CrmEdgeConfig } from './mcp-client';
 import type { LeadStage } from '../../agent/lead-state';
 
-export type MirrorReason = 'not_configured' | 'human_conflict' | 'crm_error' | 'crm_unavailable';
+export type MirrorReason =
+  | 'not_configured'
+  | 'human_conflict'
+  | 'stage_backwards'
+  | 'crm_error'
+  | 'crm_unavailable';
 
 export type MirrorResult = { ok: true } | { ok: false; reason: MirrorReason; detail: string };
 
@@ -30,6 +35,9 @@ export type MirrorResult = { ok: true } | { ok: false; reason: MirrorReason; det
 export const MIRROR_WARN_ONLY: ReadonlySet<MirrorReason> = new Set<MirrorReason>([
   'not_configured',
   'human_conflict',
+  // O card já está mais adiante do que o passo do agente — o funil do tenant
+  // venceu, e isso é o desenho funcionando, não incidente.
+  'stage_backwards',
 ]);
 
 /** Injetável só para teste — em produção é sempre a implementação real. */
@@ -40,7 +48,16 @@ interface Deps {
 export async function mirrorLeadStageToCrm(
   _db: Queryable,
   cfg: CrmEdgeConfig,
-  input: { tenantId: string; leadId: string; toStage: LeadStage; reason?: string },
+  input: {
+    tenantId: string;
+    leadId: string;
+    toStage: LeadStage;
+    reason?: string;
+    /** Quem moveu — vira o ator da linha na timeline, em vez de "Sistema". */
+    agentId?: string | null;
+    /** O lastro da autoria (o turno que produziu o avanço). */
+    evidence?: { run_ids?: string[]; trace_ids?: string[]; llm_call_ids?: string[] } | null;
+  },
   deps: Deps = {},
 ): Promise<MirrorResult> {
   const sync = deps.sync ?? sincronizaEstagioDoAgente;
@@ -52,6 +69,8 @@ export async function mirrorLeadStageToCrm(
       organizationId: input.tenantId,
       contactId: input.leadId,
       passo: input.toStage,
+      agentId: input.agentId ?? null,
+      evidence: input.evidence ?? null,
     });
 
     if (r.moveu || r.motivo === 'ja_esta_la') return { ok: true };
@@ -74,6 +93,10 @@ export async function mirrorLeadStageToCrm(
       conflito_humano: {
         reason: 'human_conflict',
         detail: 'um humano moveu o card durante a operação — a decisão dele prevalece',
+      },
+      nao_regride: {
+        reason: 'stage_backwards',
+        detail: `o card já está adiante da etapa mapeada para "${input.toStage}" — o agente não puxa negócio para trás`,
       },
       falha_de_escrita: {
         reason: 'crm_error',

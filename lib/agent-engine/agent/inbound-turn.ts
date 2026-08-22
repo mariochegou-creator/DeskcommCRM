@@ -1216,6 +1216,13 @@ export async function runAgentTurn(
               leadId,
               toStage: update.transition.to,
               ...(update.transition.reason !== undefined ? { reason: update.transition.reason } : {}),
+              // QUEM moveu e COM QUE LASTRO. Sem os dois, a linha do card na
+              // timeline nasce como "Sistema" e o atendente que vê a etapa
+              // mudar durante o atendimento não consegue responder "quem fez
+              // isso?" — que é a única pergunta que ele faz nessa hora.
+              // `job.id` como trace segue o que o flywheel já usa (live.ts).
+              ...(agentConfig?.agentId ? { agentId: agentConfig.agentId } : {}),
+              evidence: { trace_ids: [job.id] },
             });
             if (!mirror.ok) {
               runLog.warn('espelho de stage no CRM falhou — harness mantido', {

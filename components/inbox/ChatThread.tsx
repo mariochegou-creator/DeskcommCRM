@@ -6,12 +6,15 @@ import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { MessageBubble } from "./MessageBubble";
 import { NoteCard } from "./NoteCard";
+import { StageEventCard } from "./StageEventCard";
 import { useMessagesRealtime } from "@/hooks/inbox/useMessagesRealtime";
 import { useConversationNotes } from "@/hooks/inbox/useConversationNotes";
+import { useEventosDeEtapa } from "@/hooks/inbox/useEventosDeEtapa";
 import { useDeleteNote } from "@/hooks/inbox/useDeleteNote";
 import { useDebugToggle } from "@/hooks/ai/useDebugToggle";
 import { useActiveOrg, useUser } from "@/hooks/auth/AuthProvider";
 import { ROLE_RANK } from "@/lib/auth/types";
+import type { TimelineItemView } from "@/lib/types/contacts";
 import type { Message, Note } from "@/lib/types/messaging";
 
 interface Props {
@@ -24,16 +27,31 @@ interface Props {
   contactId?: string | null;
 }
 
-/** Onda 5.2: union de item do thread — mensagem real ou nota interna (nunca vai ao cliente). */
+/**
+ * Onda 5.2: união de item do thread — mensagem real, nota interna (nunca vai ao
+ * cliente) ou mudança de etapa do funil.
+ *
+ * A etapa entrou como TERCEIRO tipo, e não como mensagem de sistema na tabela
+ * `messages`: o inbox é espelho do WhatsApp, e uma linha lá dentro que o
+ * WhatsApp nunca viu contaminaria a exportação, a contagem de não-lidas e o
+ * histórico que o cliente pode pedir por LGPD. O thread pode MOSTRAR o que não
+ * é mensagem; a caixa de mensagens é que não pode guardar.
+ */
 export type ThreadItem =
   | { kind: "message"; ts: string; data: Message }
-  | { kind: "note"; ts: string; data: Note };
+  | { kind: "note"; ts: string; data: Note }
+  | { kind: "stage"; ts: string; data: TimelineItemView };
 
-/** Intercala mensagens e notas por timestamp asc (puro, sem I/O — testado em thread-merge.test.ts). */
-export function mergeThreadItems(messages: Message[], notes: Note[]): ThreadItem[] {
+/** Intercala mensagens, notas e mudanças de etapa por timestamp asc (puro, sem I/O — testado em thread-merge.test.ts). */
+export function mergeThreadItems(
+  messages: Message[],
+  notes: Note[],
+  etapas: TimelineItemView[] = [],
+): ThreadItem[] {
   const items: ThreadItem[] = [
     ...messages.map((data): ThreadItem => ({ kind: "message", ts: data.sent_at, data })),
     ...notes.map((data): ThreadItem => ({ kind: "note", ts: data.created_at, data })),
+    ...etapas.map((data): ThreadItem => ({ kind: "stage", ts: data.performed_at, data })),
   ];
   // Sort estável (Array#sort é estável no V8/Node): empate mantém a ordem de
   // inserção acima — mensagens antes de notas no mesmo instante.
@@ -50,6 +68,7 @@ function dayLabel(d: Date): string {
 export function ChatThread({ conversationId, contactId }: Props) {
   const q = useMessagesRealtime(conversationId);
   const notes = useConversationNotes(conversationId);
+  const etapas = useEventosDeEtapa(contactId ?? null);
   const bottomRef = useRef<HTMLDivElement | null>(null);
   const activeOrg = useActiveOrg();
   const currentUser = useUser();
@@ -63,8 +82,8 @@ export function ChatThread({ conversationId, contactId }: Props) {
   );
 
   const items: ThreadItem[] = useMemo(
-    () => mergeThreadItems(messages, notes),
-    [messages, notes],
+    () => mergeThreadItems(messages, notes, etapas),
+    [messages, notes, etapas],
   );
 
   // Scroll to bottom on first load + new message/note arrival.
@@ -144,7 +163,9 @@ export function ChatThread({ conversationId, contactId }: Props) {
               </span>
             </div>
             {g.items.map((item) =>
-              item.kind === "note" ? (
+              item.kind === "stage" ? (
+                <StageEventCard key={`stage-${item.data.id}`} evento={item.data} />
+              ) : item.kind === "note" ? (
                 <NoteCard
                   key={`note-${item.data.id}`}
                   note={item.data}

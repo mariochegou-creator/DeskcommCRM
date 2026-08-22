@@ -3,8 +3,9 @@ import { useState } from "react";
 import Link from "next/link";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { Phone, ArrowRight } from "@/lib/ui/icons";
+import { Phone, ArrowRight, Kanban } from "@/lib/ui/icons";
 import { useAuth } from "@/hooks/auth/AuthProvider";
+import { useCrmSummary } from "@/hooks/inbox/useCrmSummary";
 import { useClaimConversation } from "@/hooks/inbox/useClaimConversation";
 import { useReleaseConversation } from "@/hooks/inbox/useReleaseConversation";
 import { useCloseConversation } from "@/hooks/inbox/useCloseConversation";
@@ -36,6 +37,31 @@ export function ConversationHeader({ conversation }: Props) {
 
   const c = conversation.contacts ?? null;
   const displayName = c?.display_name?.trim() || c?.name?.trim() || c?.phone_number || "Sem nome";
+
+  /**
+   * A ETAPA DO FUNIL, no cabeçalho, ao lado do nome.
+   *
+   * O painel lateral já mostra isso — e some abaixo de `xl`, que é a largura em
+   * que a maior parte do atendimento acontece. Quem atende num monitor comum
+   * respondia sem saber em que pé está o negócio, e é justamente aí que o card
+   * pode ter andado sozinho no meio da conversa.
+   *
+   * MESMA consulta do painel (mesma chave do react-query, mesma rota): duas
+   * telas lado a lado dizendo etapas diferentes sobre o mesmo lead seria pior
+   * que não mostrar nenhuma. O negócio é o mesmo padrão do painel — o mais
+   * recente —, e quando o contato tem mais de um a etiqueta se cala em vez de
+   * afirmar a etapa de um negócio que quem lê não escolheu.
+   *
+   * O `useEventosDeEtapa` do thread é quem mantém isto VIVO: quando o agente
+   * move o card, quem escreve é o worker, e nenhuma mutação do navegador
+   * invalidaria esta chave sozinha.
+   */
+  const resumo = useCrmSummary(c?.id ?? null);
+  const leads = resumo.data?.leads ?? [];
+  const negocio = leads.length === 1 ? leads[0] : null;
+  const etapa = negocio
+    ? (resumo.data?.stages.find((s) => s.id === negocio.stage_id)?.name ?? null)
+    : null;
   const phone = c?.phone_number ?? null;
   const status = conversation.status;
   const isMineAssigned = conversation.assigned_to_user_id === user.id;
@@ -52,6 +78,19 @@ export function ConversationHeader({ conversation }: Props) {
           <Badge variant="outline" className="h-4 px-1.5 text-[10px]">
             {STATUS_LABEL[status] ?? status}
           </Badge>
+          {etapa && (
+            <Badge
+              variant="secondary"
+              className="flex h-4 items-center gap-1 px-1.5 text-[10px] font-medium"
+              // O título diz do que é a etiqueta: "Respondeu" sozinho, ao lado de
+              // "Em atendimento", pode ser lido como mais um estado da CONVERSA.
+              title={`Etapa do funil: ${etapa}`}
+              data-testid="etapa-do-funil"
+            >
+              <Kanban size={10} weight="regular" aria-hidden />
+              {etapa}
+            </Badge>
+          )}
         </div>
         {phone && (
           <p className="mt-0.5 flex items-center gap-1 text-xs text-muted-foreground">

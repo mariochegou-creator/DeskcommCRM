@@ -18,6 +18,12 @@ export interface EstagioCandidato {
   name: string;
   agent_stage_hint: string | null;
   is_archived: boolean;
+  /**
+   * A ordem da coluna no board — só o guarda de regressão usa, e por isso é
+   * OPCIONAL: ausente significa "não dá para comparar", e o guarda deixa passar
+   * em vez de recusar um movimento que o tenant mapeou de propósito.
+   */
+  position?: number | null;
 }
 
 export type DestinoDoAgente =
@@ -59,6 +65,38 @@ export function resolveDestinoDoAgente(
 }
 
 /**
+ * O card ANDARIA PARA TRÁS no board — e isso o agente nunca faz sozinho.
+ *
+ * O funil do agente é por CONTATO e começa sempre em `new`; o funil do tenant é
+ * por NEGÓCIO e já tem história quando o agente entra na conversa. Um lead que
+ * um humano levou até «R1 agendada» e que hoje recebe a primeira mensagem do
+ * agente produz a transição new→contacted — legítima do lado do agente, e do
+ * lado do board um card voltando três colunas sozinho.
+ *
+ * Não é conflito de escrita (a trava otimista não pega: ninguém mexeu no card
+ * durante a operação) e não é mapeamento faltando. É o único caso em que o
+ * mapeamento está certo e o movimento ainda assim está errado, porque as duas
+ * réguas não começam no mesmo lugar.
+ *
+ * ⚠️ Compara POSIÇÃO, não a ordem dos passos do agente: quem decide o que é
+ * "para frente" é o board do tenant, que é o que o usuário enxerga.
+ *
+ * Posição ausente nos dois lados = não dá para comparar, e aí o guarda SAI DA
+ * FRENTE: recusar por falta de informação transformaria um dado de ordenação em
+ * veto sobre o funil.
+ */
+export function regridiriaNoFunil(
+  estagios: EstagioCandidato[],
+  deId: string,
+  paraId: string,
+): boolean {
+  const de = estagios.find((e) => e.id === deId)?.position;
+  const para = estagios.find((e) => e.id === paraId)?.position;
+  if (typeof de !== "number" || typeof para !== "number") return false;
+  return para < de;
+}
+
+/**
  * O texto que vai para a timeline quando o agente move o negócio.
  *
  * Nomeia os DOIS lados da tradução — o passo do agente e o estágio do tenant —
@@ -76,7 +114,7 @@ export type { RiskBucket };
 
 import type { SupabaseClient } from "@supabase/supabase-js";
 
-import { emitLeadActivity } from "@/lib/leads/activity-emitter";
+import { emitLeadActivity, type ActivityEvidence } from "@/lib/leads/activity-emitter";
 import { registraFalhaDeAtividade } from "@/lib/leads/activity-write-failure";
 import { resolveActiveLeadForContact } from "@/lib/leads/active-lead";
 import { stageChangeReason } from "@/lib/leads/activity-emitter";
@@ -99,6 +137,7 @@ export interface ResultadoDaSincronizacao {
     | "sem_negocio"
     | "ambiguo"
     | "conflito_humano"
+    | "nao_regride"
     | "falha_de_escrita"
     | "indisponivel";
   leadId?: string;
@@ -122,7 +161,20 @@ export interface ResultadoDaSincronizacao {
  */
 export async function sincronizaEstagioDoAgente(
   admin: SupabaseClient,
-  input: { organizationId: string; contactId: string; passo: string },
+  input: {
+    organizationId: string;
+    contactId: string;
+    passo: string;
+    /**
+     * QUEM moveu, quando se sabe. Sem isto a linha da timeline nasce como
+     * "Sistema" e o atendente que abre a conversa não tem como distinguir o
+     * card que a IA andou do card que o produto andou por conta própria — que
+     * é exatamente a pergunta que ele faz ao ver a coluna mudar sozinha.
+     */
+    agentId?: string | null;
+    /** O lastro da autoria. Sem ele a 0071 rebaixa o ator 'ai' para 'system'. */
+    evidence?: ActivityEvidence | null;
+  },
 ): Promise<ResultadoDaSincronizacao> {
   // ⚠️ O erro do SELECT É LIDO, e isso não é zelo: o supabase-js NÃO LANÇA em
   // falha de rede — devolve { data: null, error }. Descartar o erro faria o
@@ -163,7 +215,7 @@ export async function sincronizaEstagioDoAgente(
 
   const { data: stageRows, error: erroStages } = await admin
     .from("crm_stages")
-    .select("id, name, agent_stage_hint, is_archived")
+    .select("id, name, agent_stage_hint, is_archived, position")
     .eq("pipeline_id", lead.pipeline_id);
   // Mesmo motivo do SELECT acima: sem esta linha, banco fora = pipeline sem
   // hint nenhum = "sem_mapeamento", e o incidente se disfarça de configuração.
@@ -171,12 +223,21 @@ export async function sincronizaEstagioDoAgente(
     return { moveu: false, motivo: "indisponivel", leadId: lead.id, detalhe: erroStages.message };
   }
 
-  const destino = resolveDestinoDoAgente(
-    (stageRows ?? []) as EstagioCandidato[],
-    input.passo,
-    lead.stage_id,
-  );
+  const estagios = (stageRows ?? []) as EstagioCandidato[];
+  const destino = resolveDestinoDoAgente(estagios, input.passo, lead.stage_id);
   if (!destino.move) return { moveu: false, motivo: destino.motivo, leadId: lead.id };
+
+  // O guarda vem DEPOIS de resolver o destino porque só aqui existem os dois
+  // lados para comparar — e antes da escrita porque o movimento para trás não
+  // deve acontecer nem por um instante.
+  if (regridiriaNoFunil(estagios, lead.stage_id, destino.stageId)) {
+    return {
+      moveu: false,
+      motivo: "nao_regride",
+      leadId: lead.id,
+      stageName: destino.stageName,
+    };
+  }
 
   // O erro DESTE select é descartado de propósito — e a diferença para os dois de
   // cima (onde descartar produziu o defeito de tratar banco fora como rotina) é
@@ -220,7 +281,17 @@ export async function sincronizaEstagioDoAgente(
     type: "stage_changed",
     sourceModule: "crm",
     sourceId: lead.id,
-    actor: { type: "webhook_source", id: "agent-stage-sync" },
+    // ⚠️ O ATOR É O AGENTE, com nome e lastro — não "o produto".
+    //
+    // Enquanto esta linha nascia como `webhook_source`, a timeline dizia
+    // "Sistema" e a autoria da IA sumia no mesmo balaio de cron e webhook. O
+    // fallback continua existindo para o chamador que não sabe qual agente
+    // moveu (nenhum hoje), porque afirmar autoria sem saber de quem é pior que
+    // não afirmar — mesma regra do lastro logo abaixo.
+    actor: input.agentId
+      ? { type: "ai_agent", id: input.agentId, role: "agent" }
+      : { type: "webhook_source", id: "agent-stage-sync" },
+    evidence: input.evidence ?? null,
     reason: stageChangeReason(
       (origem as { name: string } | null)?.name ?? null,
       destino.stageName,

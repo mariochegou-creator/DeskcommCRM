@@ -3,6 +3,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import { emitLeadActivity } from "@/lib/leads/activity-emitter";
 import {
   razaoDaMudancaPeloAgente,
+  regridiriaNoFunil,
   resolveDestinoDoAgente,
   sincronizaEstagioDoAgente,
   type EstagioCandidato,
@@ -88,6 +89,44 @@ describe("resolveDestinoDoAgente", () => {
     expect(r).toContain("Avaliação");
     expect(r).toContain("qualifying");
     expect(r).toContain("assistente");
+  });
+});
+
+/* ────────────────────────────────────────────────────────────────────────── */
+
+/**
+ * O guarda de regressão — o caso que o mapeamento acerta e o movimento erra.
+ *
+ * O funil do agente é por CONTATO e começa em `new`; o do tenant é por NEGÓCIO e
+ * já tem história. Um lead que um humano levou até «R1 agendada» e que só agora
+ * recebe a primeira mensagem do agente produz new→contacted — e o card voltaria
+ * três colunas sozinho, sem ninguém ter errado nada.
+ */
+const funil: EstagioCandidato[] = [
+  { id: "f1", name: "A contatar", agent_stage_hint: "new", is_archived: false, position: 1000 },
+  { id: "f2", name: "Contatado", agent_stage_hint: "contacted", is_archived: false, position: 2000 },
+  { id: "f3", name: "Respondeu", agent_stage_hint: "qualifying", is_archived: false, position: 3000 },
+  { id: "f4", name: "R1 agendada", agent_stage_hint: null, is_archived: false, position: 4000 },
+];
+
+describe("regridiriaNoFunil", () => {
+  it("puxar o card para trás é regressão", () => {
+    expect(regridiriaNoFunil(funil, "f4", "f2")).toBe(true);
+  });
+
+  it("andar para frente não é", () => {
+    expect(regridiriaNoFunil(funil, "f2", "f3")).toBe(false);
+  });
+
+  it("a mesma coluna não é regressão — quem trata isso é `ja_esta_la`", () => {
+    expect(regridiriaNoFunil(funil, "f3", "f3")).toBe(false);
+  });
+
+  it("sem posição para comparar, o guarda SAI DA FRENTE", () => {
+    // Recusar por falta de um número de ordenação transformaria um dado de
+    // layout em veto sobre o funil — o tenant mapeou o destino de propósito.
+    const semPosicao = funil.map((e) => ({ ...e, position: null }));
+    expect(regridiriaNoFunil(semPosicao, "f4", "f2")).toBe(false);
   });
 });
 
@@ -197,6 +236,26 @@ describe("sincronizaEstagioDoAgente", () => {
   it("UPDATE com erro é falha de escrita — jamais 'ja_esta_la' (que a ponte lê como sucesso)", async () => {
     const r = await sincroniza(cenario({ update: { data: null, error: { message: "deadlock detected" } } }));
     expect(r).toMatchObject({ moveu: false, motivo: "falha_de_escrita" });
+    expect(vi.mocked(emitLeadActivity)).not.toHaveBeenCalled();
+  });
+
+  it("destino ATRÁS do card: não move, e não escreve nada", async () => {
+    // O lead já está adiante (s1, posição 5000) do que o passo do agente mapeia
+    // (s2, posição 2000). A trava otimista NÃO pegaria este caso — ninguém mexeu
+    // no card durante a operação —, então sem este guarda o card andaria para
+    // trás e a timeline registraria isso como movimento normal.
+    const r = await sincroniza(
+      cenario({
+        stages: {
+          data: [
+            { ...STAGES[0], position: 5000 },
+            { ...STAGES[1], position: 2000 },
+          ],
+          error: null,
+        },
+      }),
+    );
+    expect(r).toMatchObject({ moveu: false, motivo: "nao_regride" });
     expect(vi.mocked(emitLeadActivity)).not.toHaveBeenCalled();
   });
 
