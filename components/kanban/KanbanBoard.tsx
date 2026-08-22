@@ -53,7 +53,7 @@ function groupLeadsByStage(stages: Stage[], leads: Lead[]): Map<string, Lead[]> 
 
 function BoardSkeleton() {
   return (
-    <div className="flex gap-3 overflow-x-auto p-4">
+    <div className="flex snap-x snap-mandatory gap-3 overflow-x-auto p-4 sm:snap-none">
       {[0, 1, 2].map((c) => (
         <div
           key={c}
@@ -278,7 +278,7 @@ export function KanbanBoard({
 
   return (
     <DragDropContext onDragEnd={handleDragEnd}>
-      <div className="flex h-full gap-3 overflow-x-auto p-4">
+      <div className="flex h-full snap-x snap-mandatory gap-3 overflow-x-auto p-4 sm:snap-none">
         {data.stages.map((stage, index) => (
           <StageColumn
             key={stage.id}

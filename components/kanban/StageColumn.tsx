@@ -69,7 +69,11 @@ export function StageColumn({
     : undefined;
 
   return (
-    <div className="flex w-80 shrink-0 flex-col rounded-lg border border-border bg-surface-muted/40">
+    /* `w-[85vw]` no celular: a coluna toma quase a tela inteira e sobra uma
+       fresta da próxima — é a fresta que avisa que dá para deslizar. O
+       `snap-start` faz o dedo parar sempre no começo de uma coluna, nunca no
+       meio de duas. Acima de `sm` volta aos 320px de sempre. */
+    <div className="flex w-[85vw] shrink-0 snap-start flex-col rounded-lg border border-border bg-surface-muted/40 sm:w-80">
       <div className="flex items-center gap-2 border-b border-border px-3 py-2.5">
         <span
           className={cn(

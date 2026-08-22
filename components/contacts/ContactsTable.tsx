@@ -28,10 +28,12 @@ export function ContactsTable({ contacts }: Props) {
       <TableHeader>
         <TableRow>
           <TableHead>Nome</TableHead>
-          <TableHead>Email</TableHead>
+          {/* No celular sobram Nome, Telefone e Status: é com isso que se
+              reconhece e liga. O resto volta a partir de `md`. */}
+          <TableHead className="hidden md:table-cell">Email</TableHead>
           <TableHead>Telefone</TableHead>
-          <TableHead>Tags</TableHead>
-          <TableHead>Última atividade</TableHead>
+          <TableHead className="hidden lg:table-cell">Tags</TableHead>
+          <TableHead className="hidden md:table-cell">Última atividade</TableHead>
           <TableHead>Status</TableHead>
         </TableRow>
       </TableHeader>
@@ -43,13 +45,13 @@ export function ContactsTable({ contacts }: Props) {
                 {displayName(c)}
               </Link>
             </TableCell>
-            <TableCell className="text-muted-foreground">
+            <TableCell className="hidden text-muted-foreground md:table-cell">
               {c.email ?? "—"}
             </TableCell>
             <TableCell className="text-muted-foreground">
               {c.phone_number ?? "—"}
             </TableCell>
-            <TableCell>
+            <TableCell className="hidden lg:table-cell">
               {/* ChipsDeTag no lugar do Badge cru: a mesma cor do catálogo
                   que o inbox e o kanban já usam — aqui era o único lugar em
                   que a tag saía sem a cor configurada. */}
@@ -61,7 +63,7 @@ export function ContactsTable({ contacts }: Props) {
                 )}
               </div>
             </TableCell>
-            <TableCell className="text-muted-foreground text-sm">
+            <TableCell className="hidden text-muted-foreground text-sm md:table-cell">
               {c.last_activity_at
                 ? formatRelative(new Date(c.last_activity_at), new Date(), { locale: ptBR })
                 : "—"}

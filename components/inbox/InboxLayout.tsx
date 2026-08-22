@@ -10,6 +10,8 @@ import {
   type ConversationWithContact,
 } from "@/hooks/inbox/useConversationsRealtime";
 import { useConversation, isNotFound } from "@/hooks/inbox/useConversation";
+import { CaretLeft } from "@/lib/ui/icons";
+import { cn } from "@/lib/utils";
 import { ConversationList } from "./ConversationList";
 import {
   InboxFilters,
@@ -213,6 +215,9 @@ export function InboxLayout({ initialSelectedId = null }: InboxLayoutProps = {})
   const close = useCloseConversation();
 
   const handleSelect = useCallback((id: string) => setSelectedId(id), []);
+  // Celular: "voltar" é largar a conversa, não navegar. As duas colunas moram
+  // na mesma rota; quem decide qual aparece é `selectedId`.
+  const handleBack = useCallback(() => setSelectedId(null), []);
   const handleVisibleChange = useCallback((ids: string[]) => setVisibleIds(ids), []);
   const handleFocusReply = useCallback(() => composerRef.current?.focus(), []);
   const handleClaim = useCallback(() => {
@@ -236,8 +241,22 @@ export function InboxLayout({ initialSelectedId = null }: InboxLayoutProps = {})
         : null;
 
   return (
-    <div className="grid h-[calc(100vh-3.5rem)] w-full grid-cols-1 md:grid-cols-[300px_1fr] xl:grid-cols-[300px_1fr_320px]">
-      <div className="flex h-full min-h-0 flex-col border-r border-border">
+    /* A altura desconta a topbar (3.5rem) E o respiro do <main>: no celular
+       p-4 em cima + pb-20 reservado para a barra inferior (9.5rem no total);
+       no desktop p-6 dos dois lados (6.5rem). Sem esse desconto o composer
+       nasce embaixo da barra de navegação e não há como rolar até ele.
+       `dvh` e não `vh`: no Android a barra do Chrome some e volta, e com `vh`
+       a conversa fica sempre uns 60px maior que a tela. */
+    <div className="grid h-[calc(100dvh-9.5rem)] w-full grid-cols-1 grid-rows-1 md:h-[calc(100dvh-6.5rem)] md:grid-cols-[300px_1fr] xl:grid-cols-[300px_1fr_320px]">
+      <div
+        className={cn(
+          "flex h-full min-h-0 flex-col border-r border-border",
+          // Mestre/detalhe: em 360px não cabem lista e conversa juntas — e
+          // empilhadas a conversa nascia fora da tela, sem rolagem que a
+          // alcançasse. Uma de cada vez; a partir de `md` voltam lado a lado.
+          selectedId && "max-md:hidden",
+        )}
+      >
         <InboxFilters value={filterValue} onChange={setFilterValue} />
         <div className="min-h-0 flex-1 overflow-hidden">
           <ConversationList
@@ -251,7 +270,19 @@ export function InboxLayout({ initialSelectedId = null }: InboxLayoutProps = {})
         </div>
       </div>
 
-      <div className="flex h-full min-h-0 flex-col">
+      <div className={cn("flex h-full min-h-0 flex-col", !selectedId && "max-md:hidden")}>
+        {/* Fica FORA do ramo de sucesso: se a conversa não carregar, o celular
+            ainda precisa de uma saída de volta para a lista. */}
+        {selectedId ? (
+          <button
+            type="button"
+            onClick={handleBack}
+            className="flex h-11 shrink-0 items-center gap-1 border-b border-border px-3 text-sm font-medium text-text-muted md:hidden"
+          >
+            <CaretLeft size={16} weight="bold" aria-hidden />
+            Conversas
+          </button>
+        ) : null}
         {selectedConversation ? (
           <>
             <ConversationHeader conversation={selectedConversation} />

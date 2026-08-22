@@ -43,7 +43,7 @@ export function ImageMedia({ messageId, alt }: Props) {
         <img src={src} alt={alt} loading="lazy" onLoad={() => setState("ready")} onError={() => setState("error")} className="h-full w-full object-cover" />
       </button>
       <Dialog open={open} onOpenChange={setOpen}>
-        <DialogContent className="max-w-4xl border-none bg-transparent p-0 shadow-none">
+        <DialogContent className="max-w-4xl border-none bg-transparent p-0 shadow-none sm:p-0">
           <DialogTitle className="sr-only">{alt}</DialogTitle>
           <img src={src} alt={alt} className="max-h-[85vh] w-full rounded-lg object-contain" />
         </DialogContent>
