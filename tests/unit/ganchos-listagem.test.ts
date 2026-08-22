@@ -19,20 +19,25 @@ describe("listarGanchos", () => {
     const lista = listarGanchos(campos);
     expect(lista.map((g) => g.chave)).toEqual(["gancho_abertura", "gancho_2"]);
     // Espaço em volta é ruído de planilha: sai antes de virar mensagem.
-    expect(lista[1].texto).toBe("Passando de novo pra saber se faz sentido.");
+    expect(lista.map((g) => g.texto)).toEqual([
+      "Oi! Vi que vocês atendem em Catu.",
+      "Passando de novo pra saber se faz sentido.",
+    ]);
   });
 
   it("o rótulo é o que o SDR lê, nunca o nome de máquina", () => {
-    const lista = listarGanchos(campos);
-    expect(lista[0].rotulo).toBe("Gancho 1 — abertura");
-    expect(lista[1].rotulo).toBe("Gancho 2 — segundo toque");
+    expect(listarGanchos(campos).map((g) => g.rotulo)).toEqual([
+      "Gancho 1 — abertura",
+      "Gancho 2 — segundo toque",
+    ]);
   });
 
   it("chave desconhecida ganha rótulo legível em vez de nome inventado", () => {
     // Gancho vindo de webhook ou de planilha de terceiro não tem rótulo fixo.
     // Embelezar é honesto; batizar de "Gancho 3" mentiria sobre a origem.
-    const [g] = listarGanchos({ gancho_teste_ab: "Texto." });
-    expect(g.rotulo).toBe("Gancho teste ab");
+    expect(listarGanchos({ gancho_teste_ab: "Texto." }).map((g) => g.rotulo)).toEqual([
+      "Gancho teste ab",
+    ]);
   });
 
   it("os dois leitores enxergam a mesma coisa", () => {
