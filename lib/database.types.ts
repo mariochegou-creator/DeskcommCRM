@@ -2215,10 +2215,12 @@ export type Database = {
           error_detail: string | null
           id: string
           lead_id: string | null
+          live_state: Json
           mime_type: string | null
           organization_id: string
           outcome: string | null
           score: number | null
+          sdr_notes: string | null
           size_bytes: number | null
           status: string
           storage_path: string | null
@@ -2235,10 +2237,12 @@ export type Database = {
           error_detail?: string | null
           id?: string
           lead_id?: string | null
+          live_state?: Json
           mime_type?: string | null
           organization_id: string
           outcome?: string | null
           score?: number | null
+          sdr_notes?: string | null
           size_bytes?: number | null
           status?: string
           storage_path?: string | null
@@ -2255,10 +2259,12 @@ export type Database = {
           error_detail?: string | null
           id?: string
           lead_id?: string | null
+          live_state?: Json
           mime_type?: string | null
           organization_id?: string
           outcome?: string | null
           score?: number | null
+          sdr_notes?: string | null
           size_bytes?: number | null
           status?: string
           storage_path?: string | null

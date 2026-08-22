@@ -237,6 +237,12 @@ export type AuditAction =
   | "call.logged"
   | "call.audio_uploaded"
   /**
+   * Análise refeita pelo botão da tela (0106). Entra no audit porque é gasto de
+   * IA disparado por uma pessoa e repetível: sem a linha, uma ligação
+   * reprocessada dez vezes numa tarde não deixaria rastro de quem clicou.
+   */
+  | "call.reanalyze_requested"
+  /**
    * Troca do número de saída da conversa. Fica no audit porque muda por onde a
    * org fala com aquele cliente daí em diante — e do lado dele a mensagem passa
    * a chegar de outro número. Quando alguém perguntar "por que este lead recebeu

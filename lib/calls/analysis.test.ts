@@ -103,3 +103,51 @@ describe("CallAnalysisSchema", () => {
     expect(CallAnalysisSchema.safeParse({ ...ANALISE_VALIDA, nota_geral: 0 }).success).toBe(true);
   });
 });
+
+describe("o prompt da análise com o material do copiloto (0106)", () => {
+  it("inclui a anotação do SDR", () => {
+    const p = buildCallAnalysisPrompt("SDR: bom dia.", {
+      notas: "ele pediu pra ligar depois das 18h",
+    });
+    expect(p).toContain("ANOTAÇÃO DO SDR");
+    expect(p).toContain("depois das 18h");
+  });
+
+  it("lista o que o roteiro não cobriu, em português", () => {
+    const p = buildCallAnalysisPrompt("SDR: bom dia.", {
+      cobertura: {
+        abriu_sem_pergunta: true,
+        entendeu_o_negocio: true,
+        dor_declarada: true,
+        decisor_identificado: false,
+        reuniao_proposta: false,
+        dia_e_hora_confirmados: false,
+      },
+    });
+    expect(p).toContain("quem decide");
+    expect(p).not.toContain("decisor_identificado");
+  });
+
+  it("não cita o checklist quando tudo foi coberto", () => {
+    const p = buildCallAnalysisPrompt("SDR: bom dia.", {
+      cobertura: {
+        abriu_sem_pergunta: true,
+        entendeu_o_negocio: true,
+        dor_declarada: true,
+        decisor_identificado: true,
+        reuniao_proposta: true,
+        dia_e_hora_confirmados: true,
+      },
+    });
+    expect(p).not.toContain("ITENS DO ROTEIRO");
+  });
+
+  it("sem extras, o prompt é o de sempre — a rubrica não muda", () => {
+    // A rubrica é de quem treina o time. Se esta asserção quebrar, alguém mexeu
+    // na nota que o SDR recebe sem que ninguém visse acontecer.
+    const antes = buildCallAnalysisPrompt("SDR: bom dia.");
+    const depois = buildCallAnalysisPrompt("SDR: bom dia.", { notas: null, cobertura: null });
+    expect(depois).toBe(antes);
+    expect(antes.endsWith("SDR: bom dia.")).toBe(true);
+  });
+});

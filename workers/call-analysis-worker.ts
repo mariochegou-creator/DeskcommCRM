@@ -32,6 +32,7 @@ import {
 } from "@/lib/ai/gateway";
 import { buildCallAnalysisPrompt } from "@/lib/calls/analysis-prompt";
 import { CallAnalysisSchema, type CallAnalysis } from "@/lib/calls/analysis-schema";
+import { LIVE_CHUNK_SECONDS, parseLiveState } from "@/lib/calls/live-schema";
 import { CALL_BUCKET } from "@/lib/calls/storage";
 import { groqTranscriptionProvider } from "@/lib/calls/transcribe";
 import type { EventRow, HandlerResult } from "@/lib/event-log/dispatcher";
@@ -53,6 +54,9 @@ interface CallRow {
   storage_path: string | null;
   mime_type: string | null;
   transcript: string | null;
+  duration_seconds: number | null;
+  sdr_notes: string | null;
+  live_state: unknown;
 }
 
 export async function analyzeCallRecording(row: EventRow): Promise<HandlerResult> {
@@ -63,7 +67,7 @@ export async function analyzeCallRecording(row: EventRow): Promise<HandlerResult
   const admin = createAdminClient();
   const { data, error } = await admin
     .from("crm_call_recordings")
-    .select("id, organization_id, contact_id, lead_id, status, storage_path, mime_type, transcript")
+    .select("id, organization_id, contact_id, lead_id, status, storage_path, mime_type, transcript, duration_seconds, sdr_notes, live_state")
     .eq("id", callId)
     .eq("organization_id", row.organization_id)
     .maybeSingle();
@@ -111,6 +115,26 @@ export async function analyzeCallRecording(row: EventRow): Promise<HandlerResult
     // repetir o Whisper depois de a análise ter falhado paga duas vezes pela
     // mesma coisa.
     let transcript = call.transcript?.trim() ?? "";
+
+    // Transcrição ao vivo PELA METADE é pior que nenhuma: a análise sairia
+    // confiante em cima de meia ligação, e ninguém veria o que faltou. Se o
+    // copiloto rodou (chunks > 0) mas cobriu menos de 70% da duração — internet
+    // caiu, o Groq recusou blocos, a aba dormiu —, o texto parcial é descartado
+    // e o áudio íntegro vai para o Whisper, que é o caminho que sempre cobriu
+    // tudo. Ligação sem copiloto (chunks = 0) não entra nesta conta: ali o
+    // `transcript` só existe se veio do Whisper numa tentativa anterior.
+    const aoVivo = parseLiveState(call.live_state);
+    const blocosAoVivo = aoVivo.chunks ?? 0;
+    const blocosEsperados = Math.floor((call.duration_seconds ?? 0) / LIVE_CHUNK_SECONDS);
+    if (transcript && blocosAoVivo > 0 && blocosEsperados > 1 && blocosAoVivo < blocosEsperados * 0.7) {
+      logger.warn("[call-analysis] transcrição ao vivo incompleta, refazendo pelo áudio", {
+        call_id: call.id,
+        blocos: blocosAoVivo,
+        esperados: blocosEsperados,
+      });
+      transcript = "";
+    }
+
     if (!transcript) {
       const dl = await admin.storage.from(CALL_BUCKET).download(call.storage_path);
       if (dl.error || !dl.data) {
@@ -151,7 +175,10 @@ export async function analyzeCallRecording(row: EventRow): Promise<HandlerResult
     }
 
     // ---- 2. análise ----
-    const { analysis, raw } = await runAnalysis(transcript, call.organization_id, modelo);
+    const { analysis, raw } = await runAnalysis(transcript, call.organization_id, modelo, {
+      notas: call.sdr_notes,
+      cobertura: aoVivo.cobertura ?? null,
+    });
 
     if (!analysis) {
       // Nem o retry produziu JSON. Guarda a prosa: o coach lê e o SDR aproveita
@@ -205,10 +232,14 @@ async function runAnalysis(
   transcript: string,
   organizationId: string,
   modelo: ModelId,
+  extras: { notas: string | null; cobertura: Record<string, boolean> | null } = {
+    notas: null,
+    cobertura: null,
+  },
 ): Promise<{ analysis: CallAnalysis | null; raw: string }> {
   const cfg = gatewayConfig();
   const headers = cfg ? gatewayHeaders({ organizationId }) : undefined;
-  const prompt = buildCallAnalysisPrompt(transcript);
+  const prompt = buildCallAnalysisPrompt(transcript, extras);
 
   const tentativas = [
     prompt,

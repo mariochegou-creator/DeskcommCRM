@@ -2,7 +2,7 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useEffect, useMemo, useState, useTransition } from "react";
-import { Kanban, Users, UsersThree, Gear, CaretDoubleLeft, CaretDoubleRight, CaretDown, Inbox, ScalesSimple, Robot, Brain, PlugsConnected, ChartBar, ChartLineUp, WebhooksLogo, FlowArrow, FileText, ClockCountdown, PuzzlePiece, Signpost, Sparkle, Gauge, Target, VideoCamera, Checks } from "@/lib/ui/icons";
+import { Kanban, Users, UsersThree, Gear, CaretDoubleLeft, CaretDoubleRight, CaretDown, Inbox, ScalesSimple, Robot, Brain, PlugsConnected, ChartBar, ChartLineUp, WebhooksLogo, FlowArrow, FileText, ClockCountdown, PuzzlePiece, Signpost, Sparkle, Gauge, Target, VideoCamera, Checks, Phone } from "@/lib/ui/icons";
 import type { Icon as PhosphorIcon } from "@phosphor-icons/react";
 import { cn } from "@/lib/utils";
 import { toggleSidebar } from "@/app/actions/shell/toggleSidebar";
@@ -48,6 +48,11 @@ export const NAV_ITEMS: NavItem[] = [
   // Sala de Reuniões (0098) — transcrições, coaching e métricas do copiloto do
   // Meet. Perto de Negócios de propósito: reunião é o momento decisivo do funil.
   { href: "/app/sala-de-reunioes", label: "Sala de Reuniões", icon: VideoCamera, section: "CRM" },
+  // Ligações (0100/0106) logo abaixo da Sala de Reuniões: são os dois lugares
+  // onde a IA ouve uma conversa e devolve coaching. Sem esta entrada a análise
+  // da ligação só existia dentro do contato, e quem coordena o time não acha
+  // pelo caminho do contato — a pergunta dele é "como foram as ligações".
+  { href: "/app/calls", label: "Ligações", icon: Phone, section: "CRM" },
 
   { href: "/app/ai/agents", label: "Agentes IA", icon: Robot, permission: "ai.agents.view", section: "IA" },
   { href: "/app/ai/routers", label: "Roteadores", icon: Signpost, permission: "ai.routers.view", section: "IA" },

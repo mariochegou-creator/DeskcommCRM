@@ -13,6 +13,7 @@
  */
 import { randomUUID } from "node:crypto";
 import { type NextRequest } from "next/server";
+import { z } from "zod";
 
 import { fail, ok } from "@/lib/api/wrappers";
 import { requireRole } from "@/lib/auth/require-role";
@@ -48,7 +49,7 @@ export async function GET(_req: NextRequest, ctx: RouteCtx): Promise<Response> {
     // shape da linha a partir do TEXTO do `select`, e uma expressão `"a" + "b"`
     // devolve `GenericStringError` — o que aparece depois como "Property 'id'
     // does not exist" em toda leitura, longe da causa.
-    .select("id, organization_id, contact_id, lead_id, activity_id, status, outcome, score, transcript, analysis, error_detail, storage_path, mime_type, duration_seconds, created_at, updated_at")
+    .select("id, organization_id, contact_id, lead_id, activity_id, status, outcome, score, transcript, analysis, error_detail, storage_path, mime_type, duration_seconds, sdr_notes, live_state, created_at, updated_at")
     .eq("id", callId)
     .maybeSingle();
   if (error) return fail("internal_error", error.message, 500, { requestId });
@@ -90,6 +91,8 @@ export async function GET(_req: NextRequest, ctx: RouteCtx): Promise<Response> {
       error_detail: call.error_detail,
       duration_seconds: call.duration_seconds,
       mime_type: call.mime_type,
+      sdr_notes: call.sdr_notes,
+      live_state: call.live_state,
       audio_url,
       audio_url_expires_in: audio_url ? AUDIO_URL_TTL_SECONDS : null,
       created_at: call.created_at,
@@ -97,4 +100,48 @@ export async function GET(_req: NextRequest, ctx: RouteCtx): Promise<Response> {
     },
     { requestId },
   );
+}
+
+/**
+ * PATCH /api/v1/calls/[id] — a anotação que o SDR escreve DURANTE a ligação.
+ *
+ * Salva sozinha enquanto ele digita (o popup faz debounce), então tem de ser
+ * barata e tolerante: sem evento, sem auditoria, sem recalcular nada. O texto
+ * vira contexto no prompt da análise final — é o que a transcrição não capta
+ * (o tom, a cara que o lead fez, o que ficou combinado por fora).
+ *
+ * `agent` e não `viewer`: isto ESCREVE. E a escrita vai pelo client do caller,
+ * não pelo admin — a RLS é quem decide se esta ligação é da org dele.
+ */
+const PatchBody = z.object({
+  sdr_notes: z.string().max(10_000).nullable(),
+});
+
+export async function PATCH(req: NextRequest, ctx: RouteCtx): Promise<Response> {
+  const requestId = randomUUID();
+  const { id: callId } = await ctx.params;
+
+  const authz = await requireRole("agent", { requestId, resource: "crm_call_recordings" });
+  if (!authz.ok) return authz.response;
+
+  const body = await req.json().catch(() => null);
+  const parsed = PatchBody.safeParse(body ?? {});
+  if (!parsed.success) {
+    return fail("validation_failed", "Corpo inválido.", 422, {
+      requestId,
+      details: { issues: parsed.error.issues },
+    });
+  }
+
+  const supabase = await createClient();
+  const { data, error } = await supabase
+    .from("crm_call_recordings")
+    .update({ sdr_notes: parsed.data.sdr_notes?.trim() || null })
+    .eq("id", callId)
+    .select("id")
+    .maybeSingle();
+  if (error) return fail("internal_error", error.message, 500, { requestId });
+  if (!data) return fail("not_found", "Ligação não encontrada.", 404, { requestId });
+
+  return ok({ id: data.id }, { requestId });
 }

@@ -54,16 +54,70 @@ TRANSCRIÇÃO DA LIGAÇÃO:
 export const PLACEHOLDER_TRANSCRICAO = "[TRANSCRICAO_AQUI]";
 
 /**
- * O prompt com a transcrição no lugar do marcador.
+ * O prompt com a transcrição no lugar do marcador, mais o que o SDR anotou
+ * durante a ligação e o checklist do roteiro que o copiloto ao vivo marcou.
+ *
+ * OS DOIS BLOCOS EXTRAS VÃO DEPOIS DA TRANSCRIÇÃO, e a rubrica acima não muda
+ * uma vírgula. É deliberado: a rubrica é de quem treina o time e define a nota
+ * que o SDR recebe. O que entra aqui é CONTEXTO — a anotação diz o que o áudio
+ * não capta (a reação do dono, o que ficou combinado por fora, por que a
+ * ligação terminou cedo), e o checklist diz o que o roteiro previa e não
+ * aconteceu. Sem a anotação, o modelo já penalizou SDR por "não confirmou o
+ * combinado" quando o combinado tinha sido confirmado fora do microfone.
  *
  * Substituição SIMPLES (`split`/`join`), nunca `String.replace` com o texto do
  * usuário do lado direito: numa transcrição, `$&` e `$1` são sequências
  * plausíveis, e `replace` as interpretaria como referências de captura,
  * corrompendo em silêncio o texto que o modelo vai ler.
  */
-export function buildCallAnalysisPrompt(transcricao: string): string {
-  return PROMPT.split(PLACEHOLDER_TRANSCRICAO).join(transcricao);
+export function buildCallAnalysisPrompt(
+  transcricao: string,
+  extras: { notas?: string | null; cobertura?: Record<string, boolean> | null } = {},
+): string {
+  const base = PROMPT.split(PLACEHOLDER_TRANSCRICAO).join(transcricao);
+
+  const blocos: string[] = [];
+
+  const notas = extras.notas?.trim();
+  if (notas) {
+    blocos.push(
+      `ANOTAÇÃO DO SDR (escrita por ele DURANTE a ligação — trate como fato, não como opinião do lead):
+${notas}`,
+    );
+  }
+
+  const cobertura = extras.cobertura;
+  if (cobertura && Object.keys(cobertura).length > 0) {
+    const naoFeito = Object.entries(cobertura)
+      .filter(([, v]) => !v)
+      .map(([k]) => COBERTURA_EM_PORTUGUES[k] ?? k);
+    if (naoFeito.length > 0) {
+      blocos.push(
+        `ITENS DO ROTEIRO QUE O COPILOTO AO VIVO NÃO VIU ACONTECER: ${naoFeito.join("; ")}.
+Use isto como pista, não como veredito — o copiloto ouve a mesma trilha imperfeita que você está lendo.`,
+      );
+    }
+  }
+
+  const SEPARADOR = "\n\n";
+  return blocos.length > 0 ? base + SEPARADOR + blocos.join(SEPARADOR) : base;
 }
+
+/**
+ * Os itens do checklist em português, para o prompt. As CHAVES são as de
+ * `lib/calls/live-schema.ts` — mandar `dia_e_hora_confirmados` cru para o
+ * modelo funciona, mas o texto em português é o que faz o comentário da análise
+ * sair na língua do SDR. Chave sem tradução cai no `?? k` e aparece crua, o que
+ * é feio mas nunca some.
+ */
+const COBERTURA_EM_PORTUGUES: Record<string, string> = {
+  abriu_sem_pergunta: "abrir se apresentando e dizendo o motivo, sem começar por pergunta",
+  entendeu_o_negocio: "entender como o negócio funciona",
+  dor_declarada: "fazer o dono declarar um problema",
+  decisor_identificado: "descobrir quem decide quando envolve dinheiro",
+  reuniao_proposta: "propor a reunião com dois horários (OU-OU)",
+  dia_e_hora_confirmados: "confirmar dia e hora no fim da ligação",
+};
 
 /** Só para o teste que garante que o marcador não sumiu numa edição do prompt. */
 export function rawCallAnalysisPrompt(): string {

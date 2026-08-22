@@ -18,6 +18,8 @@ export interface CallRecord {
   error_detail: string | null;
   duration_seconds: number | null;
   mime_type: string | null;
+  sdr_notes: string | null;
+  live_state: unknown;
   audio_url: string | null;
   audio_url_expires_in: number | null;
   created_at: string;
@@ -123,4 +125,114 @@ export async function uploadCallAudio(input: UploadCallAudioInput): Promise<void
     }
     throw new Error(message);
   }
+}
+
+
+/**
+ * Manda UM bloco de áudio da ligação em curso e recebe de volta o que foi
+ * transcrito mais a próxima frase para o SDR falar.
+ *
+ * `fetch` cru pelo mesmo motivo do `uploadCallAudio`: o `apiClient` serializa o
+ * corpo com `JSON.stringify` (o que destruiria o Blob). O timeout aqui é
+ * PRÓPRIO e curto — 20 s. Um bloco que demora mais que isso já perdeu a
+ * utilidade (a conversa andou), e deixá-lo pendurado empilharia requisição em
+ * cima de requisição até o navegador engasgar no meio da ligação.
+ */
+export interface BlocoAoVivo {
+  texto: string;
+  sugestao: {
+    fase: string;
+    sugestao: string;
+    alerta: string | null;
+    cobertura: Record<string, boolean>;
+  } | null;
+  transcription_error?: boolean;
+}
+
+export async function enviarBlocoAoVivo(input: {
+  callId: string;
+  blob: Blob;
+  atSeconds: number;
+  signal?: AbortSignal;
+}): Promise<BlocoAoVivo> {
+  const form = new FormData();
+  form.append("file", input.blob, "bloco.webm");
+  form.append("at_seconds", String(Math.max(0, Math.round(input.atSeconds))));
+
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), 20_000);
+  input.signal?.addEventListener("abort", () => controller.abort(), { once: true });
+
+  try {
+    const res = await fetch(`/api/v1/calls/${input.callId}/live`, {
+      method: "POST",
+      body: form,
+      credentials: "same-origin",
+      signal: controller.signal,
+    });
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    const body = (await res.json()) as { data: BlocoAoVivo };
+    return body.data;
+  } finally {
+    clearTimeout(timeout);
+  }
+}
+
+/**
+ * A anotação do SDR, salva enquanto ele digita.
+ *
+ * Sem `showApiError`: isto dispara a cada pausa de digitação durante uma
+ * ligação, e um toast vermelho porque a rede oscilou por um segundo é
+ * exatamente o tipo de interrupção que este popup existe para não causar. O
+ * erro aparece na própria caixa de anotação, discreto.
+ */
+export function useSaveCallNotes(callId: string | null) {
+  return useMutation({
+    mutationFn: async (sdr_notes: string) => {
+      if (!callId) return null;
+      return apiClient.patch(`/api/v1/calls/${callId}`, { sdr_notes });
+    },
+  });
+}
+
+/** Roda a análise de novo — o botão que substitui o SQL de reprocessamento. */
+export function useReanalyzeCall(callId: string) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async () => apiClient.post(`/api/v1/calls/${callId}/reanalyze`, {}),
+    onSuccess: () => {
+      void qc.invalidateQueries({ queryKey: ["call", callId] });
+    },
+    onError: (err) => showApiError(err),
+  });
+}
+
+export interface CallListItem {
+  id: string;
+  contact_id: string;
+  lead_id: string | null;
+  contact_name: string;
+  phone_number: string | null;
+  status: CallStatus;
+  outcome: CallOutcome | null;
+  score: number | null;
+  duration_seconds: number | null;
+  created_at: string;
+}
+
+interface CallsListResponse {
+  data: { items: CallListItem[]; total: number; limit: number; offset: number };
+}
+
+/** O histórico da tela de Ligações. */
+export function useCallsList(params: { limit?: number; offset?: number; outcome?: CallOutcome }) {
+  const search = new URLSearchParams();
+  if (params.limit) search.set("limit", String(params.limit));
+  if (params.offset) search.set("offset", String(params.offset));
+  if (params.outcome) search.set("outcome", params.outcome);
+
+  return useQuery({
+    queryKey: ["calls", params],
+    queryFn: async () => apiClient.get<CallsListResponse>(`/api/v1/calls?${search.toString()}`),
+  });
 }

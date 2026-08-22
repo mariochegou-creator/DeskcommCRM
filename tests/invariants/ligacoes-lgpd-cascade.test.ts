@@ -51,13 +51,15 @@ beforeAll(() => {
 
     -- Conteúdo sintético: nenhum dado real entra num teste (LGPD).
     insert into public.crm_call_recordings
-      (id, organization_id, contact_id, status, outcome, score, storage_path, transcript, analysis, error_detail)
+      (id, organization_id, contact_id, status, outcome, score, storage_path, transcript, analysis, error_detail, sdr_notes, live_state)
       values (
         '${CALL}', '${ORG}', '${CONTACT}', 'done', 'agendou', 8.0,
         '${AUDIO_PATH}',
         'SDR: bom dia. LEAD: aqui e o Fulano Sintetico, meu telefone e 77900000000.',
         '{"resultado":"agendou","nota_geral":8}'::jsonb,
-        'detalhe sintetico'
+        'detalhe sintetico',
+        'o socio sintetico e quem decide, ligar depois das 18h',
+        '{"fase":"decisor","sugestao":"pergunte quem decide com voce","cobertura":{"dor_declarada":true}}'::jsonb
       )
       on conflict (id) do nothing;
 
@@ -86,6 +88,21 @@ describe("cascata LGPD alcança as gravações de ligação (migration 0100)", (
       sql(
         `select count(*) from public.crm_call_recordings
           where id = '${CALL}' and analysis is null and error_detail is null;`,
+      ),
+    );
+    expect(n).toBe(1);
+  });
+
+  it("a anotação do SDR e o estado do copiloto foram zerados (0106)", () => {
+    // As duas colunas nasceram DEPOIS desta cascata existir, e é exatamente aí
+    // que uma coluna de PII escapa: ninguém relê uma função de 200 linhas ao
+    // acrescentar um campo. `sdr_notes` é uma pessoa escrevendo sobre outra
+    // ("o sócio é quem decide"); `live_state` carrega a última sugestão, que
+    // cita o que o lead falou.
+    const n = Number(
+      sql(
+        `select count(*) from public.crm_call_recordings
+          where id = '${CALL}' and sdr_notes is null and live_state = '{}'::jsonb;`,
       ),
     );
     expect(n).toBe(1);

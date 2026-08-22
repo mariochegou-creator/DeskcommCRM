@@ -16,7 +16,7 @@ import { useState } from "react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
-import { useCall } from "@/hooks/calls/useCalls";
+import { useCall, useReanalyzeCall } from "@/hooks/calls/useCalls";
 import {
   CallAnalysisSchema,
   OUTCOME_LABELS,
@@ -24,7 +24,7 @@ import {
   isRawAnalysis,
   type CallOutcome,
 } from "@/lib/calls/analysis-schema";
-import { CaretDown, CaretUp, CircleNotch, Lightbulb } from "@/lib/ui/icons";
+import { ArrowsClockwise, CaretDown, CaretUp, CircleNotch, Lightbulb, Note } from "@/lib/ui/icons";
 
 interface Props {
   callId: string;
@@ -45,6 +45,7 @@ const OUTCOME_VARIANT: Record<CallOutcome, "success" | "neutral" | "info"> = {
 export function CallAnalysisCard({ callId }: Props) {
   const [verTranscricao, setVerTranscricao] = useState(false);
   const q = useCall(callId);
+  const reanalisar = useReanalyzeCall(callId);
   const call = q.data?.data;
 
   if (q.isLoading) {
@@ -91,6 +92,43 @@ export function CallAnalysisCard({ callId }: Props) {
         <p className="rounded-md border border-warning-fg/30 bg-warning-bg p-2 text-sm text-warning-fg">
           {call.error_detail}
         </p>
+      )}
+
+      {/* ---- rodar de novo ----
+          Só aparece quando o pipeline já parou. As falhas reais são todas
+          passageiras e alheias ao áudio (provedor de IA sem crédito, chave
+          faltando, gateway fora), e antes deste botão a única saída era SQL —
+          então na prática a ligação ficava com "Falhou" para sempre. Quando a
+          transcrição já existe, o clique custa centavos: o worker pula o
+          Whisper e vai direto ao modelo. */}
+      {(call.status === "failed" || call.status === "done_unformatted") && (
+        <Button
+          size="sm"
+          variant="outline"
+          disabled={reanalisar.isPending}
+          onClick={() => reanalisar.mutate()}
+        >
+          {reanalisar.isPending ? (
+            <CircleNotch size={14} className="animate-spin" aria-hidden />
+          ) : (
+            <ArrowsClockwise size={14} weight="bold" aria-hidden />
+          )}
+          <span>Analisar de novo</span>
+        </Button>
+      )}
+
+      {/* ---- o que o SDR anotou durante a ligação ----
+          Vem ANTES dos critérios de propósito: é a única parte desta tela
+          escrita por uma pessoa, e é o que explica desfechos que a transcrição
+          sozinha não explica ("ele pediu pra ligar depois das 18h"). */}
+      {call.sdr_notes && (
+        <div className="rounded-md border border-border bg-surface-elevated p-3">
+          <h4 className="flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+            <Note size={14} weight="duotone" aria-hidden />
+            Anotação do SDR
+          </h4>
+          <p className="mt-1 whitespace-pre-wrap text-sm">{call.sdr_notes}</p>
+        </div>
       )}
 
       {/* ---- notas por critério ---- */}
