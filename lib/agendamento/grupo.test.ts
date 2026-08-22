@@ -27,11 +27,33 @@ describe("ehConfirmacaoDeReuniao", () => {
     expect(ehConfirmacaoDeReuniao("ok, confirmada a reunião")).toBe(true);
   });
 
+  it("aceite seco vale — mas só quando é a mensagem inteira", () => {
+    expect(ehConfirmacaoDeReuniao("sim")).toBe(true);
+    expect(ehConfirmacaoDeReuniao("Sim!!!")).toBe(true);
+    expect(ehConfirmacaoDeReuniao("ok")).toBe(true);
+    expect(ehConfirmacaoDeReuniao("pode ser")).toBe(true);
+    expect(ehConfirmacaoDeReuniao("beleza 👍")).toBe(true);
+    expect(ehConfirmacaoDeReuniao("Tá bom")).toBe(true);
+    expect(ehConfirmacaoDeReuniao("fechado")).toBe(true);
+    expect(ehConfirmacaoDeReuniao("com certeza")).toBe(true);
+    // dentro de frase, "ok"/"sim" são conversa — não confirmação
+    expect(ehConfirmacaoDeReuniao("ok, vou mandar a foto do cardápio")).toBe(false);
+    expect(ehConfirmacaoDeReuniao("sim, o pedido chegou")).toBe(false);
+  });
+
   it("negação ou ressalva junto não é confirmação", () => {
     expect(ehConfirmacaoDeReuniao("ainda não confirmado")).toBe(false);
     expect(ehConfirmacaoDeReuniao("não tá confirmado")).toBe(false);
     expect(ehConfirmacaoDeReuniao("confirmo depois")).toBe(false);
     expect(ehConfirmacaoDeReuniao("quase confirmado")).toBe(false);
+    expect(ehConfirmacaoDeReuniao("talvez, confirmo amanhã")).toBe(false);
+    expect(ehConfirmacaoDeReuniao("vou ver e te confirmo")).toBe(false);
+    expect(ehConfirmacaoDeReuniao("se der eu confirmo")).toBe(false);
+    expect(ehConfirmacaoDeReuniao("qualquer coisa te aviso, confirmado")).toBe(false);
+    expect(ehConfirmacaoDeReuniao("tá difícil, confirmo mais tarde")).toBe(false);
+    expect(ehConfirmacaoDeReuniao("pode ser outro dia")).toBe(false);
+    expect(ehConfirmacaoDeReuniao("não")).toBe(false);
+    expect(ehConfirmacaoDeReuniao("nem vai dar")).toBe(false);
   });
 
   it("mensagem longa é conversa, não confirmação — mesmo com a palavra dentro", () => {

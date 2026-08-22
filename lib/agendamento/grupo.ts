@@ -189,17 +189,64 @@ export function lerGrupo(customFields: unknown): GrupoDaReuniao | null {
  * Falso positivo é que custa. Na dúvida, não casa.
  */
 /**
- * O lead confirmou a reunião? ("confirmado", "confirmo", "tá confirmado")
+ * Ressalvas que desarmam a confirmação. Qualquer uma presente = não é sim.
+ * "vou ver", "se der", "confirmo depois", "talvez" — o lead que fala assim
+ * ainda não se comprometeu, e agradecer "horário garantido" em cima disso é
+ * a automação ouvindo o que quer.
+ */
+const RESSALVAS =
+  /\b(nao|nem|ainda|quase|depois|mais tarde|sera|falta|talvez|veremos|ver|vejo|verei|dificil|complicado|impossivel|remarcar|mudar|trocar|cancelar|desmarcar|adiar|outro|outra|aviso|avisar|se der|nao sei|qualquer coisa)\b/;
+
+/**
+ * Aceites SECOS: valem só quando são a mensagem INTEIRA (pontuação e emoji
+ * fora). "sim" e "ok" são palavras comuns demais — dentro de uma frase
+ * qualquer ("ok, vou mandar a foto") não são confirmação de reunião, e o
+ * obrigado sairia fora de hora. Resposta seca é o caso que a abertura pede.
+ */
+const ACEITES_SECOS = new Set([
+  "sim",
+  "ss",
+  "sim sim",
+  "pode sim",
+  "pode ser",
+  "sim pode ser",
+  "ok",
+  "okay",
+  "okk",
+  "blz",
+  "beleza",
+  "claro",
+  "certo",
+  "certeza",
+  "com certeza",
+  "fechado",
+  "fechou",
+  "combinado",
+  "perfeito",
+  "show",
+  "top",
+  "positivo",
+  "bora",
+  "demorou",
+  "tranquilo",
+  "ta bom",
+  "ta otimo",
+  "tudo certo",
+  "tudo bem",
+  "isso",
+  "isso mesmo",
+  "vamos sim",
+]);
+
+/**
+ * O lead confirmou a reunião? ("confirmado", "confirmo", "sim", "ok"…)
  *
  * Régua mais apertada ainda que a da remarcação, porque a resposta é só um
  * agradecimento — falso negativo não custa nada (a confirmação fica no inbox e
  * segue valendo), mas agradecer uma frase que não era confirmação é o robô
- * respondendo torto na frente do cliente. Por isso:
- *  - mensagem CURTA (confirmação é resposta seca; "confirmado" citado no meio
- *    de um parágrafo é conversa);
- *  - nenhuma negação ou ressalva junto ("ainda não confirmado", "não tá
- *    confirmado", "quase");
- *  - a palavra inteira, não pedaço.
+ * respondendo torto na frente do cliente. Duas portas de entrada:
+ *  - a palavra da família "confirmar", em mensagem curta e sem ressalva;
+ *  - um aceite seco ("sim", "ok", "pode ser") quando é a mensagem INTEIRA.
  */
 export function ehConfirmacaoDeReuniao(texto: string | null | undefined): boolean {
   const t = (texto ?? "")
@@ -209,8 +256,16 @@ export function ehConfirmacaoDeReuniao(texto: string | null | undefined): boolea
     .trim();
   if (!t) return false;
   if (t.length > 80) return false;
-  if (/\b(nao|ainda|quase|depois|sera|falta)\b/.test(t)) return false;
-  return /\bconfirmad[oa]\b|\bconfirmo\b/.test(t);
+  if (RESSALVAS.test(t)) return false;
+
+  if (/\bconfirmad[oa]s?\b|\bconfirmo\b|\bconfirmando\b/.test(t)) return true;
+
+  // Só letras e números sobram: "Sim!!! 👍" vira "sim" antes de comparar.
+  const seco = t
+    .replace(/[^a-z0-9\s]/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+  return ACEITES_SECOS.has(seco);
 }
 
 export function ehPedidoDeRemarcacao(texto: string | null | undefined): boolean {
