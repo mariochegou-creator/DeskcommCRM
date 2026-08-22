@@ -48,6 +48,7 @@ import {
 } from '../edge/llm/run-model-call';
 import type { ProviderRegistry } from '../edge/llm/providers';
 import { MIRROR_WARN_ONLY, mirrorLeadStageToCrm } from '../edge/crm/move-lead-stage';
+import { BLOCO_COPILOTO, lerModoDoNumero } from '../edge/crm/modo-do-numero';
 import { insertInboxItem } from '../db/repository';
 import { buildNativeMediaParts } from './media-parts';
 import type { JobRow, Queryable } from '../queue/queue';
@@ -1475,6 +1476,25 @@ export async function runAgentTurn(
     delete rawTools.search_knowledge;
   }
 
+  // MODO COPILOTO: a IA lê e organiza este número, mas não fala com o cliente.
+  //
+  // O freio é tirar a FERRAMENTA, não vetar o envio depois — ver o cabeçalho de
+  // edge/crm/modo-do-numero.ts, onde estão as duas alternativas e por que as
+  // duas são piores. Aqui só sobra a consequência: sem `send_message` no
+  // toolset, não existe caminho de código deste turno até o WhatsApp do cliente.
+  //
+  // Vem DEPOIS do corte de search_knowledge e ANTES das tools MCP de propósito:
+  // as MCP não podem repor um envio (mcp-tools.ts já bloqueia
+  // crm_send_whatsapp_message), e deixar este corte por último faria parecer que
+  // ele depende disso.
+  const modoDoNumero = await lerModoDoNumero(pool, tenantId, input.channelSessionId);
+  if (modoDoNumero === 'copiloto') {
+    delete rawTools.send_message;
+    runLog.info('numero em modo copiloto — a IA organiza o CRM e não responde', {
+      channel_session_id: input.channelSessionId,
+    });
+  }
+
   // 2B-tools: tools do catálogo MCP habilitadas NA TELA entram no run (audit +
   // role/scope da ponte nativa; envio e handoff do catálogo são bloqueados —
   // ver edge/crm/mcp-tools.ts). As 8 tools do engine têm precedência de nome.
@@ -1587,9 +1607,17 @@ export async function runAgentTurn(
         `Se a mensagem dele responde a isso, chame provide_case_update com este case_id e a informação recebida — ` +
         `NÃO diga que já repassou/avisou o responsável sem chamar a tool.`
       : '';
-  const openingSuffixes = [matchedSkillsBlock, stageHintBlock, splitHint, caseAwaitingLeadBlock].filter(
-    (b) => b !== '',
-  );
+  // O bloco do copiloto entra PRIMEIRO entre os sufixos: ele muda o que o turno
+  // inteiro significa, e um modelo que lê "responda em mensagens curtas" antes
+  // de "você não responde" passa o turno tentando conciliar as duas coisas.
+  const copilotoBlock = modoDoNumero === 'copiloto' ? BLOCO_COPILOTO : '';
+  const openingSuffixes = [
+    copilotoBlock,
+    matchedSkillsBlock,
+    stageHintBlock,
+    splitHint,
+    caseAwaitingLeadBlock,
+  ].filter((b) => b !== '');
   const openingText =
     openingSuffixes.length === 0 ? openingBase : `${openingBase}\n\n${openingSuffixes.join('\n\n')}`;
   // Onda 3 (aprimoramento): mídia inbound recente vira part nativa (image/file) SÓ para
