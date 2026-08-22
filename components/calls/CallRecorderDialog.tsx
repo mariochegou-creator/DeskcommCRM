@@ -2,12 +2,25 @@
 /**
  * O popup da ligação — copiloto, não gravador.
  *
- * Cenário real: o SDR disca no CELULAR e fala com o lead enquanto o CRM
- * acompanha pelo computador. A primeira versão desta tela só gravava e só
- * mostrava o resultado depois; o SDR não tinha o que olhar durante a conversa e
- * a análise chegava tarde demais para salvar AQUELA ligação. Agora a tela
- * trabalha DURANTE: transcreve em blocos, sopra a próxima frase e marca sozinha
- * o que o roteiro já cobriu.
+ * O SDR clica em Ligar, o Windows disca pelo Vincular ao Telefone (o `tel:` do
+ * navegador cai nele) e a chamada acontece no headset. O CRM ouve os dois lados,
+ * transcreve em blocos, sopra a próxima frase e marca sozinho o que o roteiro já
+ * cobriu. A análise completa sai segundos depois de desligar.
+ *
+ * DE ONDE VEM CADA VOZ — a decisão central deste arquivo. São duas entradas
+ * SEPARADAS, escolhidas na tela e lembradas entre ligações:
+ *
+ *  - SUA VOZ: o microfone do headset. O padrão é o dispositivo "communications"
+ *    do Windows, que é justamente o que o sistema usa em chamada — trocar de
+ *    headset no Windows troca aqui junto, sem ninguém reconfigurar nada.
+ *  - VOZ DO LEAD: quando o celular está pareado, o Windows expõe a chamada como
+ *    um microfone ("… Hands-Free …"). Gravar dali é o caminho limpo: chega em
+ *    trilha própria, sem eco e SEM pedir compartilhamento de tela. Se esse
+ *    dispositivo não existir, caímos no áudio do computador
+ *    (`getDisplayMedia`), e em último caso no viva-voz para o microfone.
+ *
+ * As duas trilhas são misturadas numa só antes de gravar, porque tanto o Whisper
+ * quanto a análise leem um arquivo de voz — não uma sessão de dois canais.
  *
  * AS TRÊS DECISÕES QUE MANDAM NO LAYOUT:
  *
@@ -17,21 +30,8 @@
  *  - O CHECKLIST NÃO DESMARCA. Item que acendeu fica aceso (a mescla acontece no
  *    servidor). Uma caixinha que apaga sozinha faria o SDR achar que a ligação
  *    andou para trás no meio da conversa.
- *  - A TRANSCRIÇÃO É PEQUENA E ROLA SOZINHA. Ela existe para conferir um número
- *    que o lead falou ("foi 30 ou 13?"), não para ser lida. Dar espaço a ela
- *    seria convidar o SDR a ler em vez de conversar.
- *
- * CAPTURA DE ÁUDIO — a mudança que mais melhora a análise. Antes gravávamos só o
- * microfone, com a chamada no viva-voz: a voz do lead chegava abafada e a
- * transcrição saía picotada. Agora misturamos DUAS fontes — o microfone (o SDR)
- * e o áudio do computador (`getDisplayMedia`), que é por onde a voz do lead sai
- * quando o celular está pareado por Bluetooth ou ligado por cabo. Sem o áudio do
- * computador a tela avisa e continua no modo antigo: degradar é melhor que
- * recusar a gravar.
- *
- * O vídeo do `getDisplayMedia` é pedido porque o Chrome não entrega áudio de
- * sistema sem um pedido de vídeo junto, e é DESLIGADO no mesmo instante. Nada da
- * tela é gravado.
+ *  - DOIS MEDIDORES, NÃO UM. Um por voz. É a única forma de descobrir ANTES do
+ *    fim que só metade da conversa está entrando — e ligação não volta.
  */
 import { useCallback, useEffect, useRef, useState } from "react";
 
@@ -64,8 +64,8 @@ import {
   CircleNotch,
   Lightbulb,
   Microphone,
-  MonitorPlay,
   Pause,
+  Phone,
   Play,
   Warning,
   X,
@@ -98,6 +98,29 @@ const BLOCO_MS = LIVE_CHUNK_SECONDS * 1_000;
 /** Pausa de digitação a partir da qual a anotação é salva sozinha. */
 const NOTAS_DEBOUNCE_MS = 1_500;
 
+/**
+ * A escolha de áudio vive no NAVEGADOR, não no banco: ela descreve esta máquina
+ * (qual headset está plugado nela), não o usuário. O mesmo SDR num computador
+ * diferente tem outros dispositivos, e sincronizar isso pelo servidor faria a
+ * máquina B herdar o headset da máquina A e gravar silêncio.
+ */
+const CHAVE_MIC = "nexo.ligacao.microfone";
+const CHAVE_LEAD = "nexo.ligacao.voz-do-lead";
+
+/** Valor especial: a voz do lead vem do áudio do computador, não de um device. */
+const LEAD_SISTEMA = "sistema";
+
+/**
+ * O endpoint que o Windows cria quando o celular está pareado por Bluetooth.
+ *
+ * Ele aparece como MICROFONE ("Microfone (Fulano Hands-Free HF Audio)") e o que
+ * chega por ele é a chamada. É a fonte preferida da voz do lead: trilha própria,
+ * sem eco de sala e sem a janela de compartilhamento de tela.
+ */
+function pareceCelularPareado(label: string): boolean {
+  return /hands[- ]?free|hf audio|ag audio/i.test(label);
+}
+
 /** Preferência de container: Opus onde houver, mp4 no Safari. */
 function pickMimeType(): string | undefined {
   if (typeof MediaRecorder === "undefined") return undefined;
@@ -109,6 +132,23 @@ function mmss(totalSegundos: number): string {
   const m = Math.floor(totalSegundos / 60);
   const s = totalSegundos % 60;
   return `${String(m).padStart(2, "0")}:${String(s).padStart(2, "0")}`;
+}
+
+function lerPreferencia(chave: string): string | null {
+  if (typeof window === "undefined") return null;
+  try {
+    return window.localStorage.getItem(chave);
+  } catch {
+    return null; // navegador com storage bloqueado: cai no automático
+  }
+}
+
+function gravarPreferencia(chave: string, valor: string): void {
+  try {
+    window.localStorage.setItem(chave, valor);
+  } catch {
+    /* sem storage: a escolha vale só para esta ligação */
+  }
 }
 
 export function CallRecorderDialog({
@@ -123,10 +163,15 @@ export function CallRecorderDialog({
   const [fase, setFase] = useState<Fase>("pronto");
   const [callId, setCallId] = useState<string | null>(null);
   const [segundos, setSegundos] = useState(0);
-  const [nivel, setNivel] = useState(0);
+  const [nivelMic, setNivelMic] = useState(0);
+  const [nivelLead, setNivelLead] = useState(0);
   const [erro, setErro] = useState<string | null>(null);
 
-  const [temAudioDoComputador, setTemAudioDoComputador] = useState<boolean | null>(null);
+  const [entradas, setEntradas] = useState<MediaDeviceInfo[]>([]);
+  const [micId, setMicId] = useState<string>("");
+  const [leadId, setLeadId] = useState<string>(LEAD_SISTEMA);
+  const [temVozDoLead, setTemVozDoLead] = useState<boolean | null>(null);
+
   const [transcricao, setTranscricao] = useState("");
   const [sugestao, setSugestao] = useState<string | null>(null);
   const [alerta, setAlerta] = useState<string | null>(null);
@@ -172,6 +217,49 @@ export function CallRecorderDialog({
     if (box) box.scrollTop = box.scrollHeight;
   }, [transcricao]);
 
+  /**
+   * Descobrir as entradas de áudio quando o popup abre.
+   *
+   * O `getUserMedia` de uma linha antes do `enumerateDevices` não é desperdício:
+   * sem permissão concedida o navegador devolve a lista com os RÓTULOS VAZIOS, e
+   * uma lista de "Microfone 1 / Microfone 2" é impossível de escolher. Com a
+   * permissão, os nomes reais aparecem — e é pelo nome que se reconhece o
+   * celular pareado.
+   */
+  const carregarDispositivos = useCallback(async () => {
+    if (typeof navigator === "undefined" || !navigator.mediaDevices?.enumerateDevices) return;
+    try {
+      const provisorio = await navigator.mediaDevices.getUserMedia({ audio: true });
+      provisorio.getTracks().forEach((t) => t.stop());
+    } catch {
+      /* permissão negada: a lista vem sem rótulo, e a escolha manual ainda vale */
+    }
+
+    const todos = await navigator.mediaDevices.enumerateDevices();
+    const audio = todos.filter((d) => d.kind === "audioinput");
+    setEntradas(audio);
+
+    const salvoMic = lerPreferencia(CHAVE_MIC);
+    const micValido = salvoMic && audio.some((d) => d.deviceId === salvoMic) ? salvoMic : null;
+    // "communications" é o dispositivo que o Windows usa EM CHAMADA. Preferi-lo
+    // faz o CRM seguir o headset que o sistema já escolheu, em vez de guardar um
+    // id fixo que semana que vem aponta para um fone desconectado.
+    const comms = audio.find((d) => d.deviceId === "communications")?.deviceId;
+    setMicId(micValido ?? comms ?? audio[0]?.deviceId ?? "");
+
+    const salvoLead = lerPreferencia(CHAVE_LEAD);
+    const leadValido =
+      salvoLead === LEAD_SISTEMA || (salvoLead && audio.some((d) => d.deviceId === salvoLead))
+        ? salvoLead
+        : null;
+    const celular = audio.find((d) => pareceCelularPareado(d.label))?.deviceId;
+    setLeadId(leadValido ?? celular ?? LEAD_SISTEMA);
+  }, []);
+
+  useEffect(() => {
+    if (open) void carregarDispositivos();
+  }, [open, carregarDispositivos]);
+
   /** Solta microfone, áudio do computador, timer e o loop de animação. */
   const liberarRecursos = useCallback(() => {
     ativoRef.current = false;
@@ -201,13 +289,13 @@ export function CallRecorderDialog({
     }
     // Parar as tracks é o que apaga o indicador de gravação do navegador. Sem
     // isto, o cadeado vermelho fica aceso depois de encerrar e o usuário conclui,
-    // com razão, que o CRM continua ouvindo. Vale para o microfone E para a
-    // captura de áudio do computador, que tem barra própria no Chrome.
+    // com razão, que o CRM continua ouvindo.
     fontesRef.current.forEach((s) => s.getTracks().forEach((t) => t.stop()));
     fontesRef.current = [];
     mixadoRef.current = null;
     recorderRef.current = null;
-    setNivel(0);
+    setNivelMic(0);
+    setNivelLead(0);
   }, []);
 
   useEffect(() => liberarRecursos, [liberarRecursos]);
@@ -236,6 +324,25 @@ export function CallRecorderDialog({
     // cada tecla e a anotação nunca chegaria a salvar.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [notas, callId]);
+
+  /**
+   * Entrega o número ao Windows.
+   *
+   * Um `<a href="tel:">` clicado, e não `window.location`: a navegação por
+   * `location` faz o Chrome tratar a página como saindo, e num popup que está
+   * gravando isso é a diferença entre discar e perder a gravação. O clique num
+   * link some com esse risco, e o Windows manda o número para o app registrado
+   * no protocolo `tel:` — o Vincular ao Telefone, que disca pelo celular
+   * pareado.
+   */
+  const discar = useCallback(() => {
+    const link = document.createElement("a");
+    link.href = `tel:${phoneE164}`;
+    link.style.display = "none";
+    document.body.appendChild(link);
+    link.click();
+    link.remove();
+  }, [phoneE164]);
 
   /**
    * Um bloco por vez, na ordem. Sem a fila, dois blocos em voo ao mesmo tempo
@@ -267,8 +374,8 @@ export function CallRecorderDialog({
 
   /**
    * O ciclo se reinicia chamando A SI MESMO no `onstop`, e um `useCallback` não
-   * pode se referenciar dentro do próprio corpo. O ref é o laço: ele guarda
-   * sempre a versão mais recente da função, e o `onstop` a alcança por ele.
+   * pode se referenciar dentro do próprio corpo. O ref é o laço: guarda sempre a
+   * versão mais recente da função, e o `onstop` a alcança por ele.
    */
   const cicloRef = useRef<() => void>(() => {});
 
@@ -306,30 +413,51 @@ export function CallRecorderDialog({
     cicloRef.current = iniciarCicloDeBlocos;
   }, [iniciarCicloDeBlocos]);
 
-  const iniciarMedidor = useCallback((ctx: AudioContext, fontes: MediaStreamAudioSourceNode[]) => {
-    const analyser = ctx.createAnalyser();
-    analyser.fftSize = 512;
-    // O analisador NÃO é ligado à saída do contexto: ligar devolveria o áudio da
-    // ligação pelos alto-falantes do computador, que o microfone captaria de
-    // volta — realimentação em cima de uma ligação real.
-    fontes.forEach((f) => f.connect(analyser));
-    const buffer = new Uint8Array(analyser.frequencyBinCount);
+  /**
+   * Um medidor por voz.
+   *
+   * Os analisadores NÃO são ligados à saída do contexto: ligar devolveria o
+   * áudio da ligação pelos alto-falantes, que o microfone captaria de volta —
+   * realimentação em cima de uma ligação real.
+   */
+  const iniciarMedidores = useCallback(
+    (ctx: AudioContext, minha: AudioNode, doLead: AudioNode | null) => {
+      const criar = (fonte: AudioNode) => {
+        const analyser = ctx.createAnalyser();
+        analyser.fftSize = 512;
+        fonte.connect(analyser);
+        // `new ArrayBuffer(n)` em vez de `new Uint8Array(n)`: a assinatura de
+        // `getByteTimeDomainData` exige um Uint8Array respaldado por ArrayBuffer,
+        // e o construtor por tamanho devolve o tipo genérico (que aceitaria um
+        // SharedArrayBuffer).
+        const buffer = new Uint8Array(new ArrayBuffer(analyser.frequencyBinCount));
+        return { analyser, buffer };
+      };
 
-    const tick = () => {
-      analyser.getByteTimeDomainData(buffer);
+      const a = criar(minha);
+      const b = doLead ? criar(doLead) : null;
+
       // RMS em torno do silêncio (128) — responde ao volume de fala, não a picos
       // isolados, então a barra não pisca com um clique de teclado.
-      let soma = 0;
-      for (const v of buffer) {
-        const d = (v - 128) / 128;
-        soma += d * d;
-      }
-      const rms = Math.sqrt(soma / buffer.length);
-      setNivel(Math.min(1, rms * 4));
+      const rms = (par: { analyser: AnalyserNode; buffer: Uint8Array<ArrayBuffer> }) => {
+        par.analyser.getByteTimeDomainData(par.buffer);
+        let soma = 0;
+        for (const v of par.buffer) {
+          const d = (v - 128) / 128;
+          soma += d * d;
+        }
+        return Math.min(1, Math.sqrt(soma / par.buffer.length) * 4);
+      };
+
+      const tick = () => {
+        setNivelMic(rms(a));
+        setNivelLead(b ? rms(b) : 0);
+        rafRef.current = requestAnimationFrame(tick);
+      };
       rafRef.current = requestAnimationFrame(tick);
-    };
-    rafRef.current = requestAnimationFrame(tick);
-  }, []);
+    },
+    [],
+  );
 
   const iniciarGravacao = useCallback(async () => {
     setErro(null);
@@ -343,56 +471,58 @@ export function CallRecorderDialog({
       return;
     }
 
-    // ---- 1. o microfone (a voz do SDR) ----
+    // Nunca com processamento: eco, ruído e ganho automático do navegador são
+    // afinados para chamada com fone e tratam a voz que vem do outro lado como
+    // ruído a suprimir — justamente o que precisamos ouvir.
+    const cru = { echoCancellation: false, noiseSuppression: false, autoGainControl: false };
+
+    // ---- 1. sua voz (o microfone do headset) ----
     let mic: MediaStream;
     try {
       mic = await navigator.mediaDevices.getUserMedia({
-        // `echoCancellation: false` é deliberado: o processamento do navegador é
-        // afinado para chamada com fone e trata o áudio do viva-voz como eco a
-        // suprimir — justamente a voz do lead, que é o que precisamos ouvir.
-        audio: {
-          channelCount: 1,
-          echoCancellation: false,
-          noiseSuppression: false,
-          autoGainControl: false,
-        },
+        audio: { ...cru, channelCount: 1, ...(micId ? { deviceId: { exact: micId } } : {}) },
       });
     } catch (err) {
       const nome = err instanceof DOMException ? err.name : "";
       setErro(
         nome === "NotAllowedError"
           ? "Permissão de microfone negada. Clique no cadeado ao lado do endereço, marque Microfone como “Permitir” e recarregue a página."
-          : nome === "NotFoundError"
-            ? "Nenhum microfone encontrado. Conecte um microfone e tente de novo."
+          : nome === "NotFoundError" || nome === "OverconstrainedError"
+            ? "O microfone escolhido sumiu (headset desligado?). Escolha outro na lista e tente de novo."
             : "Não foi possível acessar o microfone.",
       );
       setFase("erro");
       return;
     }
 
-    // ---- 2. o áudio do computador (a voz do lead) ----
-    // Opcional por construção: se o SDR cancelar a janela de compartilhamento ou
-    // esquecer de marcar "compartilhar áudio", a ligação grava mesmo assim, no
-    // modo antigo (viva-voz para o microfone). Recusar aqui perderia a ligação
-    // inteira por causa de uma caixinha não marcada.
-    let tela: MediaStream | null = null;
-    try {
-      tela = await navigator.mediaDevices.getDisplayMedia({
-        video: true,
-        audio: {
-          echoCancellation: false,
-          noiseSuppression: false,
-          autoGainControl: false,
-        },
-      });
-    } catch {
-      tela = null;
+    // ---- 2. a voz do lead ----
+    let vozDoLead: MediaStream | null = null;
+    if (leadId !== LEAD_SISTEMA) {
+      // Caminho bom: o celular pareado entrega a chamada como um microfone.
+      try {
+        vozDoLead = await navigator.mediaDevices.getUserMedia({
+          audio: { ...cru, deviceId: { exact: leadId } },
+        });
+      } catch {
+        vozDoLead = null;
+      }
+    } else {
+      // Caminho de reserva: o áudio do computador. O vídeo é pedido porque o
+      // Chrome não entrega áudio de sistema sem um pedido de vídeo junto, e é
+      // desligado no mesmo instante — nada da tela é gravado.
+      try {
+        const tela = await navigator.mediaDevices.getDisplayMedia({ video: true, audio: cru });
+        tela.getVideoTracks().forEach((t) => t.stop());
+        if (tela.getAudioTracks().length > 0) {
+          vozDoLead = tela;
+        } else {
+          tela.getTracks().forEach((t) => t.stop());
+        }
+      } catch {
+        vozDoLead = null;
+      }
     }
-    const trilhaDoComputador = tela?.getAudioTracks()[0] ?? null;
-    // O vídeo morre imediatamente: só foi pedido porque o Chrome não entrega
-    // áudio de sistema sem um pedido de vídeo junto. Nada da tela é gravado.
-    tela?.getVideoTracks().forEach((t) => t.stop());
-    setTemAudioDoComputador(Boolean(trilhaDoComputador));
+    setTemVozDoLead(Boolean(vozDoLead));
 
     // ---- 3. registrar a tentativa ----
     // Antes de gravar: se o servidor recusar (contato anonimizado, sem telefone),
@@ -404,26 +534,28 @@ export function CallRecorderDialog({
       novoCallId = r.data.call_id;
     } catch {
       mic.getTracks().forEach((t) => t.stop());
-      tela?.getTracks().forEach((t) => t.stop());
+      vozDoLead?.getTracks().forEach((t) => t.stop());
       setErro("Não foi possível registrar a ligação. Tente novamente.");
       setFase("erro");
       return;
     }
 
-    // ---- 4. misturar as duas fontes numa trilha só ----
+    // ---- 4. misturar as duas vozes numa trilha só ----
     const Ctx =
       window.AudioContext ??
       (window as unknown as { webkitAudioContext?: typeof AudioContext }).webkitAudioContext;
     const ctx = new Ctx();
     audioCtxRef.current = ctx;
     const destino = ctx.createMediaStreamDestination();
-    const fontes: MediaStreamAudioSourceNode[] = [ctx.createMediaStreamSource(mic)];
-    if (trilhaDoComputador) {
-      fontes.push(ctx.createMediaStreamSource(new MediaStream([trilhaDoComputador])));
+    const fonteMic = ctx.createMediaStreamSource(mic);
+    fonteMic.connect(destino);
+    let fonteLead: MediaStreamAudioSourceNode | null = null;
+    if (vozDoLead) {
+      fonteLead = ctx.createMediaStreamSource(vozDoLead);
+      fonteLead.connect(destino);
     }
-    fontes.forEach((f) => f.connect(destino));
 
-    fontesRef.current = [mic, ...(tela ? [tela] : [])];
+    fontesRef.current = [mic, ...(vozDoLead ? [vozDoLead] : [])];
     mixadoRef.current = destino.stream;
     chunksRef.current = [];
 
@@ -452,12 +584,18 @@ export function CallRecorderDialog({
     ativoRef.current = true;
     iniciarCicloDeBlocos();
 
-    iniciarMedidor(ctx, fontes);
+    iniciarMedidores(ctx, fonteMic, fonteLead);
     setSegundos(0);
     segundosRef.current = 0;
     timerRef.current = setInterval(() => setSegundos((s) => s + 1), 1000);
     setFase("gravando");
-  }, [iniciarCicloDeBlocos, iniciarMedidor, origin, startCall]);
+
+    // ---- 7. e só então discar ----
+    // Por último de propósito: quando o telefone começa a chamar, tudo que
+    // precisa gravar já está gravando. Discar primeiro custaria os primeiros
+    // segundos da ligação, que é onde mora a abertura.
+    discar();
+  }, [discar, iniciarCicloDeBlocos, iniciarMedidores, leadId, micId, origin, startCall]);
 
   const alternarPausa = useCallback(() => {
     const rec = recorderRef.current;
@@ -561,12 +699,15 @@ export function CallRecorderDialog({
       setCobertura(COBERTURA_VAZIA);
       setNotas("");
       setAvisoAoVivo(null);
-      setTemAudioDoComputador(null);
+      setTemVozDoLead(null);
     }
     onOpenChange(novo);
   };
 
   const itensDoChecklist = Object.entries(COBERTURA_LABELS) as [CoberturaKey, string][];
+  const rotulo = (d: MediaDeviceInfo, i: number) =>
+    d.label || (d.deviceId === "default" ? "Padrão do Windows" : `Entrada de áudio ${i + 1}`);
+  const celularNaLista = entradas.some((d) => pareceCelularPareado(d.label));
 
   return (
     <Dialog open={open} onOpenChange={handleOpenChange}>
@@ -577,38 +718,87 @@ export function CallRecorderDialog({
         </DialogHeader>
 
         <div className="max-h-[70vh] space-y-4 overflow-y-auto pr-1">
-          {/* ---- antes de começar: o número e o combinado ---- */}
+          {/* ---- antes de começar: número, áudio e o que vai acontecer ---- */}
           {(fase === "pronto" || fase === "erro") && (
             <>
               <div className="rounded-md border border-border bg-surface-elevated p-4 text-center">
                 <p className="text-xs uppercase tracking-wide text-muted-foreground">
-                  Disque no celular
+                  O Windows vai discar este número
                 </p>
                 <p className="mt-1 select-all font-mono text-3xl font-semibold tabular-nums">
                   {formatPhoneBR(phoneE164)}
                 </p>
+                <p className="mt-2 text-xs text-muted-foreground">
+                  Ao iniciar, o Vincular ao Telefone abre e chama pelo seu celular. Fale pelo
+                  headset.
+                </p>
               </div>
 
-              <div className="rounded-md border border-border bg-surface-elevated p-3 text-sm">
-                <p className="flex items-center gap-2 font-medium">
-                  <MonitorPlay size={16} weight="duotone" aria-hidden />
-                  Para o copiloto ouvir o lead
-                </p>
-                <ol className="mt-2 list-decimal space-y-1 pl-5 text-muted-foreground">
-                  <li>
-                    Ligue o celular no computador (Bluetooth ou cabo) e deixe o som da chamada sair
-                    por ele.
-                  </li>
-                  <li>
-                    Ao clicar em Iniciar, o navegador pede para compartilhar a tela —{" "}
-                    <strong className="text-fg">marque “Compartilhar áudio”</strong> e escolha a tela
-                    inteira.
-                  </li>
-                  <li>
-                    Sem isso ainda funciona: deixe a chamada no viva-voz perto do computador.
-                  </li>
-                </ol>
+              <div className="grid gap-3 sm:grid-cols-2">
+                <div>
+                  <label
+                    htmlFor="mic-ligacao"
+                    className="text-xs font-semibold uppercase tracking-wide text-muted-foreground"
+                  >
+                    Sua voz
+                  </label>
+                  <select
+                    id="mic-ligacao"
+                    value={micId}
+                    onChange={(e) => {
+                      setMicId(e.target.value);
+                      gravarPreferencia(CHAVE_MIC, e.target.value);
+                    }}
+                    className="mt-1 w-full rounded-md border border-border bg-surface-elevated p-2 text-sm"
+                  >
+                    {entradas.map((d, i) => (
+                      <option key={d.deviceId} value={d.deviceId}>
+                        {d.deviceId === "communications"
+                          ? "Headset da chamada (o que o Windows usa)"
+                          : rotulo(d, i)}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+
+                <div>
+                  <label
+                    htmlFor="lead-ligacao"
+                    className="text-xs font-semibold uppercase tracking-wide text-muted-foreground"
+                  >
+                    Voz do lead
+                  </label>
+                  <select
+                    id="lead-ligacao"
+                    value={leadId}
+                    onChange={(e) => {
+                      setLeadId(e.target.value);
+                      gravarPreferencia(CHAVE_LEAD, e.target.value);
+                    }}
+                    className="mt-1 w-full rounded-md border border-border bg-surface-elevated p-2 text-sm"
+                  >
+                    {entradas
+                      .filter((d) => pareceCelularPareado(d.label) || d.deviceId === "default")
+                      .map((d, i) => (
+                        <option key={d.deviceId} value={d.deviceId}>
+                          {pareceCelularPareado(d.label)
+                            ? `Celular pareado — ${d.label}`
+                            : rotulo(d, i)}
+                        </option>
+                      ))}
+                    <option value={LEAD_SISTEMA}>Áudio do computador (pede a tela)</option>
+                  </select>
+                </div>
               </div>
+
+              {!celularNaLista && (
+                <p className="rounded-md border border-warning-fg/30 bg-warning-bg p-3 text-xs text-warning-fg">
+                  Não achei o celular pareado nas entradas de áudio. Conecte o Bluetooth do celular
+                  ao Windows antes de discar — sem ele, a voz do lead só entra pelo áudio do
+                  computador, e o navegador vai pedir para compartilhar a tela (marque
+                  “Compartilhar áudio”).
+                </p>
+              )}
             </>
           )}
 
@@ -657,7 +847,7 @@ export function CallRecorderDialog({
                     Roteiro
                   </h4>
                   <ul className="mt-2 space-y-1.5">
-                    {itensDoChecklist.map(([chave, rotulo]) => {
+                    {itensDoChecklist.map(([chave, texto]) => {
                       const feito = Boolean(cobertura[chave]);
                       return (
                         <li key={chave} className="flex items-start gap-2 text-sm">
@@ -671,7 +861,7 @@ export function CallRecorderDialog({
                             )}
                           />
                           <span className={cn(feito ? "text-fg" : "text-muted-foreground")}>
-                            {rotulo}
+                            {texto}
                           </span>
                         </li>
                       );
@@ -714,7 +904,7 @@ export function CallRecorderDialog({
                 </p>
               </div>
 
-              {/* estado da captura */}
+              {/* estado da captura: um medidor por voz */}
               <div className="space-y-2">
                 <div className="flex items-center justify-between">
                   <span className="flex items-center gap-2 text-sm font-medium text-error-fg">
@@ -730,24 +920,13 @@ export function CallRecorderDialog({
                   <span className="font-mono text-lg tabular-nums">{mmss(segundos)}</span>
                 </div>
 
-                <div
-                  className="h-2 w-full overflow-hidden rounded-full bg-border"
-                  role="meter"
-                  aria-label="Nível do áudio"
-                  aria-valuenow={Math.round(nivel * 100)}
-                  aria-valuemin={0}
-                  aria-valuemax={100}
-                >
-                  <div
-                    className="h-full rounded-full bg-accent-500 transition-[width] duration-75"
-                    style={{ width: `${Math.round(nivel * 100)}%` }}
-                  />
-                </div>
+                <Medidor titulo="Você" valor={nivelMic} />
+                <Medidor titulo="Lead" valor={nivelLead} inativo={temVozDoLead === false} />
 
-                {temAudioDoComputador === false && (
+                {temVozDoLead === false && (
                   <p className="rounded-md border border-warning-fg/30 bg-warning-bg p-2 text-xs text-warning-fg">
-                    Sem o áudio do computador: a voz do lead só entra se a chamada estiver no
-                    viva-voz perto do microfone.
+                    A voz do lead não está entrando em trilha própria. Ela só será gravada se a
+                    chamada estiver no viva-voz perto do microfone.
                   </p>
                 )}
                 {avisoAoVivo && <p className="text-xs text-muted-foreground">{avisoAoVivo}</p>}
@@ -792,13 +971,21 @@ export function CallRecorderDialog({
         <div className="mt-2 flex flex-wrap justify-end gap-2">
           {fase === "pronto" || fase === "erro" ? (
             <Button onClick={() => void iniciarGravacao()} disabled={startCall.isPending}>
-              <Microphone size={16} weight="bold" aria-hidden />
-              <span>Iniciar gravação</span>
+              <Phone size={16} weight="bold" aria-hidden />
+              <span>Ligar e gravar</span>
             </Button>
           ) : null}
 
           {gravando && (
             <>
+              {/* O Windows pode engolir a primeira chamada (o app ainda abrindo,
+                  ou o aviso "Abrir Vincular ao Telefone?" esperando resposta).
+                  Este botão disca de novo SEM reiniciar a gravação — recomeçar
+                  perderia o que já foi transcrito. */}
+              <Button variant="outline" onClick={discar}>
+                <Phone size={16} weight="bold" aria-hidden />
+                <span>Discar de novo</span>
+              </Button>
               <Button variant="outline" onClick={alternarPausa}>
                 {fase === "gravando" ? (
                   <>
@@ -827,5 +1014,52 @@ export function CallRecorderDialog({
         </div>
       </DialogContent>
     </Dialog>
+  );
+}
+
+/**
+ * Uma barra por voz.
+ *
+ * Duas barras e não uma porque o modo de falha mais caro desta ferramenta é
+ * silencioso: metade da conversa não entra, e só se descobre lendo a análise
+ * depois. Com dois medidores o SDR vê no primeiro "alô" que um dos lados está
+ * mudo — e ainda dá tempo de consertar.
+ */
+function Medidor({
+  titulo,
+  valor,
+  inativo = false,
+}: {
+  titulo: string;
+  valor: number;
+  inativo?: boolean;
+}) {
+  const pct = Math.round(valor * 100);
+  return (
+    <div>
+      <div className="flex items-center justify-between text-xs text-muted-foreground">
+        <span className="flex items-center gap-1">
+          <Microphone size={12} weight="bold" aria-hidden />
+          {titulo}
+        </span>
+        {inativo && <span>sem trilha própria</span>}
+      </div>
+      <div
+        className="mt-1 h-2 w-full overflow-hidden rounded-full bg-border"
+        role="meter"
+        aria-label={`Nível de ${titulo}`}
+        aria-valuenow={pct}
+        aria-valuemin={0}
+        aria-valuemax={100}
+      >
+        <div
+          className={cn(
+            "h-full rounded-full transition-[width] duration-75",
+            inativo ? "bg-muted-foreground/40" : "bg-accent-500",
+          )}
+          style={{ width: `${pct}%` }}
+        />
+      </div>
+    </div>
   );
 }
