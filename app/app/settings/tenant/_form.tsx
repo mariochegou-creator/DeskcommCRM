@@ -6,6 +6,7 @@ import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { Textarea } from "@/components/ui/textarea";
 import {
   Select,
   SelectContent,
@@ -160,6 +161,26 @@ export function TenantForm({ initial }: Props) {
           />
           <p className="text-xs text-muted-foreground">
             Adicionados ao set padrão. Cada pipeline pode ter seus próprios motivos.
+          </p>
+        </div>
+
+        <div className="space-y-2">
+          <Label htmlFor="cola_do_mercado">Cola do mercado</Label>
+          <Textarea
+            id="cola_do_mercado"
+            rows={12}
+            className="font-mono text-xs"
+            value={form.cola_do_mercado}
+            onChange={(e) => set("cola_do_mercado", e.target.value)}
+            placeholder={
+              "O que o vendedor precisa saber sobre o mercado dos seus clientes: " +
+              "as dores, o que responder em cada objeção, os números que pode citar."
+            }
+          />
+          <p className="text-xs text-muted-foreground">
+            É o que a estrela do inbox lê antes de sugerir uma resposta. Escreva
+            como você explicaria para um vendedor novo. Máximo 12.000 caracteres
+            ({form.cola_do_mercado.length.toLocaleString("pt-BR")} usados).
           </p>
         </div>
 

@@ -33,7 +33,8 @@ export async function updateTenant(input: TenantInput): Promise<UpdateTenantResu
   const ip = hdrs.get("x-forwarded-for")?.split(",")[0]?.trim() ?? null;
   const userAgent = hdrs.get("user-agent") ?? null;
 
-  // Read current settings jsonb to merge `lost_reasons_extra` non-destructively.
+  // Read current settings jsonb to merge `lost_reasons_extra` and
+  // `cola_do_mercado` non-destructively.
   const { data: orgRow, error: readErr } = await supabase
     .from("organizations")
     .select("settings")
@@ -45,6 +46,7 @@ export async function updateTenant(input: TenantInput): Promise<UpdateTenantResu
   const nextSettings = {
     ...currentSettings,
     lost_reasons_extra: parsed.data.lost_reasons_extra,
+    cola_do_mercado: parsed.data.cola_do_mercado,
   };
 
   const { error } = await supabase

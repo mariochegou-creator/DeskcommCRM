@@ -10,7 +10,6 @@ import type pg from 'pg';
 import type { ModelMessage } from 'ai';
 
 import { loadPublishedAgentConfig } from './agent-config';
-import { searchKnowledge } from './search-knowledge';
 import { getLeadContext } from '../edge/crm/get-lead-context';
 import type { CrmEdgeConfig } from '../edge/crm/mcp-client';
 import { runModelCall, type LlmEdgeConfig } from '../edge/llm/run-model-call';
@@ -80,6 +79,10 @@ export async function generateDraftReply(
     content: m.body,
   }));
 
+  // Sem histórico não há o que rascunhar — e o AI SDK lança com messages vazio
+  // (viraria 500 cru). Retorna 'empty' (a UI mostra um aviso amigável).
+  if (messages.length === 0) return { ok: false, reason: 'empty' };
+
   // [COLA DO MERCADO] — o motivo do botão existir.
   //
   // O vendedor clica na estrela justamente quando NÃO sabe o que responder. Com
@@ -87,35 +90,30 @@ export async function generateDraftReply(
   // sugestão saía genérica — uma pergunta solta que ignora o que o lead acabou
   // de falar. Genérico é pior que nada: ele lê, não usa, e o botão morre.
   //
-  // A KB publicada do agente já guarda o material de nicho (dores, jogadas,
-  // números públicos) e já é editável na tela /app/ai/knowledge/sources — então
-  // o conteúdo se atualiza SEM deploy. O que faltava era a estrela consultá-la.
+  // A cola vai INTEIRA no prompt, e não por busca semântica na KB do agente,
+  // por três motivos que só aparecem quando se tenta o contrário: (1) a KB
+  // depende de embedding, e sem AI_GATEWAY_API_KEY/OPENAI_API_KEY toda busca
+  // devolve ok:false — a cola simplesmente nunca chegaria; (2) a indexação de
+  // arquivo de política ainda é stub no rag-indexer (`knowledge_source.updated`
+  // retorna reindex_deferred), então não há o que buscar; (3) mesmo com as duas
+  // resolvidas, top-K sobre um documento de duas páginas devolve pedaço e
+  // esconde o resto — aqui o resto é o que segura o modelo (as travas do "o que
+  // nunca dizer" moram longe da objeção que casou com a busca).
   //
-  // Diferente do turno completo, aqui a busca NÃO é uma tool: sem tools o modelo
-  // não teria como pedir, e um step a mais dobraria a espera de quem está com o
-  // cliente na tela. A query é a última fala do lead — é exatamente sobre ela
-  // que o vendedor travou.
-  //
-  // Sem KB ativa, ou com a base fora do ar (searchKnowledge devolve ok:false,
-  // nunca lança), o rascunho sai sem cola: sugestão pior, não erro na cara dele.
-  const ultimaDoLead = [...ctx.context.messages].reverse().find((m) => m.direction === 'inbound');
-  let blocoCola = '';
-  if (agent.activeKbVersionId !== null && ultimaDoLead !== undefined) {
-    const kb = await searchKnowledge(db, {
-      organizationId: input.tenantId,
-      kbVersionId: agent.activeKbVersionId,
-      query: ultimaDoLead.body,
-      topK: agent.ragTopK,
-      threshold: agent.ragSimilarityThreshold,
-    });
-    if (kb.ok && kb.results.length > 0) {
-      blocoCola =
-        `\n\n[COLA DO MERCADO] Material da nossa base sobre o mercado deste cliente. ` +
+  // Mora em organizations.settings.cola_do_mercado, editável em Configurações →
+  // Organização: quando o nicho de foco mudar, quem vende reescreve a caixa e o
+  // próximo clique já usa o texto novo — sem deploy.
+  const { rows: orgRows } = await db.query<{ cola: string | null }>(
+    `select settings->>'cola_do_mercado' as cola from organizations where id = $1`,
+    [input.tenantId],
+  );
+  const cola = (orgRows[0]?.cola ?? '').trim();
+  const blocoCola =
+    cola === ''
+      ? ''
+      : `\n\n[COLA DO MERCADO] O que sabemos sobre o mercado deste cliente. ` +
         `Use UM fato ou UM número daqui para dar peso à resposta. ` +
-        `Se nada aqui servir para o que ele falou, ignore o bloco — não force.\n` +
-        kb.results.map((r) => r.content).join('\n---\n');
-    }
-  }
+        `Se nada aqui servir para o que ele falou, ignore o bloco — não force.\n${cola}`;
 
   const system =
     `${agent.systemPrompt}\n\n` +
@@ -131,14 +129,15 @@ export async function generateDraftReply(
     `Regras da mensagem: no máximo 4 linhas; concorde antes de virar o ângulo ` +
     `(nunca comece discordando); uma única pergunta, e no fim; nada de "presença ` +
     `digital", "funil" ou "automação"; nunca insinue que ele não entende do ` +
-    `negócio dele. Não invente número, porcentagem nem caso de cliente: use só os ` +
-    `que estiverem na COLA DO MERCADO abaixo.` +
+    `negócio dele. Não invente número, porcentagem nem caso de cliente` +
+    // A permissão condicional vem colada na proibição de propósito: mandar "use
+    // só os que estiverem na COLA DO MERCADO" numa org que não escreveu cola
+    // nenhuma aponta para um bloco que não existe — e um prompt que cita fonte
+    // ausente convida o modelo a preencher a lacuna, que é exatamente o que a
+    // frase queria impedir.
+    (blocoCola === '' ? '.' : `: use só os que estiverem na COLA DO MERCADO abaixo.`) +
     blocoCola +
     blocoDecisao;
-
-  // Sem histórico não há o que rascunhar — e o AI SDK lança com messages vazio
-  // (viraria 500 cru). Retorna 'empty' (a UI mostra um aviso amigável).
-  if (messages.length === 0) return { ok: false, reason: 'empty' };
 
   const { result } = await runModelCall(db, llmCfg, {
     tenantId: input.tenantId,

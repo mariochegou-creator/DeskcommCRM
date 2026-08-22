@@ -13,7 +13,9 @@ const mockLoadAgent = vi.mocked(loadPublishedAgentConfig);
 const mockGetLeadContext = vi.mocked(getLeadContext);
 const mockRunModelCall = vi.mocked(runModelCall);
 
-const db = {} as never;
+/** Só a leitura da cola do mercado passa por aqui — o resto do turno é mockado. */
+const mockDbQuery = vi.fn<() => Promise<{ rows: { cola: string | null }[] }>>();
+const db = { query: mockDbQuery } as never;
 const llmCfg = {} as never;
 const crmCfg = {} as never;
 
@@ -73,6 +75,8 @@ function contextResult(overrides: Partial<LeadContextResult & { ok: true }> = {}
 
 beforeEach(() => {
   vi.clearAllMocks();
+  // Default: org sem cola preenchida — o estado de quem ainda não escreveu nada.
+  mockDbQuery.mockResolvedValue({ rows: [{ cola: null }] });
 });
 
 describe("generateDraftReply", () => {
@@ -254,5 +258,56 @@ describe("o rascunho conhece a decisão do vendedor", () => {
     const system = await systemGerado(null);
     expect(system).not.toContain("DECISÃO DO VENDEDOR");
     expect(system).toContain("[MODO RASCUNHO]");
+  });
+});
+
+describe("a cola do mercado entra no rascunho", () => {
+  async function systemComCola(cola: string | null): Promise<string> {
+    mockLoadAgent.mockResolvedValue(AGENT);
+    mockGetLeadContext.mockResolvedValue(contextResult());
+    mockDbQuery.mockResolvedValue({ rows: [{ cola }] });
+    mockRunModelCall.mockResolvedValue({
+      result: { text: "Segue." },
+      provider: "anthropic",
+      model: "claude-sonnet-4-6",
+      usage: { inputTokens: 1, outputTokens: 1, cacheReadTokens: 0, cacheWriteTokens: 0 },
+      costCents: 1,
+      latencyMs: 1,
+    } as never);
+    await generateDraftReply(db, llmCfg, crmCfg, input);
+    return (mockRunModelCall.mock.calls[0]?.[2] as { system: string }).system;
+  }
+
+  it("o texto da org vai INTEIRO para o prompt", async () => {
+    // Inteiro, não um trecho: as travas do "o que nunca dizer" moram longe da
+    // objeção, e um recorte por relevância as deixaria de fora justamente
+    // quando o modelo mais precisa delas.
+    const cola = `## Dor 1
+Ele perde cliente por não responder.
+
+## Nunca dizer
+Não fale de presença digital no primeiro toque.`;
+    const system = await systemComCola(cola);
+    expect(system).toContain("[COLA DO MERCADO]");
+    expect(system).toContain(cola);
+  });
+
+  it("org sem cola não ganha bloco vazio", async () => {
+    // Mesma razão do bloco de decisão: cabeçalho sem conteúdo gasta contexto e
+    // ensina o modelo a preencher lacuna.
+    expect(await systemComCola(null)).not.toContain("COLA DO MERCADO");
+  });
+
+  it("cola só com espaço em branco conta como vazia", async () => {
+    // O campo é uma caixa de texto livre: apagar o conteúdo costuma deixar
+    // quebras de linha para trás, e isso não pode virar um bloco fantasma.
+    expect(await systemComCola(" \n\n ")).not.toContain("COLA DO MERCADO");
+  });
+
+  it("manda o modelo classificar a última mensagem antes de escrever", async () => {
+    // É o que separa a sugestão da pergunta genérica que o vendedor ignora.
+    const system = await systemComCola(null);
+    expect(system).toContain("[COMO RESPONDER]");
+    expect(system).toMatch(/última mensagem/i);
   });
 });

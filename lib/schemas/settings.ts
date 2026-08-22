@@ -169,6 +169,21 @@ export const tenantSchema = z.object({
     .optional()
     .or(z.literal("").transform(() => null)),
   lost_reasons_extra: z.array(z.string().min(1).max(80)).max(50).default([]),
+  /**
+   * organizations.settings.cola_do_mercado — o que o vendedor sabe sobre o
+   * mercado do cliente, em texto livre, e que a estrela do inbox cola no
+   * prompt do rascunho.
+   *
+   * Mora no settings jsonb (molde do `lost_reasons_extra` acima) porque é
+   * conteúdo de operação, não de código: muda quando o nicho de foco muda, e
+   * quem muda é quem vende — sem deploy, sem migration.
+   *
+   * O teto de 12k caracteres é o do prompt: a cola vai INTEIRA para o modelo
+   * (ver draft-reply.ts, que explica por que inteira e não por busca), e
+   * ~12k caracteres é o ponto em que ela deixa de caber junto do histórico da
+   * conversa sem empurrar o começo dele para fora da janela.
+   */
+  cola_do_mercado: z.string().max(12000).default(""),
 });
 export type TenantInput = z.infer<typeof tenantSchema>;
 
