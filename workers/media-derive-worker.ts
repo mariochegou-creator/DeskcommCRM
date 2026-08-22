@@ -16,6 +16,7 @@ import type { EventRow, HandlerResult } from "@/lib/event-log/dispatcher";
 import { deriveMediaText, type DeriveDeps } from "@/lib/messaging/media/derive";
 import { deriveVideoText } from "@/lib/messaging/media/video-derive";
 import { apiTranscriptionProvider } from "@/lib/messaging/media/transcription";
+import { groqTranscriptionProvider } from "@/lib/calls/transcribe";
 import { logger } from "@/lib/logger";
 import { createAdminClient } from "@/lib/supabase/admin";
 
@@ -129,7 +130,19 @@ function buildDeriveDeps(llm: { provider: string; apiKey: string; defaultModel: 
     });
     return res.text;
   };
-  const transcriber = apiTranscriptionProvider({ apiKey: llm.apiKey });
+  // ⚠️ O ÁUDIO DO WHATSAPP NUNCA FOI TRANSCRITO NESTA ORG, E ISSO ERA INVISÍVEL.
+  //
+  // `apiTranscriptionProvider` sozinho aponta para a API da OpenAI usando a
+  // chave da ORG. Numa org com `provider = 'anthropic'` — que é o caso — isso
+  // manda uma chave Anthropic para o Whisper da OpenAI e volta 401. O erro morre
+  // no catch do worker, a mensagem fica com `media_derived_status = 'failed'`, e
+  // o único sintoma que chega a alguém é o agente escrevendo "recebi seu áudio,
+  // mas não consigo ouvir" — que parece limitação do produto, não configuração.
+  //
+  // O Groq fala o MESMO dialeto (é o que já transcreve as ligações do SDR) e tem
+  // chave própria, independente do provider de chat da org. Ele vem primeiro; a
+  // via BYOK-OpenAI continua atrás para quem configurou o próprio Whisper.
+  const transcriber = groqTranscriptionProvider() ?? apiTranscriptionProvider({ apiKey: llm.apiKey });
   return {
     transcriber,
     describeImage,

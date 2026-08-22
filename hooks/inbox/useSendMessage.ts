@@ -57,6 +57,11 @@ export function useSendMessage() {
         media_mime: args.media_mime ?? null,
         media_size_bytes: null,
         media_storage_path: null,
+        // Eco otimista de mensagem de TEXTO (mídia sai deste caminho na linha
+        // 36), então não há mídia para derivar — e mesmo que houvesse, o
+        // derivado nasce no servidor segundos depois.
+        media_derived_text: null,
+        media_derived_status: null,
         sent_via: "user",
         sent_by_user_id: null,
         sent_at: new Date().toISOString(),

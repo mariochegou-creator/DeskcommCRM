@@ -46,6 +46,18 @@ export interface Message {
   media_mime: string | null;
   media_size_bytes: number | null;
   media_storage_path: string | null;
+  /**
+   * O que a mídia DIZ, em texto — transcrição do áudio, descrição da imagem,
+   * texto do PDF. Nasce alguns segundos DEPOIS da mensagem (worker separado),
+   * então chega por UPDATE no realtime e nunca junto do INSERT.
+   *
+   * Está aqui porque a IA já lia isto e o humano não: o mesmo áudio que o agente
+   * entendia continuava sendo, para quem atende, um play que ele precisa parar
+   * tudo para ouvir.
+   */
+  media_derived_text: string | null;
+  /** `pending` | `ready` | `failed` — o que separa "ainda não" de "não deu". */
+  media_derived_status: string | null;
   sent_via: "user" | "ai" | "system";
   sent_by_user_id: string | null;
   sent_at: string;

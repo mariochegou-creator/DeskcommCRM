@@ -8,6 +8,7 @@ import type { Message } from "@/lib/types/messaging";
 import { CitationButton } from "@/components/ai/CitationButton";
 import { MediaRenderer } from "@/components/inbox/media/MediaRenderer";
 import { CartaoDeContato } from "@/components/inbox/CartaoDeContato";
+import { TranscricaoDaMidia } from "@/components/inbox/TranscricaoDaMidia";
 import { analisarVCard } from "@/lib/contacts/vcard";
 import {
   extractCitations,
@@ -111,6 +112,11 @@ export function MessageBubble({ message, debugCitations, contactId }: Props) {
         {message.body && !temCartao && (
           <p className="whitespace-pre-wrap break-words leading-snug">{message.body}</p>
         )}
+
+        {/* Depois do play e do corpo: o que a mídia diz é APOIO à mídia, não a
+            mensagem. Acima dela, o olho leria a transcrição como o texto que o
+            cliente digitou — e ele não digitou nada. */}
+        {hasMedia && <TranscricaoDaMidia message={message} isOutbound={isOutbound} />}
 
         <div
           className={cn(
