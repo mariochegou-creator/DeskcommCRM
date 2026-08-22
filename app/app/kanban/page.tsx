@@ -1,51 +1,36 @@
 import { redirect } from "next/navigation";
 
-import { Kanban } from "@/lib/ui/icons";
-import { EmptyPipeline } from "@/components/empty";
 import { requireAuth, resolveActiveOrg } from "@/lib/auth/server";
-import { ROLE_RANK } from "@/lib/auth/types";
 import { createClient } from "@/lib/supabase/server";
-import { FunisClient, type FunilDaLista } from "./_client";
 
 export const dynamic = "force-dynamic";
 
-export default async function KanbanPickerPage() {
+/**
+ * "Kanban" no menu abre O QUADRO, não a lista de funis.
+ *
+ * A lista era uma tela inteira só para escolher — um clique a mais em toda
+ * abertura, e quase sempre no mesmo funil. Quem precisa de outro funil troca
+ * pelo seletor no topo do próprio quadro; quem precisa administrar (criar,
+ * excluir) continua em /app/kanban/funis.
+ */
+export default async function KanbanPage() {
   const user = await requireAuth();
   const activeOrg = await resolveActiveOrg(user);
   if (!activeOrg) redirect("/app");
 
-  // Excluir funil é manager+, o mesmo nível das etapas — é configuração de
-  // operação. Quem não tem o papel vê a lista sem a lixeira: esconder o que a
-  // rota recusaria é honestidade, não permissão nova.
-  const podeExcluir =
-    user.is_platform_admin || ROLE_RANK[activeOrg.role] >= ROLE_RANK.manager;
-
   const supabase = await createClient();
   const { data: pipelines } = await supabase
     .from("crm_pipelines")
-    .select("id, name, slug, is_default, description")
+    .select("id, is_default")
     .eq("organization_id", activeOrg.orgId)
     .eq("is_archived", false)
     .order("position");
 
-  const list = (pipelines ?? []) as FunilDaLista[];
+  const lista = pipelines ?? [];
+  // O padrão é o principal; sem nenhum marcado, o primeiro da ordem é o que a
+  // lista mostrava no topo — o mesmo funil que o dedo já ia clicar.
+  const alvo = lista.find((p) => p.is_default) ?? lista[0];
 
-  return (
-    <div className="flex h-full flex-col gap-4 p-6">
-      <header className="flex items-center gap-3">
-        <Kanban size={28} className="text-muted-foreground" weight="duotone" />
-        <h1 className="text-2xl font-semibold tracking-tight">Funis</h1>
-      </header>
-
-      {list.length === 0 ? (
-        <div className="flex flex-1 items-center justify-center">
-          <EmptyPipeline
-            primary={{ label: "Ir para Configurações", href: "/app/settings" }}
-          />
-        </div>
-      ) : (
-        <FunisClient funis={list} podeExcluir={podeExcluir} />
-      )}
-    </div>
-  );
+  // Sem funil nenhum, a lista é quem sabe explicar o vazio.
+  redirect(alvo ? `/app/pipelines/${alvo.id}` : "/app/kanban/funis");
 }

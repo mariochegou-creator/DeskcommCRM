@@ -24,16 +24,32 @@ import { FilterBar } from "@/components/kanban/FilterBar";
 import { BulkActionBar } from "@/components/kanban/BulkActionBar";
 import { NewLeadDialog } from "@/components/kanban/NewLeadDialog";
 import { Button } from "@/components/ui/button";
-import { Plus } from "@/lib/ui/icons";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
+import { CaretDown, Check, Plus } from "@/lib/ui/icons";
 import type { LeadFilters } from "@/lib/kanban/filters";
 import { applyFilters, filtersFromParams, filtersToParams } from "@/lib/kanban/filters";
+
+export interface FunilDoSeletor {
+  id: string;
+  name: string;
+  is_default: boolean;
+}
 
 export function PipelinePageClient({
   pipelineId,
   initialName,
+  funis = [],
 }: {
   pipelineId: string;
   initialName: string;
+  /** Todos os funis da empresa — o seletor do topo troca sem sair do quadro. */
+  funis?: FunilDoSeletor[];
 }) {
   const { data, isLoading, error, pulses, realtimeStatus, seguranca } = useBoard(pipelineId);
   const router = useRouter();
@@ -75,9 +91,46 @@ export function PipelinePageClient({
       data-refetch-em={seguranca.ultimaVerificacao ?? ""}
     >
       <header className="flex items-center justify-between">
-        <h1 className="text-2xl font-semibold tracking-tight">
-          {data?.pipeline.name ?? initialName}
-        </h1>
+        {/* O nome do funil É o seletor: quem abre o Kanban já cai no funil
+            principal, e trocar de funil é um clique aqui — não uma tela
+            inteira antes do quadro. */}
+        <DropdownMenu>
+          {/* O <h1> continua sendo o título da página: o gatilho mora DENTRO
+              dele, não no lugar dele. */}
+          <h1 className="text-2xl font-semibold tracking-tight">
+            <DropdownMenuTrigger asChild>
+              <button
+                type="button"
+                className="-ml-2 flex items-center gap-2 rounded-md px-2 py-1 transition-colors hover:bg-muted"
+                title="Trocar de funil"
+              >
+                {data?.pipeline.name ?? initialName}
+                <CaretDown size={18} className="text-muted-foreground" aria-hidden />
+              </button>
+            </DropdownMenuTrigger>
+          </h1>
+          <DropdownMenuContent align="start" className="min-w-56">
+            {funis.map((f) => (
+              <DropdownMenuItem
+                key={f.id}
+                onSelect={() => {
+                  if (f.id !== pipelineId) router.push(`/app/pipelines/${f.id}`);
+                }}
+              >
+                <Check
+                  size={14}
+                  className={f.id === pipelineId ? "mr-2" : "mr-2 opacity-0"}
+                  aria-hidden
+                />
+                {f.name}
+              </DropdownMenuItem>
+            ))}
+            <DropdownMenuSeparator />
+            <DropdownMenuItem onSelect={() => router.push("/app/kanban/funis")}>
+              Gerenciar funis…
+            </DropdownMenuItem>
+          </DropdownMenuContent>
+        </DropdownMenu>
         <Button onClick={() => setNewOpen(true)} disabled={!data}>
           <Plus size={16} className="mr-2" /> Novo Lead
         </Button>
