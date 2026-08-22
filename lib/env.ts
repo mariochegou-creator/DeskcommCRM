@@ -47,6 +47,11 @@ const schema = z.object({
   INTERNAL_SECRET: required("INTERNAL_SECRET"),
   /** Optional dedicated secret for cron endpoints (S-06.07 onwards). */
   INTERNAL_CRON_SECRET: z.string().optional().default(""),
+  /**
+   * Modelo do resumo diário por conversa (cron conversation-daily-digest).
+   * Sujeito a enabled_models da org — trocar aqui não fura a lista.
+   */
+  DIGEST_MODEL: z.string().optional().default("claude-haiku-4-5"),
 
   // Encryption keys (pgcrypto)
   CPF_ENCRYPTION_KEY: required("CPF_ENCRYPTION_KEY"),
