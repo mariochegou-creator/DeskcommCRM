@@ -98,8 +98,19 @@ export const grupoDaReuniaoSchema = z
      * "onde o Mario lê" e "que número o cliente vê".
      */
     participantes: z.array(z.string().min(8).max(20)).max(5).catch([]),
+    /**
+     * Path (no bucket `whatsapp-media`, fora de qualquer conversa — ex.:
+     * `{org}/library/grupo/abertura-claudio.mp3`) do áudio de abertura do
+     * Claudio, gravado UMA vez e reusado em todo grupo novo. Presente ⇒ a
+     * abertura sai em três atos (texto curto → áudio → pergunta escrita);
+     * null ⇒ abertura de texto único, como sempre foi. O envio copia o objeto
+     * para dentro da conversa antes de mandar (mesma razão da gaveta de áudios:
+     * `isMediaPathOwnedBy` não aceita path de fora, e afrouxá-la seria o
+     * caminho curto e errado).
+     */
+    audio_abertura: z.string().min(3).max(300).nullable().catch(null),
   })
-  .catch({ session_name: null, so_grupo: true, participantes: [] });
+  .catch({ session_name: null, so_grupo: true, participantes: [], audio_abertura: null });
 export type GrupoDaReuniaoConfig = z.infer<typeof grupoDaReuniaoSchema>;
 
 export type Locale = (typeof LOCALES)[number];

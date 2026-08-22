@@ -11,6 +11,8 @@
  * Os agentes da NEXO seguem sem versão publicada, e um lembrete de reunião não
  * pode depender disso para sair.
  */
+import { randomUUID } from "node:crypto";
+
 import type { SupabaseClient } from "@supabase/supabase-js";
 
 import { sendMessageHandler } from "@/app/api/v1/messages/_handler";
@@ -170,6 +172,68 @@ export async function enviarNoGrupo(
   } catch (err) {
     const detalhe = err instanceof Error ? err.message : String(err);
     logger.error("[agendamento] envio no grupo falhou", {
+      organizationId: envio.organizationId,
+      conversationId: envio.conversationId,
+      origem: envio.origem,
+      error: detalhe,
+      requestId: envio.requestId,
+    });
+    return { ok: false, motivo: "falhou", detalhe };
+  }
+}
+
+/**
+ * Manda o áudio REUTILIZÁVEL do Claudio numa conversa de grupo.
+ *
+ * O binário mora fora da conversa (`{org}/library/…`), e o envio de mídia exige
+ * posse (`isMediaPathOwnedBy`): por isso o objeto é COPIADO para dentro da
+ * conversa antes de sair — o mesmo desenho da gaveta de áudios do inbox
+ * (`saved-audios/[id]/attach`), pela mesma razão. Bônus idêntico: trocar o
+ * áudio da biblioteca não muda o que os grupos antigos já receberam.
+ *
+ * `type: "audio"` faz o WAHA sair por `sendVoice` com `convert: true` — chega
+ * como nota de voz, indistinguível de gravada na hora.
+ */
+export async function enviarAudioNoGrupo(
+  admin: SupabaseClient,
+  envio: Omit<EnvioDeTexto, "contactId" | "corpo"> & {
+    conversationId: string;
+    /** Path do áudio na biblioteca do bucket `whatsapp-media`. */
+    audioDaBiblioteca: string;
+  },
+): Promise<ResultadoDoEnvio> {
+  try {
+    const extensao = envio.audioDaBiblioteca.split(".").pop()?.toLowerCase() || "mp3";
+    const destino = `${envio.organizationId}/${envio.conversationId}/out-${randomUUID()}.${extensao}`;
+    const { error: copyErr } = await admin.storage
+      .from("whatsapp-media")
+      .copy(envio.audioDaBiblioteca, destino);
+    if (copyErr) throw new Error(`copia_do_audio_falhou: ${copyErr.message}`);
+
+    const message = await sendMessageHandler(
+      admin,
+      {
+        organization_id: envio.organizationId,
+        actor: { type: "webhook_source", id: envio.origem },
+        requestId: envio.requestId,
+      },
+      {
+        conversation_id: envio.conversationId,
+        type: "audio",
+        media_storage_path: destino,
+        media_mime: extensao === "ogg" ? "audio/ogg" : "audio/mpeg",
+        metadata: envio.metadata,
+      } as Parameters<typeof sendMessageHandler>[2],
+    );
+    const m = message as { id: string; status?: string };
+    // O handler não lança quando o WAHA recusa — grava `failed` e devolve. Um
+    // áudio `failed` precisa contar como falha aqui, senão a abertura perderia
+    // a apresentação sem o texto reserva sair no lugar.
+    if (m.status === "failed") return { ok: false, motivo: "falhou", detalhe: "waha_failed" };
+    return { ok: true, messageId: m.id, conversationId: envio.conversationId };
+  } catch (err) {
+    const detalhe = err instanceof Error ? err.message : String(err);
+    logger.error("[agendamento] áudio no grupo falhou", {
       organizationId: envio.organizationId,
       conversationId: envio.conversationId,
       origem: envio.origem,

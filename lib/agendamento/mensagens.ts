@@ -189,8 +189,8 @@ export const TEXTO_DO_LEMBRETE = {
  * e esconder a IA é a contradição que custa a venda quando o cliente descobre.
  * ------------------------------------------------------------------------- */
 
-/** Como a assistente se apresenta. Um nome só, em todos os textos do grupo. */
-const ASSINATURA_DA_IA = "assistente da Nexo IA";
+/** Como o assistente se apresenta. Um nome só, em todos os textos do grupo. */
+const ASSINATURA_DA_IA = "Claudio, assistente da Nexo IA";
 
 /** "o Mario" quando se sabe quem conduz; "o time" quando não se sabe. */
 function quemVaiConduzir(quemConduz: string | null | undefined): string {
@@ -221,13 +221,56 @@ export function mensagemDeAberturaDoGrupo(reuniao: Reuniao, ctx: ContextoDaMensa
   return [
     `${vocativo(ctx.nomeDoContato)}tudo certo. Sua conversa com a Nexo ficou ${q.diaDaSemana} (${q.diaMes}) às ${q.hora}.`,
     "",
-    `Sou a ${ASSINATURA_DA_IA}. Quem vai conversar com você é ${conduz} — ele já está levantando o que está acontecendo com ${aoNegocio(ctx.negocio)} pra te mostrar no dia.`,
+    `Sou o ${ASSINATURA_DA_IA}. Quem vai conversar com você é ${conduz} — ele já está levantando o que está acontecendo com ${aoNegocio(ctx.negocio)} pra te mostrar no dia.`,
     "",
     "Criei esse grupo pra você não ter que procurar ninguém. Qualquer coisa antes do dia, é só falar aqui.",
     "",
     'Uma coisa só: me responde "confirmado" que eu travo esse horário?',
   ].join("\n");
 }
+
+/* -------------------------------------------------------------------------
+ * ABERTURA EM TRÊS ATOS — quando a org tem o ÁUDIO do Claudio configurado
+ * (`grupo_da_reuniao.audio_abertura`, gravado uma vez e reusado em todo grupo).
+ *
+ * A sequência é texto curto → áudio → pergunta escrita, e a divisão não é
+ * estética: TUDO que muda de lead pra lead (nome, dia, hora, negócio, quem
+ * conduz) fica em texto, porque o lead relê a data depois e um áudio não se
+ * relê; o áudio carrega só o que é igual sempre — quem é o Claudio, por que o
+ * grupo existe, e o pedido do "confirmado". A pergunta sai de novo POR ESCRITO
+ * logo abaixo do áudio para o lead responder sem precisar reouvir: a voz
+ * convida, a linha escrita ancora.
+ * ------------------------------------------------------------------------- */
+
+/** Ato 1 — só o que é deste lead. A apresentação fica com o áudio. */
+export function mensagemCurtaDeAberturaDoGrupo(
+  reuniao: Reuniao,
+  ctx: ContextoDaMensagem,
+): string {
+  const q = formatarReuniao(new Date(reuniao.em));
+  const conduz = quemVaiConduzir(ctx.quemConduz);
+
+  return [
+    `${vocativo(ctx.nomeDoContato)}tudo certo. Sua conversa com a Nexo ficou ${q.diaDaSemana} (${q.diaMes}) às ${q.hora}.`,
+    "",
+    `Quem vai conversar com você é ${conduz} — ele já está levantando o que está acontecendo com ${aoNegocio(ctx.negocio)} pra te mostrar no dia.`,
+  ].join("\n");
+}
+
+/** Ato 3 — a pergunta escrita, logo abaixo do áudio. */
+export const PERGUNTA_DE_CONFIRMACAO_DO_GRUPO =
+  'Me responde "confirmado" que eu travo esse horário?';
+
+/**
+ * O que o áudio diria, por escrito — sai quando o áudio FALHOU depois do ato 1
+ * já ter saído. Sem isto, a falha do áudio comeria a apresentação e o pedido de
+ * confirmação, que é o que o grupo inteiro existe para produzir.
+ */
+export const COMPLEMENTO_DA_ABERTURA_SEM_AUDIO = [
+  `Sou o ${ASSINATURA_DA_IA}. Criei esse grupo pra você não ter que procurar ninguém — qualquer coisa antes do dia, é só falar aqui.`,
+  "",
+  PERGUNTA_DE_CONFIRMACAO_DO_GRUPO,
+].join("\n");
 
 /**
  * REMARCAÇÃO num grupo que já existe.

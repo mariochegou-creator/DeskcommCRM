@@ -54,8 +54,8 @@ import {
   linkParaAdicionarNaAgenda,
   type ResultadoDoEvento,
 } from "@/lib/agendamento/google-calendar";
+import { enviarAberturaDoGrupo } from "@/lib/agendamento/abertura-grupo";
 import {
-  mensagemDeAberturaDoGrupo,
   mensagemDeConfirmacao,
   mensagemDeRemarcadaNoGrupo,
 } from "@/lib/agendamento/mensagens";
@@ -326,26 +326,35 @@ export async function POST(
   } else if (automacaoOff) {
     envio = { ok: false, motivo: "automacao_desligada" };
   } else if (conversaDoGrupo) {
-    // Grupo NOVO recebe a abertura; grupo que já existia recebe o texto de
-    // remarcação. A rota é a mesma para marcar e remarcar (é o mesmo verbo, por
-    // desenho) — sem esta escolha, remarcar mandaria "criei esse grupo" num
-    // grupo de duas semanas atrás.
-    const texto =
-      grupo.criado && grupo.jaExistia
-        ? mensagemDeRemarcadaNoGrupo
-        : mensagemDeAberturaDoGrupo;
-    envio = await enviarNoGrupo(admin, {
-      organizationId: lead.organization_id,
-      conversationId: conversaDoGrupo,
-      corpo: texto(reuniao, {
-        nomeDoContato,
-        negocio,
-        quemConduz: user.full_name,
-      }),
-      metadata: { meeting_lead_id: leadId, meeting_message: "confirmacao", meeting_at: reuniao.em },
-      origem: "crm:meeting-group-open",
-      requestId,
-    });
+    // Grupo NOVO recebe a abertura (com o áudio do Claudio, quando a org o tem
+    // configurado); grupo que já existia recebe o texto de remarcação. A rota é
+    // a mesma para marcar e remarcar (é o mesmo verbo, por desenho) — sem esta
+    // escolha, remarcar mandaria "criei esse grupo" num grupo de duas semanas
+    // atrás.
+    if (grupo.criado && grupo.jaExistia) {
+      envio = await enviarNoGrupo(admin, {
+        organizationId: lead.organization_id,
+        conversationId: conversaDoGrupo,
+        corpo: mensagemDeRemarcadaNoGrupo(reuniao, {
+          nomeDoContato,
+          negocio,
+          quemConduz: user.full_name,
+        }),
+        metadata: { meeting_lead_id: leadId, meeting_message: "confirmacao", meeting_at: reuniao.em },
+        origem: "crm:meeting-group-open",
+        requestId,
+      });
+    } else {
+      envio = await enviarAberturaDoGrupo(admin, {
+        organizationId: lead.organization_id,
+        conversationId: conversaDoGrupo,
+        reuniao,
+        ctx: { nomeDoContato, negocio, quemConduz: user.full_name },
+        leadId,
+        origem: "crm:meeting-group-open",
+        requestId,
+      });
+    }
   } else {
     const corpo = mensagemDeConfirmacao(reuniao, {
       nomeDoContato,

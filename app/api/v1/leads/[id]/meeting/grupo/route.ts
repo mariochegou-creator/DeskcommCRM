@@ -21,9 +21,9 @@ import { type NextRequest } from "next/server";
 import { ok, fail } from "@/lib/api/wrappers";
 import { audit } from "@/lib/audit";
 import { requireRole } from "@/lib/auth/require-role";
-import { automacaoDesligada, enviarNoGrupo } from "@/lib/agendamento/envio";
+import { enviarAberturaDoGrupo } from "@/lib/agendamento/abertura-grupo";
+import { automacaoDesligada } from "@/lib/agendamento/envio";
 import { garantirGrupoDaReuniao } from "@/lib/agendamento/grupo-criar";
-import { mensagemDeAberturaDoGrupo } from "@/lib/agendamento/mensagens";
 import { lerReuniao } from "@/lib/agendamento/reuniao";
 import { emitLeadActivity } from "@/lib/leads/activity-emitter";
 import { logger } from "@/lib/logger";
@@ -97,19 +97,16 @@ export async function POST(
       : { data: null };
     const c = contato as { name: string | null; display_name: string | null } | null;
 
-    const envio = await enviarNoGrupo(admin, {
+    const envio = await enviarAberturaDoGrupo(admin, {
       organizationId: lead.organization_id,
       conversationId: grupo.conversation_id,
-      corpo: mensagemDeAberturaDoGrupo(reuniao, {
+      reuniao,
+      ctx: {
         nomeDoContato: c?.display_name ?? c?.name ?? null,
         negocio: lead.title,
         quemConduz: user.full_name,
-      }),
-      metadata: {
-        meeting_lead_id: leadId,
-        meeting_message: "confirmacao",
-        meeting_at: reuniao.em,
       },
+      leadId,
       origem: "crm:meeting-group-open-manual",
       requestId,
     });
