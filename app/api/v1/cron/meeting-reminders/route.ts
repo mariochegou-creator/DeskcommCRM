@@ -250,6 +250,7 @@ async function handle(req: NextRequest): Promise<Response> {
         ? await enviarNoGrupo(admin, {
             organizationId: linha.organization_id,
             conversationId: conversaDoGrupo,
+            digitando: true,
             corpo: TEXTO_DO_LEMBRETE_NO_GRUPO[lembrete](reuniao, contexto),
             metadata,
             origem: `cron:meeting-reminders:${lembrete}:grupo`,

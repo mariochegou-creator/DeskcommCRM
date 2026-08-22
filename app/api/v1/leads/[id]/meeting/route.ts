@@ -335,6 +335,7 @@ export async function POST(
       envio = await enviarNoGrupo(admin, {
         organizationId: lead.organization_id,
         conversationId: conversaDoGrupo,
+        digitando: true,
         corpo: mensagemDeRemarcadaNoGrupo(reuniao, {
           nomeDoContato,
           negocio,
