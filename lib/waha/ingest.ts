@@ -660,24 +660,36 @@ async function handleInbound(
     }
   }
 
-  // A única resposta automática do grupo: "não vou poder" / "preciso remarcar".
-  // Awaited de propósito, ao contrário dos emits acima — é uma mensagem que sai
-  // no WhatsApp de um cliente, e disparar-e-esquecer dentro de um route handler
-  // serverless é como se perde o envio no meio quando o processo encerra.
-  // A função nunca lança; ver o cabeçalho de `grupo-reacao.ts`.
+  // As duas respostas automáticas do grupo: pedido de remarcação e o
+  // "confirmado" do lead. Awaited de propósito, ao contrário dos emits acima —
+  // é mensagem que sai no WhatsApp de um cliente, e disparar-e-esquecer dentro
+  // de um route handler serverless é como se perde o envio no meio quando o
+  // processo encerra. Nenhuma das funções lança; ver `grupo-reacao.ts`.
   if (grupo && oLeadEscreveu) {
     // IMPORT DINÂMICO, e não é estilo: `grupo-reacao` puxa o trilho de envio, que
     // puxa o route handler de mensagens, que é `server-only`. Importado no topo,
     // este módulo deixa de carregar em ambiente de teste e cinco arquivos de
     // teste da ingestão param de rodar — foi o que aconteceu ao escrever isto.
     // Ver `tests/unit/import-puro-sem-env.test.ts`, que guarda essa regra.
-    const { reagirAPedidoDeRemarcacao } = await import("@/lib/agendamento/grupo-reacao");
-    await reagirAPedidoDeRemarcacao(admin, {
+    const { reagirAPedidoDeRemarcacao, reagirAConfirmacao } = await import(
+      "@/lib/agendamento/grupo-reacao"
+    );
+    const remarcacao = await reagirAPedidoDeRemarcacao(admin, {
       organizationId: session.organization_id,
       conversationId: grupo.conversationId,
       texto: p.body,
       requestId,
     });
+    // Uma mensagem só nunca rende duas falas do assistente: se a remarcação
+    // respondeu, o obrigado não sai.
+    if (!remarcacao.agiu) {
+      await reagirAConfirmacao(admin, {
+        organizationId: session.organization_id,
+        conversationId: grupo.conversationId,
+        texto: p.body,
+        requestId,
+      });
+    }
   }
 
   return null;

@@ -9,12 +9,46 @@
 import { describe, expect, it } from "vitest";
 
 import {
+  ehConfirmacaoDeReuniao,
   ehPedidoDeRemarcacao,
   lerGrupo,
   LIMITE_NOME_DO_GRUPO,
   nomeDoGrupo,
   participantesDoGrupo,
 } from "./grupo";
+
+describe("ehConfirmacaoDeReuniao", () => {
+  it("casa a resposta seca que a abertura pede", () => {
+    expect(ehConfirmacaoDeReuniao("confirmado")).toBe(true);
+    expect(ehConfirmacaoDeReuniao("Confirmado!")).toBe(true);
+    expect(ehConfirmacaoDeReuniao("tá confirmado sim")).toBe(true);
+    expect(ehConfirmacaoDeReuniao("confirmado 👍")).toBe(true);
+    expect(ehConfirmacaoDeReuniao("Confirmo")).toBe(true);
+    expect(ehConfirmacaoDeReuniao("ok, confirmada a reunião")).toBe(true);
+  });
+
+  it("negação ou ressalva junto não é confirmação", () => {
+    expect(ehConfirmacaoDeReuniao("ainda não confirmado")).toBe(false);
+    expect(ehConfirmacaoDeReuniao("não tá confirmado")).toBe(false);
+    expect(ehConfirmacaoDeReuniao("confirmo depois")).toBe(false);
+    expect(ehConfirmacaoDeReuniao("quase confirmado")).toBe(false);
+  });
+
+  it("mensagem longa é conversa, não confirmação — mesmo com a palavra dentro", () => {
+    expect(
+      ehConfirmacaoDeReuniao(
+        "então, o pedido do fornecedor só foi confirmado ontem e por isso eu estava " +
+          "esperando pra te responder sobre aquele assunto do estoque que a gente conversou",
+      ),
+    ).toBe(false);
+  });
+
+  it("pedaço de palavra não casa, nem vazio", () => {
+    expect(ehConfirmacaoDeReuniao("confirmadamente estranho")).toBe(false);
+    expect(ehConfirmacaoDeReuniao("")).toBe(false);
+    expect(ehConfirmacaoDeReuniao(null)).toBe(false);
+  });
+});
 
 describe("nomeDoGrupo", () => {
   it("põe o nosso nome na frente para o dono reconhecer na lista", () => {

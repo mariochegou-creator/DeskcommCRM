@@ -225,7 +225,7 @@ export function mensagemDeAberturaDoGrupo(reuniao: Reuniao, ctx: ContextoDaMensa
     "",
     "Criei esse grupo pra você não ter que procurar ninguém. Qualquer coisa antes do dia, é só falar aqui.",
     "",
-    'Uma coisa só: me responde "confirmado" que eu travo esse horário?',
+    'Uma coisa só: me responde "confirmado" que eu seguro seu horário?',
   ].join("\n");
 }
 
@@ -259,7 +259,7 @@ export function mensagemCurtaDeAberturaDoGrupo(
 
 /** Ato 3 — a pergunta escrita, logo abaixo do áudio. */
 export const PERGUNTA_DE_CONFIRMACAO_DO_GRUPO =
-  'Me responde "confirmado" que eu travo esse horário?';
+  'Me responde "confirmado" que eu seguro seu horário?';
 
 /**
  * O que o áudio diria, por escrito — sai quando o áudio FALHOU depois do ato 1
@@ -328,7 +328,21 @@ export const TEXTO_DO_LEMBRETE_NO_GRUPO = {
 } as const;
 
 /**
- * A ÚNICA resposta que a automação dá a algo que o lead escreveu.
+ * O agradecimento ao "confirmado" do lead — pedido do Mario em 22/08/2026.
+ *
+ * Fecha o ciclo que a abertura abre: o Claudio pede "confirmado", o lead
+ * responde, e sem isto ninguém agradecia — o compromisso ficava no ar. Texto
+ * fixo em código, sem LLM, e sai UMA vez por reunião (a trava é de quem chama).
+ */
+export function mensagemDeConfirmacaoRecebida(ctx: ContextoDaMensagem): string {
+  const corpo = "fechou! Horário garantido. Qualquer coisa até lá, é só chamar aqui. 👊";
+  const v = vocativo(ctx.nomeDoContato);
+  return v ? `${v}${corpo}` : `${corpo.charAt(0).toUpperCase()}${corpo.slice(1)}`;
+}
+
+/**
+ * A resposta ao pedido de remarcação — com o agradecimento acima, uma das DUAS
+ * únicas reações da automação a algo que o lead escreveu.
  *
  * Sai quando `ehPedidoDeRemarcacao` casa (ver `lib/agendamento/grupo.ts`), e
  * NÃO oferece horário nenhum de propósito. Oferecer slots parece melhor e é

@@ -6,10 +6,11 @@
  * chamada, por duas travas independentes (`filters.ignore_groups` no dispatcher
  * e a ausência do `emit_event` em `lib/waha/ingest.ts`).
  *
- * A exceção é o pedido de remarcar. Ele é a exceção porque é o único momento em
- * que o silêncio custa a reunião: o lead escreve "não vou poder", ninguém
- * responde por três horas, e o que era uma remarcação vira um sumiço. A
- * resposta aqui não remarca nada — acusa, promete um humano, e cria a tarefa.
+ * As DUAS exceções: o pedido de remarcar e o "confirmado". A primeira porque o
+ * silêncio custa a reunião (o lead escreve "não vou poder", ninguém responde
+ * por três horas, e a remarcação vira sumiço); a segunda porque a abertura PEDE
+ * o "confirmado" — pedir e não agradecer deixa o compromisso no ar. Nenhuma das
+ * duas usa LLM: texto fixo, montado em código.
  *
  * QUATRO TRAVAS, e nenhuma é redundante:
  *  1. só em grupo que o CRM criou (garantido por quem chama);
@@ -28,8 +29,8 @@ import { logger } from "@/lib/logger";
 import { resolveUserNames } from "@/lib/mcp/tools/_users";
 
 import { automacaoDesligada, enviarNoGrupo } from "./envio";
-import { ehPedidoDeRemarcacao, lerGrupo } from "./grupo";
-import { mensagemDeRemarcacaoNoGrupo } from "./mensagens";
+import { ehConfirmacaoDeReuniao, ehPedidoDeRemarcacao, lerGrupo } from "./grupo";
+import { mensagemDeConfirmacaoRecebida, mensagemDeRemarcacaoNoGrupo } from "./mensagens";
 import { lerReuniao } from "./reuniao";
 
 export interface EntradaDaReacao {
@@ -142,17 +143,111 @@ export async function reagirAPedidoDeRemarcacao(
   }
 }
 
-/** Já saiu resposta de remarcação para ESTA reunião nesta conversa? */
+export type ResultadoDoAgradecimento =
+  | { agiu: false; motivo: "nao_e_confirmacao" | "sem_lead" | "ja_respondeu" | "desligada" | "falhou" }
+  | { agiu: true; leadId: string };
+
+/**
+ * O "obrigado" ao confirmado do lead — pedido do Mario em 22/08/2026.
+ *
+ * A segunda (e última) reação da automação no grupo. As mesmas quatro travas da
+ * remarcação, pela mesma razão; a diferença é que aqui não nasce tarefa — o
+ * ciclo fecha na própria resposta. NUNCA LANÇA, como tudo que roda na ingestão.
+ */
+export async function reagirAConfirmacao(
+  admin: SupabaseClient,
+  entrada: EntradaDaReacao,
+): Promise<ResultadoDoAgradecimento> {
+  try {
+    if (!ehConfirmacaoDeReuniao(entrada.texto)) return { agiu: false, motivo: "nao_e_confirmacao" };
+
+    const { data: leadRow } = await admin
+      .from("crm_leads")
+      .select("id, title, contact_id, custom_fields")
+      .eq("organization_id", entrada.organizationId)
+      .eq("custom_fields->grupo->>conversation_id", entrada.conversationId)
+      .limit(1)
+      .maybeSingle();
+
+    const lead = leadRow as {
+      id: string;
+      title: string | null;
+      contact_id: string | null;
+      custom_fields: unknown;
+    } | null;
+    if (!lead) return { agiu: false, motivo: "sem_lead" };
+
+    const grupo = lerGrupo(lead.custom_fields);
+    if (!grupo?.conversation_id) return { agiu: false, motivo: "sem_lead" };
+
+    // Sem reunião marcada não há o que garantir — "horário garantido" sobre
+    // reunião nenhuma é a automação inventando compromisso.
+    const reuniao = lerReuniao(lead.custom_fields);
+    if (!reuniao) return { agiu: false, motivo: "sem_lead" };
+
+    if (await automacaoDesligada(admin, entrada.organizationId)) {
+      return { agiu: false, motivo: "desligada" };
+    }
+
+    // Uma vez por reunião: o lead que manda "confirmado" e emenda "confirmadíssimo"
+    // não pode receber dois obrigados iguais. Remarcar de verdade rearma.
+    const jaAgradeceu = await respostaJaSaiu(
+      admin,
+      entrada.conversationId,
+      reuniao.em,
+      "confirmacao_agradecida",
+    );
+    if (jaAgradeceu) return { agiu: false, motivo: "ja_respondeu" };
+
+    const { data: contatoRow } = lead.contact_id
+      ? await admin
+          .from("contacts")
+          .select("name, display_name")
+          .eq("id", lead.contact_id)
+          .maybeSingle()
+      : { data: null };
+    const contato = contatoRow as { name: string | null; display_name: string | null } | null;
+
+    const envio = await enviarNoGrupo(admin, {
+      organizationId: entrada.organizationId,
+      conversationId: grupo.conversation_id,
+      corpo: mensagemDeConfirmacaoRecebida({
+        nomeDoContato: contato?.display_name ?? contato?.name ?? null,
+        negocio: lead.title,
+      }),
+      metadata: {
+        meeting_lead_id: lead.id,
+        meeting_message: "confirmacao_agradecida",
+        meeting_at: reuniao.em,
+      },
+      origem: "crm:grupo-confirmacao",
+      requestId: entrada.requestId,
+    });
+
+    if (!envio.ok) return { agiu: false, motivo: "falhou" };
+    return { agiu: true, leadId: lead.id };
+  } catch (err) {
+    logger.warn("[grupo] agradecimento à confirmação falhou", {
+      conversationId: entrada.conversationId,
+      error: err instanceof Error ? err.message : String(err),
+      requestId: entrada.requestId,
+    });
+    return { agiu: false, motivo: "falhou" };
+  }
+}
+
+/** Já saiu esta resposta automática para ESTA reunião nesta conversa? */
 async function respostaJaSaiu(
   admin: SupabaseClient,
   conversationId: string,
   reuniaoEm: string,
+  tipo: "remarcacao" | "confirmacao_agradecida" = "remarcacao",
 ): Promise<boolean> {
   const { data, error } = await admin
     .from("messages")
     .select("id")
     .eq("conversation_id", conversationId)
-    .eq("metadata->>meeting_message", "remarcacao")
+    .eq("metadata->>meeting_message", tipo)
     .eq("metadata->>meeting_at", reuniaoEm)
     .limit(1)
     .maybeSingle();

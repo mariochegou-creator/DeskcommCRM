@@ -188,6 +188,31 @@ export function lerGrupo(customFields: unknown): GrupoDaReuniao | null {
  * Falso NEGATIVO aqui é barato: a mensagem fica no inbox e um humano responde.
  * Falso positivo é que custa. Na dúvida, não casa.
  */
+/**
+ * O lead confirmou a reunião? ("confirmado", "confirmo", "tá confirmado")
+ *
+ * Régua mais apertada ainda que a da remarcação, porque a resposta é só um
+ * agradecimento — falso negativo não custa nada (a confirmação fica no inbox e
+ * segue valendo), mas agradecer uma frase que não era confirmação é o robô
+ * respondendo torto na frente do cliente. Por isso:
+ *  - mensagem CURTA (confirmação é resposta seca; "confirmado" citado no meio
+ *    de um parágrafo é conversa);
+ *  - nenhuma negação ou ressalva junto ("ainda não confirmado", "não tá
+ *    confirmado", "quase");
+ *  - a palavra inteira, não pedaço.
+ */
+export function ehConfirmacaoDeReuniao(texto: string | null | undefined): boolean {
+  const t = (texto ?? "")
+    .toLowerCase()
+    .normalize("NFD")
+    .replace(/\p{Diacritic}/gu, "")
+    .trim();
+  if (!t) return false;
+  if (t.length > 80) return false;
+  if (/\b(nao|ainda|quase|depois|sera|falta)\b/.test(t)) return false;
+  return /\bconfirmad[oa]\b|\bconfirmo\b/.test(t);
+}
+
 export function ehPedidoDeRemarcacao(texto: string | null | undefined): boolean {
   const t = (texto ?? "")
     .toLowerCase()
