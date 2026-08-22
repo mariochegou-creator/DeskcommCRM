@@ -197,19 +197,30 @@ export async function garantirGrupoDaReuniao(
     return { ok: false, motivo: "falhou", detalhe };
   }
 
-  // A capa do grupo é a foto de perfil da PRÓPRIA conexão que o criou — a do
-  // NexoOS, que carrega a marca da Nexo. A primeira versão usava a foto do
-  // LEAD e o Mario corrigiu na hora (21/08): o grupo é a Nexo recebendo o
-  // cliente, a cara dele tem que ser a da Nexo. E a fonte ser o perfil do
-  // chip é de propósito — trocar a foto no celular do NexoOS troca a capa dos
-  // grupos seguintes, sem mexer em código. Melhor-esforço por inteiro: chip
-  // sem foto ou motor sem o endpoint, o grupo segue com a capa padrão e nada
-  // disso pode derrubar a criação que já deu certo.
+  // A capa do grupo, em duas fontes na ordem: a imagem FIXA da org
+  // (`grupo_da_reuniao.capa`, escolha do Mario em 22/08 — a mesma capa em todo
+  // grupo novo, independente do chip) e, sem ela, a foto de perfil da PRÓPRIA
+  // conexão que criou — a do NexoOS, que carrega a marca da Nexo. A primeira
+  // versão usava a foto do LEAD e o Mario corrigiu na hora (21/08): o grupo é
+  // a Nexo recebendo o cliente, a cara dele tem que ser a da Nexo.
+  // Melhor-esforço por inteiro: bucket sem a imagem, chip sem foto ou motor
+  // sem o endpoint, o grupo segue com a capa padrão e nada disso pode derrubar
+  // a criação que já deu certo.
   try {
-    const chatIdDaSessao = chatIdDeTelefone(sessao.phone_number);
-    const foto = chatIdDaSessao
-      ? await client.getProfilePictureUrl(sessao.waha_session_name, chatIdDaSessao)
-      : null;
+    let foto: string | null = null;
+    if (cfgGrupo.capa) {
+      // URL assinada curta, só pro WAHA baixar — o mesmo desenho do envio de mídia.
+      const { data: signed } = await admin.storage
+        .from("whatsapp-media")
+        .createSignedUrl(cfgGrupo.capa, 600);
+      foto = signed?.signedUrl ?? null;
+    }
+    if (!foto) {
+      const chatIdDaSessao = chatIdDeTelefone(sessao.phone_number);
+      foto = chatIdDaSessao
+        ? await client.getProfilePictureUrl(sessao.waha_session_name, chatIdDaSessao)
+        : null;
+    }
     if (foto) await client.setGroupPicture(sessao.waha_session_name, criado.chatId, foto);
   } catch (err) {
     logger.warn("[grupo] capa com a marca da Nexo falhou — grupo segue sem", {

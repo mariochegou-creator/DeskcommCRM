@@ -109,8 +109,21 @@ export const grupoDaReuniaoSchema = z
      * caminho curto e errado).
      */
     audio_abertura: z.string().min(3).max(300).nullable().catch(null),
+    /**
+     * Path (no bucket `whatsapp-media`, ex.: `{org}/library/grupo/capa.jpg`)
+     * da imagem que vira a CAPA de todo grupo novo — escolha do Mario
+     * (22/08/2026, "opção 2"): capa fixa, independente da foto do chip.
+     * null ⇒ cai na foto de perfil da conexão que cria, como antes.
+     */
+    capa: z.string().min(3).max(300).nullable().catch(null),
   })
-  .catch({ session_name: null, so_grupo: true, participantes: [], audio_abertura: null });
+  .catch({
+    session_name: null,
+    so_grupo: true,
+    participantes: [],
+    audio_abertura: null,
+    capa: null,
+  });
 export type GrupoDaReuniaoConfig = z.infer<typeof grupoDaReuniaoSchema>;
 
 export type Locale = (typeof LOCALES)[number];
