@@ -208,6 +208,10 @@ export type AuditAction =
   | "task.created"
   | "task.updated"
   | "lead.meeting_scheduled"
+  // Primeiro toque disparado do funil: mensagem de abertura que o SDR mandou
+  // pelo CRM em vez do WhatsApp Web. Distinto de uma mensagem qualquer do
+  // inbox porque é o instante em que o lead deixou de ser só uma linha de lista.
+  | "lead.first_touch_sent"
   // O grupo do WhatsApp da reunião: rastro de quando um grupo com o CLIENTE
   // dentro passou a existir. `ja_existia` distingue criação de reaproveitamento.
   | "lead.meeting_group_created"

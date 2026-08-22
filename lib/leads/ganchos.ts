@@ -25,19 +25,58 @@ const MAPS_KEY_RE = /google.?maps|^maps$|place_?url/i;
  */
 export const GANCHO_NOTE_AUTHOR = "Ganchos de prospecção";
 
-/** Colhe os ganchos de um custom_fields (jsonb → unknown). Ordem de inserção, sem vazios. */
-export function extractGanchos(customFields: unknown): string[] {
+export interface GanchoDoLead {
+  /** A chave crua em custom_fields — identidade estável para o <Select>. */
+  chave: string;
+  /** O que o SDR lê no seletor. */
+  rotulo: string;
+  texto: string;
+}
+
+/**
+ * Rótulos das chaves que a importação de prospecção realmente grava. O resto
+ * (webhook, planilha de terceiro) cai no embelezamento genérico — mostrar
+ * `gancho_extra_2` cru é feio, mas inventar nome para chave desconhecida
+ * esconderia de qual campo o texto saiu.
+ */
+const ROTULO_DO_GANCHO: Record<string, string> = {
+  gancho_abertura: "Gancho 1 — abertura",
+  gancho_2: "Gancho 2 — segundo toque",
+};
+
+function rotularGancho(chave: string): string {
+  const conhecido = ROTULO_DO_GANCHO[chave.toLowerCase()];
+  if (conhecido) return conhecido;
+  const limpo = chave.replace(/[_-]+/g, " ").trim();
+  return limpo.charAt(0).toUpperCase() + limpo.slice(1);
+}
+
+/**
+ * Os ganchos COM a chave de onde saíram. Ordem de inserção, sem vazios.
+ *
+ * `extractGanchos` (só os textos) continua sendo o que as superfícies de
+ * LEITURA usam — nota semeada, painel do inbox, dossiê. Esta existe para o
+ * seletor de primeiro toque, que precisa de identidade estável por item: dois
+ * ganchos com o mesmo texto (acontece em lista reimportada) colidiriam como
+ * chave de React e o segundo sumiria da lista.
+ */
+export function listarGanchos(customFields: unknown): GanchoDoLead[] {
   if (!customFields || typeof customFields !== "object" || Array.isArray(customFields)) {
     return [];
   }
-  const ganchos: string[] = [];
+  const ganchos: GanchoDoLead[] = [];
   for (const [key, value] of Object.entries(customFields as Record<string, unknown>)) {
     if (!GANCHO_KEY_RE.test(key)) continue;
     if (typeof value !== "string") continue;
     const v = value.trim();
-    if (v) ganchos.push(v);
+    if (v) ganchos.push({ chave: key, rotulo: rotularGancho(key), texto: v });
   }
   return ganchos;
+}
+
+/** Colhe os ganchos de um custom_fields (jsonb → unknown). Ordem de inserção, sem vazios. */
+export function extractGanchos(customFields: unknown): string[] {
+  return listarGanchos(customFields).map((g) => g.texto);
 }
 
 /**

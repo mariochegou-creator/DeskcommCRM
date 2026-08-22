@@ -6,14 +6,15 @@ import { ContatosDoNegocio } from "@/components/leads/ContatosDoNegocio";
 import { Sheet, SheetContent, SheetHeader, SheetTitle } from "@/components/ui/sheet";
 import Link from "next/link";
 import { Button } from "@/components/ui/button";
-import { WhatsappLogo, ChatCircle, MapPin } from "@/lib/ui/icons";
-import { extractExtras, extractGanchos, extractGoogleMapsUrl } from "@/lib/leads/ganchos";
+import { ChatCircle, MapPin } from "@/lib/ui/icons";
+import { extractExtras, extractGoogleMapsUrl, listarGanchos } from "@/lib/leads/ganchos";
 import { LeadExtrasList } from "@/components/leads/LeadExtrasList";
 import { useLeadTimeline } from "@/hooks/leads/useLeadTimeline";
 import { useContact } from "@/hooks/contacts/useContact";
 import { useContactConversation } from "@/hooks/inbox/useContactConversation";
 import { whatsappLink } from "@/lib/contacts/whatsapp";
 import type { Lead } from "@/lib/types/leads";
+import { PrimeiroToque } from "./PrimeiroToque";
 import { LeadFieldsForm } from "./LeadFieldsForm";
 import { ScoreSlot } from "./ScoreSlot";
 import { LeadTimeline } from "./LeadTimeline";
@@ -90,10 +91,20 @@ export function LeadDossier({
   // WhatsApp e todos os seguintes ficarem dentro do CRM, sem ninguém trocar nada.
   const conversa = useContactConversation(open && lead.contact_id ? lead.contact_id : null);
 
+  /**
+   * A caixa de primeiro toque ocupa o lugar do antigo botão do WhatsApp Web.
+   *
+   * `isLoading` importa: sem ele a caixa pisca por um instante em TODO lead que
+   * já tem conversa, e piscar um formulário de envio é o tipo de coisa que faz
+   * a pessoa clicar no que estava ali antes de a tela decidir.
+   */
+  const mostrarPrimeiroToque =
+    !esconderAtalhoDeConversa && !conversa.data && !conversa.isLoading;
+
   // Ganchos + dossiê da prospecção. A gaveta é onde o SDR trabalha — era a
   // única superfície que NÃO mostrava os ganchos (só a página /leads/[id]
   // mostrava); quem operava pelo kanban abria conversa sem ver o gancho.
-  const ganchos = extractGanchos(lead.custom_fields);
+  const ganchos = listarGanchos(lead.custom_fields);
   const extras = extractExtras(lead.custom_fields);
 
   return (
@@ -117,14 +128,16 @@ export function LeadDossier({
             veio para falar com o negócio, não para ler o histórico — que num
             lead recém-importado está vazio de qualquer forma.
 
-            DOIS destinos, e o rótulo diz qual: com conversa aberta o atendimento
+            DOIS estados, e a peça diz qual: com conversa aberta o atendimento
             é no inbox (histórico, transferência, IA, tudo registrado); sem
-            conversa, o WhatsApp é o único caminho que existe. O botão nunca
-            promete o inbox quando ele ainda não tem nada para mostrar.
+            conversa, a caixa de primeiro toque manda o gancho e ABRE a conversa
+            — o inbox deixa de ser uma promessa vazia porque o próprio envio o
+            preenche.
 
-            O do WhatsApp só aparece com número utilizável: um botão sempre
-            visível que às vezes não funciona treina o SDR a desconfiar dele, e
-            aí ele para de usar o atalho justamente nos casos em que presta. */}
+            O que existia aqui antes era um botão para o `wa.me`: o SDR lia o
+            gancho na tela, ia para o WhatsApp Web e colava o texto à mão, e o
+            CRM só via a conversa se o lead respondesse. O link do WhatsApp
+            continua existindo dentro da caixa, como saída de emergência. */}
         {conversa.data ? (
           !esconderAtalhoDeConversa && (
             <Button asChild variant="primary" size="sm" className="mb-3 w-full gap-2">
@@ -135,13 +148,14 @@ export function LeadDossier({
             </Button>
           )
         ) : (
-          whatsapp && (
-            <Button asChild variant="primary" size="sm" className="mb-3 w-full gap-2">
-              <a href={whatsapp} target="_blank" rel="noopener noreferrer">
-                <WhatsappLogo size={16} weight="fill" />
-                Iniciar no WhatsApp
-              </a>
-            </Button>
+          mostrarPrimeiroToque && (
+            <PrimeiroToque
+              leadId={lead.id}
+              contactId={lead.contact_id}
+              pipelineId={pipelineId}
+              ganchos={ganchos}
+              whatsappHref={whatsapp}
+            />
           )
         )}
 
@@ -160,15 +174,19 @@ export function LeadDossier({
 
         {/* Ganchos antes de tudo: quem abre a gaveta veio conversar, e o
             gancho é o que se lê antes do primeiro toque. Âmbar como no inbox
-            e na página — mesmo significado, só o time vê. Sem estado vazio. */}
-        {ganchos.length > 0 && (
+            e na página — mesmo significado, só o time vê. Sem estado vazio.
+
+            Somem quando a caixa de primeiro toque está na tela: lá o gancho já
+            está escrito e editável. Mostrar os dois seria a mesma frase duas
+            vezes, e a de cima — a que não se edita — é a que o olho pega. */}
+        {ganchos.length > 0 && !mostrarPrimeiroToque && (
           <ul className="mb-3 space-y-1.5">
             {ganchos.map((g) => (
               <li
-                key={g}
+                key={g.chave}
                 className="whitespace-pre-wrap break-words rounded-md border border-warning/40 bg-warning-bg p-2 text-xs leading-snug text-warning-fg"
               >
-                {g}
+                {g.texto}
               </li>
             ))}
           </ul>
