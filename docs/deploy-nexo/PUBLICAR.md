@@ -101,9 +101,20 @@ continua existindo no disco.
 > sem folga: o build comeu a RAM toda (100 MB livres, load 29) e o CRM parou de
 > responder no meio do expediente. Desde então existem duas proteções:
 >
-> 1. **Swap de 4 GB** em `/swapfile-deploy` (fora do fstab — some no reboot;
->    recrie com `fallocate -l 4G /swapfile-deploy && chmod 600 /swapfile-deploy
->    && mkswap /swapfile-deploy && swapon /swapfile-deploy`).
+> 1. **Swap de 4 GB** em `/swapfile-deploy`, e ele **sobrevive ao reboot** desde
+>    24/08/2026: a linha `/swapfile-deploy none swap sw,nofail 0 0` está no
+>    `/etc/fstab`, e o systemd já a lê como unit — `systemctl list-units
+>    --type=swap` mostra `swapfile\x2ddeploy.swap` ativa. O `nofail` é a parte
+>    que importa: se um dia o arquivo sumir, a máquina sobe assim mesmo em vez
+>    de cair em emergency mode, e servidor que não liga por causa de swap é pior
+>    que servidor sem swap. Para recriar do zero: `fallocate -l 4G
+>    /swapfile-deploy && chmod 600 /swapfile-deploy && mkswap /swapfile-deploy
+>    && swapon -a`.
+> 1b. **`vm.swappiness = 10`** em `/etc/sysctl.d/99-swap-deploy.conf`. Este swap
+>    é rede de segurança do build, não memória de trabalho: no padrão (60) o
+>    kernel manda página do CRM para o disco enquanto ainda sobra RAM, e o site
+>    fica lento por escolha nossa. Com 10 ele só entra quando a memória de
+>    verdade aperta — que é exatamente a hora do build.
 > 2. **`/root/deploy-suave.sh`** — faz build + up completos com o compilador em
 >    prioridade mínima (renice 19), para o CRM sempre passar na frente. Fica
 >    mais lento e é esse o ponto. **Use-o no lugar dos comandos soltos abaixo**,
