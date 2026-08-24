@@ -97,6 +97,20 @@ continua existindo no disco.
 
 **Construir** (15 a 25 min, precisa de ~4 GB de RAM):
 
+> **O build já derrubou o site no ar (24/08/2026).** A VPS tem 2 CPUs e 8 GB
+> sem folga: o build comeu a RAM toda (100 MB livres, load 29) e o CRM parou de
+> responder no meio do expediente. Desde então existem duas proteções:
+>
+> 1. **Swap de 4 GB** em `/swapfile-deploy` (fora do fstab — some no reboot;
+>    recrie com `fallocate -l 4G /swapfile-deploy && chmod 600 /swapfile-deploy
+>    && mkswap /swapfile-deploy && swapon /swapfile-deploy`).
+> 2. **`/root/deploy-suave.sh`** — faz build + up completos com o compilador em
+>    prioridade mínima (renice 19), para o CRM sempre passar na frente. Fica
+>    mais lento e é esse o ponto. **Use-o no lugar dos comandos soltos abaixo**,
+>    e vigie o site durante o build: se o health parar de responder, mate o
+>    build (`pkill -9 -f "next buil[d]"`) — o site volta em segundos e o
+>    container no ar não é tocado.
+
 ```bash
 docker compose -f docker-compose.prod.yml -f docker-compose.build.yml build app
 ```
