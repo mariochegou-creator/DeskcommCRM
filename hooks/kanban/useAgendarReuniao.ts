@@ -36,7 +36,7 @@ export interface RespostaDoAgendamento {
    */
   grupo:
     | { criado: true; nome: string; jaExistia: boolean; faltaram: string[] }
-    | { criado: false; motivo: string };
+    | { criado: false; motivo: string; detalhe?: string };
 }
 
 /**

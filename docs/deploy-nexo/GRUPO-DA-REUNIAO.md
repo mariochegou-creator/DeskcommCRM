@@ -86,38 +86,35 @@ a primeira.
 | "1 pessoa não entrou no grupo" | O WhatsApp dela só aceita convite de quem já está na agenda. Adicione à mão pelo celular. |
 | "Grupo não criado: o contato não tem telefone" | Cadastre o telefone no contato do lead |
 | "Grupo não criado: o serviço do WhatsApp não está no ar" | O WAHA caiu. Veja em Conexões. |
+| "Grupo não criado: a conexão da assistente está fora do ar" | O chip do Claudio caiu. Reconecte em Conexões e crie o grupo pelo menu do card (⋯). |
+| "Grupo não criado: alguém do time está sem número cadastrado" | A frase diz quem. Cada um escolhe o seu em Configurações → Perfil → "Meu número de WhatsApp"; os papéis (closer/SDR) ficam em Configurações. |
 | "As mensagens automáticas estão desligadas" | O grupo aparece no celular do cliente na hora — o mesmo interruptor que cala a IA impede criar. Religue em `organizations.settings.ai_dispatch_mode`. |
 
 ---
 
 ## Quem entra no grupo
 
-Sai de `organizations.settings.sixty_day_brief.recipients` — **a mesma lista do
-bom-dia das 8h30 e do aviso de 30 min antes da reunião**. Uma lista só, de
-propósito: duas divergiriam na primeira troca de chip.
+**Sempre os 4, pelo CADASTRO do CRM** (regra do Mario, 24/08/2026):
 
-Hoje está assim:
+1. **Closer** (Mario) — o número escolhido em Configurações → Perfil → "Meu
+   número de WhatsApp"
+2. **SDR** (David) — idem, no Perfil dele
+3. **Assistente** (Claudio) — o chip que cria o grupo
+   (`settings.grupo_da_reuniao.session_name`)
+4. **O lead** — o telefone do contato do card
 
-```json
-[
-  { "name": "Mario", "phone": "+5511930582384" },
-  { "name": "David", "phone": "+5577991577662" }
-]
-```
+Quem é closer e quem é SDR sai de `organizations.settings.papeis` — os mesmos
+papéis das tarefas automáticas. Nenhuma lista de telefone digitada à mão:
+trocou de número, é só trocar no Perfil que o próximo grupo já nasce certo.
 
-Pra mudar (SQL no Supabase do CRM):
+**Se faltar qualquer um dos 4, o grupo NÃO é criado** — a tela diz quem está
+pendurado, a confirmação sai no privado do lead e a reunião fica marcada
+normal. Grupo incompleto (sem a assistente, com número velho) era o bug de
+24/08/2026: o WhatsApp adicionava o dono antigo do chip sem dar erro nenhum.
 
-```sql
-update organizations
-set settings = jsonb_set(
-  settings,
-  '{sixty_day_brief,recipients}',
-  '[{"name":"Mario","phone":"+5511930582384"},{"name":"David","phone":"+5577991577662"}]'::jsonb
-)
-where slug = 'nexo-ia';
-```
-
-⚠️ Mexer aqui muda também quem recebe o bom-dia e o aviso de 30 min.
+⚠️ A lista antiga (`grupo_da_reuniao.participantes` e a do bom-dia) **não vale
+mais pro grupo**. O bom-dia e o aviso de 30 min continuam saindo pela lista do
+`sixty_day_brief.recipients`, como sempre.
 
 ---
 

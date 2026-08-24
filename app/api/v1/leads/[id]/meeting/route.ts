@@ -55,6 +55,7 @@ import {
   type ResultadoDoEvento,
 } from "@/lib/agendamento/google-calendar";
 import { enviarAberturaDoGrupo } from "@/lib/agendamento/abertura-grupo";
+import { nomeDoCloser } from "@/lib/agendamento/equipe";
 import {
   mensagemDeConfirmacao,
   mensagemDeRemarcadaNoGrupo,
@@ -78,6 +79,21 @@ const TOLERANCIA_PASSADO_MS = 5 * 60 * 1000;
 const RECADO_DA_CONFIRMACAO: Record<string, string> = {
   ja_confirmada: " — a confirmação já tinha saído; nada foi reenviado",
   automacao_desligada: " — mensagens automáticas desligadas: avise o lead você mesmo",
+};
+
+/**
+ * Por que o grupo NÃO saiu, na língua de quem lê o card amanhã. Desde a trava
+ * de 24/08/2026 o grupo se recusa a nascer incompleto — e uma recusa que só
+ * aparece no toast da tela some junto com a tela; a nota no card fica.
+ */
+const RECADO_DO_GRUPO: Record<string, string> = {
+  sem_contato: "o negócio não tem contato ligado",
+  sem_telefone: "o contato não tem telefone",
+  sem_sessao: "nenhum número de WhatsApp conectado",
+  assistente_indisponivel: "a conexão da assistente (Claudio) está fora do ar",
+  equipe_sem_numero: "o time está sem número cadastrado no Perfil",
+  waha_desligado: "o serviço do WhatsApp não está no ar",
+  falhou: "o WhatsApp recusou a criação",
 };
 
 export async function POST(
@@ -286,7 +302,12 @@ export async function POST(
   const automacaoOff = await automacaoDesligada(admin, lead.organization_id);
   let grupo:
     | { criado: true; nome: string; jaExistia: boolean; faltaram: string[] }
-    | { criado: false; motivo: MotivoDoGrupo | "nao_pedido" | "automacao_desligada" };
+    | {
+        criado: false;
+        motivo: MotivoDoGrupo | "nao_pedido" | "automacao_desligada";
+        /** O que faltou, com nome ("David (SDR) sem número no Perfil") — vai pra tela. */
+        detalhe?: string;
+      };
   let conversaDoGrupo: string | null = null;
 
   if (!querGrupo) {
@@ -316,7 +337,7 @@ export async function POST(
         faltaram: resultado.grupo.faltaram ?? [],
       };
     } else {
-      grupo = { criado: false, motivo: resultado.motivo };
+      grupo = { criado: false, motivo: resultado.motivo, detalhe: resultado.detalhe };
     }
   }
 
@@ -326,6 +347,13 @@ export async function POST(
   } else if (automacaoOff) {
     envio = { ok: false, motivo: "automacao_desligada" };
   } else if (conversaDoGrupo) {
+    // Nos textos do grupo, quem é citado é o CLOSER (papéis de Configurações),
+    // não quem clicou: a reunião costuma ser marcada pelo SDR, e a abertura
+    // dizendo "quem vai conversar com você é o David" numa R1 que o Mario
+    // conduz foi exatamente o vexame de 24/08/2026. Sem papel configurado, cai
+    // em quem marcou — pior que o certo, melhor que "o time" sem ninguém.
+    const closer = (await nomeDoCloser(admin, lead.organization_id)) ?? user.full_name;
+
     // Grupo NOVO recebe a abertura (com o áudio do Claudio, quando a org o tem
     // configurado); grupo que já existia recebe o texto de remarcação. A rota é
     // a mesma para marcar e remarcar (é o mesmo verbo, por desenho) — sem esta
@@ -339,7 +367,7 @@ export async function POST(
         corpo: mensagemDeRemarcadaNoGrupo(reuniao, {
           nomeDoContato,
           negocio,
-          quemConduz: user.full_name,
+          quemConduz: closer,
         }),
         metadata: { meeting_lead_id: leadId, meeting_message: "confirmacao", meeting_at: reuniao.em },
         origem: "crm:meeting-group-open",
@@ -350,7 +378,7 @@ export async function POST(
         organizationId: lead.organization_id,
         conversationId: conversaDoGrupo,
         reuniao,
-        ctx: { nomeDoContato, negocio, quemConduz: user.full_name },
+        ctx: { nomeDoContato, negocio, quemConduz: closer },
         leadId,
         origem: "crm:meeting-group-open",
         requestId,
@@ -436,6 +464,10 @@ export async function POST(
     }${
       grupo.criado && grupo.faltaram.length > 0
         ? `. ATENÇÃO: ${grupo.faltaram.length} participante(s) não entraram no grupo (privacidade de grupo)`
+        : ""
+    }${
+      !grupo.criado && grupo.motivo !== "nao_pedido" && grupo.motivo !== "automacao_desligada"
+        ? `. ATENÇÃO: grupo NÃO criado — ${grupo.detalhe ?? RECADO_DO_GRUPO[grupo.motivo] ?? grupo.motivo}`
         : ""
     }.`,
     payload: {

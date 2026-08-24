@@ -22,6 +22,7 @@ import { ok, fail } from "@/lib/api/wrappers";
 import { audit } from "@/lib/audit";
 import { requireRole } from "@/lib/auth/require-role";
 import { enviarAberturaDoGrupo } from "@/lib/agendamento/abertura-grupo";
+import { nomeDoCloser } from "@/lib/agendamento/equipe";
 import { automacaoDesligada } from "@/lib/agendamento/envio";
 import { garantirGrupoDaReuniao } from "@/lib/agendamento/grupo-criar";
 import { lerReuniao } from "@/lib/agendamento/reuniao";
@@ -77,7 +78,7 @@ export async function POST(
 
   if (!resultado.ok) {
     return ok(
-      { grupo: { criado: false as const, motivo: resultado.motivo } },
+      { grupo: { criado: false as const, motivo: resultado.motivo, detalhe: resultado.detalhe } },
       { requestId },
     );
   }
@@ -104,7 +105,8 @@ export async function POST(
       ctx: {
         nomeDoContato: c?.display_name ?? c?.name ?? null,
         negocio: lead.title,
-        quemConduz: user.full_name,
+        // O closer dos papéis, não quem clicou — mesma regra da rota de marcar.
+        quemConduz: (await nomeDoCloser(admin, lead.organization_id)) ?? user.full_name,
       },
       leadId,
       origem: "crm:meeting-group-open-manual",

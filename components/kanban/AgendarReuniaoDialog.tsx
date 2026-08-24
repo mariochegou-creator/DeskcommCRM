@@ -58,6 +58,10 @@ const MOTIVO_DO_GRUPO: Record<string, string> = {
   sem_contato: "Grupo não criado: este negócio não tem contato ligado.",
   sem_telefone: "Grupo não criado: o contato não tem telefone.",
   sem_sessao: "Grupo não criado: nenhum número de WhatsApp conectado.",
+  assistente_indisponivel:
+    "Grupo não criado: a conexão da assistente (Claudio) está fora do ar. Reconecte em Conexões e use ⋯ → \"Criar grupo no WhatsApp\" no card.",
+  equipe_sem_numero:
+    "Grupo não criado: alguém do time está sem número cadastrado. Confira Configurações (papéis) e o Perfil de cada um.",
   waha_desligado: "Grupo não criado: o serviço do WhatsApp não está no ar.",
   falhou: "O WhatsApp recusou a criação do grupo. Crie na mão, se for o caso.",
 };
@@ -393,7 +397,12 @@ function Resultado({
       )}
 
       {!resposta.grupo.criado && MOTIVO_DO_GRUPO[resposta.grupo.motivo] && (
-        <p className="text-destructive">{MOTIVO_DO_GRUPO[resposta.grupo.motivo]}</p>
+        <p className="text-destructive">
+          {MOTIVO_DO_GRUPO[resposta.grupo.motivo]}
+          {/* O nome de quem está pendurado ("David (SDR) sem número no Perfil") —
+              sem ele a frase genérica manda a pessoa caçar em duas telas. */}
+          {resposta.grupo.detalhe ? ` (${resposta.grupo.detalhe}.)` : ""}
+        </p>
       )}
 
       {resposta.agenda.criada ? (

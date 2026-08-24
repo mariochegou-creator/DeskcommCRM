@@ -57,6 +57,7 @@ import {
   lerRespostaDoCloser,
 } from "@/lib/agendamento/material-gerar";
 import { garantirContato } from "@/lib/agendamento/contato";
+import { nomeDoCloser } from "@/lib/agendamento/equipe";
 import { automacaoDesligada, enviarNoGrupo, enviarTexto } from "@/lib/agendamento/envio";
 import { lerGrupo } from "@/lib/agendamento/grupo";
 import {
@@ -168,6 +169,18 @@ async function handle(req: NextRequest): Promise<Response> {
   // leads da varredura — sem o cache seriam N idas ao auth para o mesmo nome.
   const nomePorUsuario = new Map<string, string | null>();
 
+  // O closer da org (papéis de Configurações) — é ELE que a véspera e o toque
+  // final citam ("o Mario te chama daqui a pouco"), não quem marcou: a reunião
+  // costuma ser marcada pelo SDR e conduzida pelo closer (bug de 24/08/2026).
+  const closerPorOrg = new Map<string, string | null>();
+  const closerDaOrg = async (organizationId: string): Promise<string | null> => {
+    const jaSabe = closerPorOrg.get(organizationId);
+    if (jaSabe !== undefined) return jaSabe;
+    const nome = await nomeDoCloser(admin, organizationId);
+    closerPorOrg.set(organizationId, nome);
+    return nome;
+  };
+
   for (const linha of linhas) {
     const reuniao = lerReuniao(linha.custom_fields);
     if (!reuniao) {
@@ -233,10 +246,11 @@ async function handle(req: NextRequest): Promise<Response> {
       const contexto = {
         nomeDoContato,
         negocio: linha.title,
-        // No grupo quem fala é a assistente, e ela cita o closer em terceira
-        // pessoa. O nome vem de quem MARCOU a reunião.
+        // No grupo quem fala é a assistente, e ela cita o CLOSER em terceira
+        // pessoa. Sem papel configurado, cai em quem marcou a reunião.
         quemConduz: conversaDoGrupo
-          ? ((await nomeDeQuemMarcou(admin, reuniao.criada_por ?? null, nomePorUsuario)) ?? null)
+          ? ((await closerDaOrg(linha.organization_id)) ??
+            (await nomeDeQuemMarcou(admin, reuniao.criada_por ?? null, nomePorUsuario)))
           : null,
       };
 

@@ -15,11 +15,12 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 
 import { logger } from "@/lib/logger";
-import { grupoDaReuniaoSchema, sixtyDayBriefSchema } from "@/lib/schemas/settings";
+import { grupoDaReuniaoSchema } from "@/lib/schemas/settings";
 import { getWahaClient } from "@/lib/waha/client";
 
 import { chatIdDeTelefone } from "@/lib/waha/grupo";
 
+import { equipeDaReuniao } from "./equipe";
 import { resolverSessao } from "./envio";
 import { lerGrupo, nomeDoGrupo, participantesDoGrupo, type GrupoDaReuniao } from "./grupo";
 
@@ -27,6 +28,8 @@ export type MotivoDoGrupo =
   | "sem_contato"
   | "sem_telefone"
   | "sem_sessao"
+  | "assistente_indisponivel"
+  | "equipe_sem_numero"
   | "waha_desligado"
   | "falhou";
 
@@ -76,9 +79,9 @@ export async function garantirGrupoDaReuniao(
     .maybeSingle();
   const telefoneDoLead = (contatoRow as { phone_number: string | null } | null)?.phone_number ?? null;
 
-  // As settings da org saem numa leitura só: decidem QUEM cria o grupo
-  // (`grupo_da_reuniao.session_name`) e QUEM entra nele
-  // (`sixty_day_brief.recipients`).
+  // As settings da org decidem QUEM cria o grupo
+  // (`grupo_da_reuniao.session_name`); quem ENTRA nele sai do cadastro
+  // (papéis + Perfil — ver `equipe.ts`).
   const { data: orgRow } = await admin
     .from("organizations")
     .select("settings")
@@ -163,21 +166,31 @@ export async function garantirGrupoDaReuniao(
 
   if (!telefoneDoLead) return { ok: false, motivo: "sem_telefone" };
 
+  // A TRAVA do grupo novo (24/08/2026, pedido do Mario depois de dois grupos
+  // nascerem errados): ou o grupo nasce COMPLETO — assistente criando, closer,
+  // SDR e lead dentro, todos pelos números CADASTRADOS — ou não nasce, e a tela
+  // diz o que faltou. O degradê antigo ("grupo pelo número errado é melhor que
+  // reunião sem grupo") produzia exatamente o grupo que ele proibiu: sem a
+  // assistente, com número velho do time, e ninguém percebia. A reunião nunca
+  // se perde aqui: sem grupo, a confirmação volta a sair no privado.
+  if (!escolhida) return { ok: false, motivo: "assistente_indisponivel" };
+
+  const time = await equipeDaReuniao(admin, entrada.organizationId);
+  if (!time.ok) {
+    logger.warn("[grupo] time incompleto no cadastro — grupo não criado", {
+      leadId: entrada.leadId,
+      faltando: time.faltando,
+      requestId: entrada.requestId,
+    });
+    return { ok: false, motivo: "equipe_sem_numero", detalhe: time.faltando.join("; ") };
+  }
+
   const client = getWahaClient();
   if (!client) return { ok: false, motivo: "waha_desligado" };
 
-  // O time sai de `grupo_da_reuniao.participantes` quando o tenant separou as
-  // listas; vazio, cai na do bom-dia (`sixty_day_brief.recipients`). A
-  // separação existe porque o bom-dia vai no pessoal do Mario e o pessoal dele
-  // NÃO entra em grupo com cliente — ver o schema.
-  const cfg = sixtyDayBriefSchema.parse(settingsDaOrg["sixty_day_brief"]);
-
   const participantes = participantesDoGrupo({
     telefoneDoLead,
-    telefonesDaEquipe:
-      cfgGrupo.participantes.length > 0
-        ? cfgGrupo.participantes
-        : cfg.recipients.map((r) => r.phone),
+    telefonesDaEquipe: time.equipe.numeros,
     telefoneDaSessao: sessao.phone_number,
   });
 
@@ -278,12 +291,12 @@ export async function garantirGrupoDaReuniao(
 /**
  * A conexão dedicada da assistente, quando o tenant apontou uma.
  *
- * Devolve null — e o chamador cai na conexão que já fala com o lead — em três
- * casos: nada configurado, nome que não existe mais, e sessão fora do ar. O
- * último é o que mais vai acontecer na prática (chip sem bateria, sessão caída)
- * e é justamente onde degradar importa: um grupo criado pelo número errado é um
- * arranhão; reunião sem grupo nenhum é o no-show que tudo isto existe para
- * evitar.
+ * Devolve null em três casos: nada configurado, nome que não existe mais, e
+ * sessão fora do ar. Para grupo NOVO, null significa NÃO CRIAR (a trava de
+ * 24/08/2026 — grupo sem a assistente dentro foi exatamente o que o Mario
+ * proibiu). Para grupo que JÁ existe, o chamador ainda cai na conexão que fala
+ * com o lead: renomear e espelhar um grupo velho não pode parar porque o chip
+ * da assistente caiu.
  */
 async function sessaoDaAssistente(
   admin: SupabaseClient,
