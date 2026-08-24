@@ -43,15 +43,14 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
-import { showApiError } from "@/components/feedback/ApiErrorToast";
 import {
   enviarBlocoAoVivo,
+  salvarNotasDaLigacao,
   uploadCallAudio,
-  useCall,
   useSaveCallNotes,
   useStartCall,
 } from "@/hooks/calls/useCalls";
-import { STATUS_LABELS, isTerminalCallStatus } from "@/lib/calls/analysis-schema";
+import { useAcompanharLigacao } from "@/components/calls/LigacoesEmVoo";
 import {
   CALL_PHASE_LABELS,
   COBERTURA_LABELS_CURTOS,
@@ -87,7 +86,13 @@ interface Props {
   origin?: "contact" | "deal";
 }
 
-type Fase = "pronto" | "gravando" | "pausado" | "enviando" | "acompanhando" | "erro";
+/**
+ * `acompanhando` SAIU. Era o estado em que o popup ficava mostrando "Analisando…"
+ * depois de o áudio subir — e era exatamente ele que prendia o SDR na tela por
+ * uma tarefa que roda no servidor. Agora o acompanhamento é a pílula do topo
+ * (`components/calls/LigacoesEmVoo.tsx`), e o popup fecha ao desligar.
+ */
+type Fase = "pronto" | "gravando" | "pausado" | "enviando" | "erro";
 
 /**
  * Bitrate modesto: é voz, e arquivo pequeno sobe rápido numa conexão ruim, que é
@@ -217,8 +222,7 @@ export function CallRecorderDialog({
 
   const startCall = useStartCall(contactId);
   const salvarNotas = useSaveCallNotes(callId);
-  const call = useCall(callId, { poll: fase === "acompanhando" });
-  const status = call.data?.data.status ?? null;
+  const acompanhar = useAcompanharLigacao();
 
   const gravando = fase === "gravando" || fase === "pausado";
 
@@ -653,6 +657,45 @@ export function CallRecorderDialog({
     }
   }, [iniciarCicloDeBlocos]);
 
+  /** Zera o popup e o fecha. Usado ao desligar e ao fechar na mão. */
+  const fecharTudo = useCallback(() => {
+    liberarRecursos();
+    setFase("pronto");
+    setCallId(null);
+    setSegundos(0);
+    setErro(null);
+    setTranscricao("");
+    setSugestao(null);
+    setEtapa(null);
+    setTipo("falar");
+    setEixo(null);
+    setObjecao(null);
+    setAlerta(null);
+    setCobertura(COBERTURA_VAZIA);
+    setNotas("");
+    setAvisoAoVivo(null);
+    setTemVozDoLead(null);
+    onOpenChange(false);
+  }, [liberarRecursos, onOpenChange]);
+
+  /**
+   * Desligar devolve a tela NA HORA.
+   *
+   * Antes, tudo daqui para baixo acontecia com o popup aberto e o SDR parado:
+   * esperar a fila de blocos esvaziar (até 30 s), salvar a anotação, subir o
+   * áudio, e então ficar olhando "Analisando…" até fechar na mão. Nada disso
+   * precisa dele — a análise roda num worker e o resultado espera na tela de
+   * Ligações.
+   *
+   * Agora só o que é RÁPIDO e só o popup consegue fazer roda aqui: parar os
+   * gravadores e fechar o arquivo em memória. O resto vira uma promessa
+   * entregue ao `LigacoesEmVooProvider`, que acompanha numa pílula no topo — e
+   * o popup fecha.
+   *
+   * A ORDEM IMPORTA: a fila precisa esvaziar ANTES do upload, porque o upload
+   * dispara a análise e ela lê a transcrição que os blocos ainda estão
+   * escrevendo. O que mudou é ONDE se espera, não SE se espera.
+   */
   const encerrar = useCallback(async () => {
     const rec = recorderRef.current;
     if (!rec || !callId) return;
@@ -680,57 +723,50 @@ export function CallRecorderDialog({
 
     liberarRecursos();
 
-    // Esperar a fila esvaziar não é capricho: o upload do áudio DISPARA a
-    // análise, e ela lê a transcrição que estes blocos ainda estão escrevendo.
-    // Subir antes faria a análise sair sem o último minuto da ligação. O teto de
-    // 30 s existe para que um bloco preso na rede não segure o SDR na tela —
-    // passado o prazo, o worker refaz a transcrição pelo áudio íntegro (ele
-    // compara a contagem de blocos com a duração; ver a migration 0106).
-    await Promise.race([filaRef.current, new Promise((r) => setTimeout(r, 30_000))]);
+    const mime = rec.mimeType || "audio/webm";
+    const anotacao = notas;
+    const fila = filaRef.current;
 
-    try {
-      if (notas.trim()) await salvarNotas.mutateAsync(notas);
-    } catch {
-      // Anotação perdida não pode impedir o áudio de subir.
-    }
+    acompanhar({
+      callId,
+      contato: contactName,
+      subir: async () => {
+        // O teto de 30 s existe para que um bloco preso na rede não segure a
+        // ligação para sempre — passado o prazo, o worker refaz a transcrição
+        // pelo áudio íntegro (ele compara a contagem de blocos com a duração;
+        // ver a migration 0106).
+        await Promise.race([fila, new Promise((r) => setTimeout(r, 30_000))]);
 
-    try {
-      const ext = (rec.mimeType || "audio/webm").includes("mp4") ? "m4a" : "webm";
-      await uploadCallAudio({
-        callId,
-        blob,
-        filename: `ligacao.${ext}`,
-        durationSeconds: duracao,
-      });
-      setFase("acompanhando");
-    } catch (err) {
-      showApiError(err);
-      setErro(err instanceof Error ? `O áudio não subiu: ${err.message}` : "O áudio não subiu.");
-      setFase("erro");
-    }
-  }, [callId, liberarRecursos, notas, salvarNotas, segundos]);
+        // `salvarNotasDaLigacao` e não o hook: o popup já fechou e zerou o
+        // `callId` do render, então a mutação do hook cairia no `return null` e
+        // a anotação sumiria sem erro nenhum. Ver o comentário lá.
+        try {
+          if (anotacao.trim()) await salvarNotasDaLigacao({ callId, sdr_notes: anotacao });
+        } catch {
+          // Anotação perdida não pode impedir o áudio de subir.
+        }
 
+        await uploadCallAudio({
+          callId,
+          blob,
+          filename: `ligacao.${mime.includes("mp4") ? "m4a" : "webm"}`,
+          durationSeconds: duracao,
+        });
+      },
+    });
+
+    fecharTudo();
+  }, [callId, contactName, acompanhar, fecharTudo, liberarRecursos, notas, segundos]);
+
+  // Fechar por engano ainda perde a ligação, mas "enviando" deixou de ser um
+  // estado em que a tela fica presa: ele dura o tempo de parar o gravador.
   const podeFechar = !gravando && fase !== "enviando";
 
   const handleOpenChange = (novo: boolean) => {
     if (!novo && !podeFechar) return; // gravando: fechar por engano perde tudo
     if (!novo) {
-      liberarRecursos();
-      setFase("pronto");
-      setCallId(null);
-      setSegundos(0);
-      setErro(null);
-      setTranscricao("");
-      setSugestao(null);
-      setEtapa(null);
-        setTipo("falar");
-      setEixo(null);
-      setObjecao(null);
-      setAlerta(null);
-      setCobertura(COBERTURA_VAZIA);
-      setNotas("");
-      setAvisoAoVivo(null);
-      setTemVozDoLead(null);
+      fecharTudo();
+      return;
     }
     onOpenChange(novo);
   };
@@ -1041,35 +1077,10 @@ export function CallRecorderDialog({
           {fase === "enviando" && (
             <p className="flex items-center gap-2 text-sm text-muted-foreground">
               <CircleNotch size={16} className="animate-spin" aria-hidden />
-              Fechando a ligação e enviando o áudio…
+              Fechando a gravação…
             </p>
           )}
 
-          {fase === "acompanhando" && (
-            <div className="space-y-2">
-              <p className="flex items-center gap-2 text-sm">
-                {status && !isTerminalCallStatus(status) && (
-                  <CircleNotch size={16} className="animate-spin" aria-hidden />
-                )}
-                <span>{status ? STATUS_LABELS[status] : "Enviando…"}</span>
-              </p>
-              {status && isTerminalCallStatus(status) && (
-                <p className="text-sm text-muted-foreground">
-                  {status === "failed"
-                    ? (call.data?.data.error_detail ?? "A análise não pôde ser concluída.")
-                    : "A análise está na timeline do contato e na tela de Ligações."}
-                </p>
-              )}
-              <p className="text-xs text-muted-foreground">
-                Pode fechar esta janela — o processamento continua.
-              </p>
-              {transcricao && (
-                <div className="max-h-40 overflow-y-auto rounded-md border border-border bg-surface-elevated p-2 text-xs text-muted-foreground">
-                  {transcricao}
-                </div>
-              )}
-            </div>
-          )}
         </div>
 
         <div className="mt-2 flex flex-wrap justify-end gap-2">

@@ -203,6 +203,23 @@ export function useSaveCallNotes(callId: string | null) {
   });
 }
 
+/**
+ * O MESMO salvamento, sem hook — para o último, o que acontece depois de o
+ * popup fechar.
+ *
+ * O hook acima não serve nesse momento: o `callId` dele vem do render, e ao
+ * desligar o popup zera esse estado e fecha. A mutação criada pelo hook passa a
+ * ver `callId = null`, cai no `return null` e a anotação some EM SILÊNCIO — o
+ * pior desfecho possível, porque o SDR digitou e viu a caixa aceitar. Aqui o id
+ * é argumento: quem chama passa o que capturou antes de fechar.
+ */
+export async function salvarNotasDaLigacao(input: {
+  callId: string;
+  sdr_notes: string;
+}): Promise<void> {
+  await apiClient.patch(`/api/v1/calls/${input.callId}`, { sdr_notes: input.sdr_notes });
+}
+
 /** Roda a análise de novo — o botão que substitui o SQL de reprocessamento. */
 export function useReanalyzeCall(callId: string) {
   const qc = useQueryClient();
