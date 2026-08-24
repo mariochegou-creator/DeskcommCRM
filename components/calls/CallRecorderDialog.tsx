@@ -54,20 +54,17 @@ import {
 import { STATUS_LABELS, isTerminalCallStatus } from "@/lib/calls/analysis-schema";
 import {
   CALL_PHASE_LABELS,
-  COBERTURA_LABELS,
+  COBERTURA_LABELS_CURTOS,
   COBERTURA_VAZIA,
-  DEGRAU_LABELS,
   LIVE_CHUNK_SECONDS,
   OBJECAO_LABELS,
   type CallPhase,
   type CoberturaKey,
-  type DegrauDaDor,
   type Objecao,
 } from "@/lib/calls/live-schema";
 import { rotuloDoEixo } from "@/lib/calls/palavras-eixo";
 import { formatPhoneBR } from "@/lib/calls/phone";
 import {
-  CheckCircle,
   CircleNotch,
   HandPalm,
   Lightbulb,
@@ -188,8 +185,6 @@ export function CallRecorderDialog({
    * no servidor, não da opinião do modelo: ver `faseDaCobertura`.
    */
   const [etapa, setEtapa] = useState<CallPhase | null>(null);
-  /** Em que degrau da dor a conversa está. Fora da fase "dor", null. */
-  const [degrau, setDegrau] = useState<DegrauDaDor | null>(null);
   /** "calar" quando a coisa certa é esperar — a regra da aula 03 do caderno. */
   const [tipo, setTipo] = useState<string>("falar");
   /** A palavra-eixo travada. Uma vez escolhida, ela fica na tela até o fim. */
@@ -198,6 +193,8 @@ export function CallRecorderDialog({
   const [objecao, setObjecao] = useState<string | null>(null);
   const [alerta, setAlerta] = useState<string | null>(null);
   const [cobertura, setCobertura] = useState<Record<string, boolean>>(COBERTURA_VAZIA);
+  /** A anotação cresce enquanto ele digita e volta a encolher ao sair. */
+  const [anotando, setAnotando] = useState(false);
   const [avisoAoVivo, setAvisoAoVivo] = useState<string | null>(null);
   const [notas, setNotas] = useState("");
 
@@ -381,7 +378,6 @@ export function CallRecorderDialog({
         if (r.sugestao) {
           setSugestao(r.sugestao.sugestao);
           setEtapa((r.sugestao.fase as CallPhase | null) ?? null);
-          setDegrau((r.sugestao.degrau as DegrauDaDor | null) ?? null);
           setTipo(r.sugestao.tipo ?? "falar");
           setEixo(r.sugestao.eixo ?? null);
           setObjecao(r.sugestao.objecao ?? null);
@@ -591,7 +587,6 @@ export function CallRecorderDialog({
     setTranscricao("");
     setSugestao(null);
     setEtapa(null);
-    setDegrau(null);
     setTipo("falar");
     setEixo(null);
     setObjecao(null);
@@ -728,8 +723,7 @@ export function CallRecorderDialog({
       setTranscricao("");
       setSugestao(null);
       setEtapa(null);
-      setDegrau(null);
-      setTipo("falar");
+        setTipo("falar");
       setEixo(null);
       setObjecao(null);
       setAlerta(null);
@@ -741,7 +735,10 @@ export function CallRecorderDialog({
     onOpenChange(novo);
   };
 
-  const itensDoChecklist = Object.entries(COBERTURA_LABELS) as [CoberturaKey, string][];
+  const itensDoChecklist = Object.entries(COBERTURA_LABELS_CURTOS) as [CoberturaKey, string][];
+  // A marca acesa do trilho: a primeira ainda não feita. Sai do MESMO checklist
+  // que a etapa do cabeçalho, então as duas nunca se contradizem.
+  const primeiroPendente = itensDoChecklist.findIndex(([chave]) => !cobertura[chave]);
   const calando = tipo === "calar" && Boolean(sugestao);
   const rotuloEixo = rotuloDoEixo(eixo);
   const rotuloObjecao = objecao ? (OBJECAO_LABELS[objecao as Objecao] ?? null) : null;
@@ -854,6 +851,62 @@ export function CallRecorderDialog({
           {/* ---- durante a ligação ---- */}
           {gravando && (
             <>
+              {/* O TRILHO: o checklist virou régua.
+                  As mesmas dez marcas de antes, na ordem da ligação, mas em
+                  tracinhos com rótulo curto em vez de dez linhas de texto. Cor
+                  responde "o que já foi" e "onde estou" sem leitura — que é o
+                  máximo que o SDR consegue fazer com o dono na linha. As dez
+                  linhas que isso devolveu foram para a frase, que é o único
+                  elemento da tela que existe para ser lido. */}
+              <ol
+                aria-label={
+                  etapa
+                    ? `Roteiro da ligação — etapa atual: ${CALL_PHASE_LABELS[etapa]}`
+                    : "Roteiro da ligação"
+                }
+                className="grid grid-cols-5 gap-x-1 gap-y-2 sm:grid-cols-10"
+              >
+                {itensDoChecklist.map(([chave, texto], i) => {
+                  const feito = Boolean(cobertura[chave]);
+                  // "Agora" é a primeira marca não feita: é para onde a próxima
+                  // sugestão aponta, e nunca discorda da etapa no cabeçalho —
+                  // as duas saem do mesmo checklist.
+                  const agora = !feito && i === primeiroPendente;
+                  return (
+                    <li
+                      key={chave}
+                      className="flex flex-col items-center gap-1.5 text-center"
+                      aria-current={agora ? "step" : undefined}
+                    >
+                      <span
+                        aria-hidden
+                        className={cn(
+                          "h-1 w-full rounded-full",
+                          feito
+                            ? "bg-success-fg"
+                            : agora
+                              ? "bg-accent-500 ring-[3px] ring-accent-500/30"
+                              : "bg-border",
+                        )}
+                      />
+                      <span
+                        className={cn(
+                          "text-[10px] font-semibold leading-tight",
+                          feito
+                            ? "text-muted-foreground"
+                            : agora
+                              ? "text-accent-700 dark:text-accent-300"
+                              : "text-muted-foreground/50",
+                        )}
+                      >
+                        {texto}
+                      </span>
+                      <span className="sr-only">{feito ? "concluído" : "pendente"}</span>
+                    </li>
+                  );
+                })}
+              </ol>
+
               {/* a sugestão: o maior elemento da tela, sempre no mesmo lugar */}
               <div
                 aria-live="polite"
@@ -883,23 +936,10 @@ export function CallRecorderDialog({
                       Fale agora
                     </>
                   )}
-                  {/* Em que ponto do roteiro a ligação está. Calculada do
-                      checklist, então ela nunca discorda das caixinhas logo
-                      abaixo nem anda para trás — era o que acontecia quando o
-                      modelo respondia a fase junto com a sugestão. */}
-                  {etapa && (
-                    <span className="rounded-full border border-border px-2 py-0.5 text-[10px] font-semibold normal-case tracking-normal text-muted-foreground">
-                      {CALL_PHASE_LABELS[etapa]}
-                    </span>
-                  )}
-                  {/* O degrau da dor. Só aparece quando o copiloto está nela —
-                      fora disso não há etapa a mostrar, e um rótulo permanente
-                      viraria ruído no elemento mais lido da tela. */}
-                  {degrau && (
-                    <span className="rounded-full bg-accent-500 px-2 py-0.5 text-[10px] font-semibold normal-case tracking-normal text-accent-foreground">
-                      {DEGRAU_LABELS[degrau]}
-                    </span>
-                  )}
+                  {/* NEM etapa NEM degrau viram chip aqui: o trilho acima já
+                      responde as duas, e "Espelho" apareceria duas vezes na
+                      mesma tela. O que sobra no cabeçalho é o que o trilho NÃO
+                      consegue dizer — o eixo e a objeção. */}
                   {/* A palavra-eixo travada. Ela fica na tela do momento em que
                       a dor aparece até o fim da ligação — é o lembrete de que
                       todas as frases seguintes falam DESTA palavra. */}
@@ -936,69 +976,21 @@ export function CallRecorderDialog({
                 </p>
               )}
 
-              <div className="grid gap-4 sm:grid-cols-2">
-                {/* checklist do roteiro */}
-                <div>
-                  <h4 className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
-                    Roteiro
-                  </h4>
-                  <ul className="mt-2 space-y-1.5">
-                    {itensDoChecklist.map(([chave, texto]) => {
-                      const feito = Boolean(cobertura[chave]);
-                      return (
-                        <li key={chave} className="flex items-start gap-2 text-sm">
-                          <CheckCircle
-                            size={18}
-                            weight={feito ? "fill" : "regular"}
-                            aria-hidden
-                            className={cn(
-                              "mt-0.5 shrink-0",
-                              feito ? "text-success-fg" : "text-muted-foreground/40",
-                            )}
-                          />
-                          <span className={cn(feito ? "text-fg" : "text-muted-foreground")}>
-                            {texto}
-                          </span>
-                        </li>
-                      );
-                    })}
-                  </ul>
-                </div>
-
-                {/* transcrição — pequena de propósito */}
-                <div>
-                  <h4 className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
-                    Transcrição
-                  </h4>
-                  <div
-                    ref={transcricaoBoxRef}
-                    className="mt-2 h-32 overflow-y-auto rounded-md border border-border bg-surface-elevated p-2 text-xs leading-relaxed text-muted-foreground"
-                  >
-                    {transcricao || "As falas aparecem aqui alguns segundos depois."}
-                  </div>
-                </div>
-              </div>
-
-              {/* anotação do SDR */}
-              <div>
-                <label
-                  htmlFor="anotacao-ligacao"
-                  className="text-xs font-semibold uppercase tracking-wide text-muted-foreground"
-                >
-                  Sua anotação
-                </label>
-                <textarea
-                  id="anotacao-ligacao"
-                  value={notas}
-                  onChange={(e) => setNotas(e.target.value)}
-                  rows={2}
-                  placeholder="O que ficou combinado, quem decide, o que ele falou fora do roteiro…"
-                  className="mt-1 w-full rounded-md border border-border bg-surface-elevated p-2 text-sm outline-none focus:border-accent-500"
-                />
-                <p className="mt-1 text-xs text-muted-foreground">
-                  Salva sozinha e entra na análise da ligação.
-                </p>
-              </div>
+              {/* anotação do SDR — UMA LINHA, que cresce ao focar.
+                  Ele escreve aqui, não lê: uma caixa de duas linhas sempre
+                  aberta custava altura o tempo todo para um campo consultado
+                  em nenhum momento da conversa. */}
+              <textarea
+                id="anotacao-ligacao"
+                aria-label="Sua anotação da ligação"
+                value={notas}
+                onChange={(e) => setNotas(e.target.value)}
+                rows={anotando ? 3 : 1}
+                onFocus={() => setAnotando(true)}
+                onBlur={() => setAnotando(false)}
+                placeholder="Anotação: o que ficou combinado, o que ele falou fora do roteiro…"
+                className="w-full resize-none rounded-md border border-border bg-surface-elevated p-2 text-sm outline-none transition-[height] focus:border-accent-500"
+              />
 
               {/* estado da captura: um medidor por voz */}
               <div className="space-y-2">
@@ -1027,6 +1019,22 @@ export function CallRecorderDialog({
                 )}
                 {avisoAoVivo && <p className="text-xs text-muted-foreground">{avisoAoVivo}</p>}
               </div>
+
+              {/* A TRANSCRIÇÃO É GAVETA, e fechada. Ela é o bloco que mais rouba
+                  altura e o único que o SDR disse não olhar durante a chamada —
+                  serve para conferir que está capturando, o que os medidores
+                  acima já respondem melhor. Fica a um clique. */}
+              <details className="rounded-md border border-border">
+                <summary className="cursor-pointer px-3 py-2 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+                  Transcrição
+                </summary>
+                <div
+                  ref={transcricaoBoxRef}
+                  className="mx-3 mb-3 h-32 overflow-y-auto rounded-md border border-border bg-surface-elevated p-2 text-xs leading-relaxed text-muted-foreground"
+                >
+                  {transcricao || "As falas aparecem aqui alguns segundos depois."}
+                </div>
+              </details>
             </>
           )}
 

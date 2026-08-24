@@ -24,6 +24,7 @@ const USER = "d9d9d9d9-1111-4000-8000-000000000001";
 const CONTACT = "d9d9d9d9-3333-4000-8000-000000000001";
 const CALL = "d9d9d9d9-4444-4000-8000-000000000001";
 const REQUEST = "d9d9d9d9-5555-4000-8000-000000000001";
+const NOTA = "d9d9d9d9-6666-4000-8000-000000000001";
 const AUDIO_PATH = `${ORG}/${CONTACT}/${CALL}.webm`;
 
 beforeAll(() => {
@@ -60,6 +61,18 @@ beforeAll(() => {
         'detalhe sintetico',
         'o socio sintetico e quem decide, ligar depois das 18h',
         '{"fase":"decisor","sugestao":"pergunte quem decide com voce","cobertura":{"dor_declarada":true}}'::jsonb
+      )
+      on conflict (id) do nothing;
+
+    -- A nota do negócio: o que o DONO disse, gravada pelo worker da ligação
+    -- desde a 0107. É a fala do titular em texto puro — se a cascata não
+    -- alcançar isto, o índice de notas continua citando de nome a pessoa que
+    -- pediu para ser apagada, e ele é injetado no prompt de toda abertura.
+    insert into public.lead_notes (id, organization_id, contact_id, headline, body)
+      values (
+        '${NOTA}', '${ORG}', '${CONTACT}',
+        'Ligacao sintetica — dor de atendimento',
+        'Ele disse: chega mensagem de noite e so no outro dia alguem ve. Decide com a esposa sintetica.'
       )
       on conflict (id) do nothing;
 
@@ -143,6 +156,20 @@ describe("cascata LGPD alcança as gravações de ligação (migration 0100)", (
       `select status || '|' || coalesce(outcome, '') from public.crm_call_recordings where id = '${CALL}';`,
     );
     expect(linha).toBe("done|agendou");
+  });
+
+  it("a nota do negócio SUMIU — é a fala do dono em texto puro (0107)", () => {
+    // `lead_notes` ficou FORA desta cascata desde que existe (0050), e já
+    // guardava fala do titular: o agente escreve ali pela tool `save_lead_note`.
+    // A partir da 0107 o worker da ligação grava a dor nas palavras do dono, o
+    // que multiplicaria o vazamento. É DELETE e não anonimização porque a linha
+    // é 100% conteúdo sobre o titular — sobraria só ocupando o orçamento de
+    // tokens do prompt sem dizer nada.
+    expect(tableExists("lead_notes")).toBe(true);
+    const n = Number(
+      sql(`select count(*) from public.lead_notes where id = '${NOTA}';`),
+    );
+    expect(n).toBe(0);
   });
 
   it("a auditoria conta quantas gravações foram enfileiradas", () => {

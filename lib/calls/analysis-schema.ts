@@ -71,6 +71,35 @@ export const CriterioSchema = z.object({
   comentario: z.string().min(1).max(2000),
 });
 
+/**
+ * O QUE O DONO DISSE — a única parte da análise que não fala do SDR.
+ *
+ * Todo o resto deste schema é coaching: nota, critério, acerto, ponto de
+ * melhoria. Nada disso responde "o que eu descobri sobre este negócio", e era
+ * essa a informação que morria dentro da ligação: a transcrição fica no card, e
+ * a linha que vai para a timeline do negócio é PII-free de propósito (fala da
+ * nota do SDR, nunca da fala do dono). Resultado: três dias depois, na R1,
+ * ninguém lembra por que o dono aceitou conversar.
+ *
+ * A aula 10 do Caderno da Ligação Fria manda fazer isto à mão nos 30 segundos
+ * depois de desligar — "colar a dor nas notas com as palavras que ele usou".
+ * Isto é o mesmo trabalho, feito sozinho, e vira uma linha em `lead_notes`, que
+ * é de onde o preparo da R1 já lê (`lib/agendamento/material-gerar.ts`).
+ *
+ * NULLABLE de propósito. Ligação que não chegou à dor não tem nota a escrever,
+ * e forçar o campo faria o modelo inventar uma. Ausente, nada é gravado.
+ */
+export const NotaDoNegocioSchema = z.object({
+  /** A linha do índice — é o que aparece na lista sem abrir nada. */
+  headline: z.string().min(1).max(300),
+  /**
+   * O corpo, nas PALAVRAS DO DONO. O caderno é explícito: a frase dele vale
+   * mais que o resumo do SDR, então isto é para copiar, não interpretar.
+   */
+  corpo: z.string().min(1).max(3000),
+});
+export type NotaDoNegocio = z.infer<typeof NotaDoNegocioSchema>;
+
 export const CallAnalysisSchema = z.object({
   resultado: z.enum(CALL_OUTCOMES),
   nota_geral: z.number().min(0).max(10),
@@ -78,6 +107,7 @@ export const CallAnalysisSchema = z.object({
   acertos: z.array(z.string().min(1).max(2000)).min(1).max(8),
   pontos_de_melhoria: z.array(z.string().min(1).max(2000)).min(1).max(8),
   frase_para_treinar: z.string().min(1).max(2000),
+  nota_do_negocio: NotaDoNegocioSchema.nullable().default(null),
 });
 
 export type CallAnalysis = z.infer<typeof CallAnalysisSchema>;

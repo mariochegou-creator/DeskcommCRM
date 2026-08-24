@@ -132,8 +132,12 @@ describe("o prompt da análise com o material do copiloto (0106)", () => {
     const p = buildCallAnalysisPrompt("SDR: bom dia.", {
       cobertura: {
         abriu_sem_pergunta: true,
-        entendeu_o_negocio: true,
-        dor_declarada: true,
+        permissao_pedida: true,
+        pergunta_feita: true,
+        espelho_feito: true,
+        dor_aprofundada: true,
+        numero_dele: true,
+        ponte_feita: true,
         decisor_identificado: true,
         reuniao_proposta: true,
         dia_e_hora_confirmados: true,
@@ -149,5 +153,37 @@ describe("o prompt da análise com o material do copiloto (0106)", () => {
     const depois = buildCallAnalysisPrompt("SDR: bom dia.", { notas: null, cobertura: null });
     expect(depois).toBe(antes);
     expect(antes.endsWith("SDR: bom dia.")).toBe(true);
+  });
+
+  it("pede a nota do negócio, e manda copiar as palavras do dono", () => {
+    // É a única parte da análise que não fala do SDR — e a que alimenta o
+    // preparo da R1 dias depois. Se ela sair do prompt, o campo vem sempre null
+    // e a nota do negócio some sem ninguém notar: a análise continua saindo
+    // inteira, só que muda.
+    const p = buildCallAnalysisPrompt("SDR: bom dia.");
+    expect(p).toContain("nota_do_negocio");
+    expect(p).toContain("COM AS PALAVRAS DELE");
+    expect(p).toContain("Copie, não interprete");
+  });
+
+  it("ligação sem dor pode devolver a nota nula — e o schema aceita", () => {
+    // Forçar o campo faria o modelo inventar nota para caixa postal e número
+    // errado, e essa invenção iria parar no dossiê do negócio.
+    const base = {
+      resultado: "nao_atendeu_ou_invalida",
+      nota_geral: 0,
+      criterios: [{ criterio: "Abertura", nota: 0, comentario: "caiu na caixa postal" }],
+      acertos: ["discou o número certo"],
+      pontos_de_melhoria: ["tentar em outro horário"],
+      frase_para_treinar: "bom dia, falo com o dono?",
+    };
+    expect(CallAnalysisSchema.safeParse(base).success).toBe(true);
+    expect(CallAnalysisSchema.parse(base).nota_do_negocio).toBeNull();
+
+    const comNota = CallAnalysisSchema.parse({
+      ...base,
+      nota_do_negocio: { headline: "Dor de espera", corpo: "so no outro dia alguem ve" },
+    });
+    expect(comNota.nota_do_negocio?.corpo).toContain("outro dia");
   });
 });

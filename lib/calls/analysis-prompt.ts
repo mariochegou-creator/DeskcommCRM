@@ -42,10 +42,20 @@ Responda SOMENTE com JSON válido, sem markdown e sem texto fora do JSON, neste 
   ],
   "acertos": ["2 a 4 pontos fortes, citando trechos curtos da transcrição"],
   "pontos_de_melhoria": ["2 a 4 pontos, cada um com o que fazer diferente na próxima ligação, prático e direto"],
-  "frase_para_treinar": "uma frase pronta que o SDR pode usar na próxima ligação para corrigir o principal erro"
+  "frase_para_treinar": "uma frase pronta que o SDR pode usar na próxima ligação para corrigir o principal erro",
+  "nota_do_negocio": {
+    "headline": "uma linha que identifique a ligação na lista de notas do negócio",
+    "corpo": "o que o DONO disse, nas palavras dele"
+  }
 }
 
-Se a transcrição indicar que a ligação não se completou (caixa postal, número errado, caiu), use resultado "nao_atendeu_ou_invalida", nota_geral 0 e explique em um único ponto de melhoria.
+SOBRE "nota_do_negocio" — é a única parte que NÃO fala do SDR, e ela vai para as notas do negócio, onde o preparo da reunião vai lê-la dias depois. Regras:
+- Escreva o que o DONO falou, COM AS PALAVRAS DELE. Copie, não interprete: "chega mensagem de noite e só no outro dia alguém vê" vale mais que "cliente relata demora no atendimento".
+- No corpo, em linhas curtas e só o que de fato apareceu: a dor; os números que ele deu; quem decide quando envolve dinheiro; o que ficou combinado (dia e hora, ou o próximo passo).
+- Nada de conselho, nada de nota, nada de opinião sobre o SDR — isso já está nos outros campos.
+- Se a ligação não chegou a nenhuma dor (caixa postal, número errado, ele desligou), devolva "nota_do_negocio": null. NÃO invente nota para preencher o campo.
+
+Se a transcrição indicar que a ligação não se completou (caixa postal, número errado, caiu), use resultado "nao_atendeu_ou_invalida", nota_geral 0, "nota_do_negocio": null e explique em um único ponto de melhoria.
 
 TRANSCRIÇÃO DA LIGAÇÃO:
 [TRANSCRICAO_AQUI]`;

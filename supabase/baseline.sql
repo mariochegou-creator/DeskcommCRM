@@ -550,6 +550,24 @@ begin
   get diagnostics v_count = row_count;
   v_counts := v_counts || jsonb_build_object('tasks', v_count);
 
+  -- 4f. lead_notes (migration 0050) — a memoria duravel por CONTATO.
+  --     Ela sempre guardou fala do titular: o agente escreve ali pela tool
+  --     `save_lead_note` desde a 0050, e desde a 0107 o worker de ligacao
+  --     grava a dor NAS PALAVRAS DO DONO (aula 10 do Caderno da Ligacao Fria).
+  --     Estava FORA da cascata — a linha ficava inteira depois de anonimizar o
+  --     contato, e o proprio indice injetado no prompt do agente continuaria
+  --     citando a pessoa que pediu para ser apagada.
+  --     DELETE, e nao UPDATE como nas outras tabelas: aqui nao ha nada a
+  --     preservar. Em `messages` o status e o timestamp sustentam metrica e
+  --     auditoria; uma nota e 100% conteudo sobre o titular, e uma linha
+  --     "[anonimizado] — [anonimizado]" no indice so ocuparia o orcamento de
+  --     tokens do prompt sem dizer nada a ninguem.
+  delete from lead_notes
+  where organization_id = p_organization_id
+    and contact_id = p_contact_id;
+  get diagnostics v_count = row_count;
+  v_counts := v_counts || jsonb_build_object('lead_notes', v_count);
+
   -- 5. crm_leads — strip title/description/custom_fields/source_metadata/tags but PRESERVE pipeline/stage/value
   update crm_leads set
     title = v_anon_label,

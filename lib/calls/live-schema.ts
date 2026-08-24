@@ -123,6 +123,27 @@ export type Cobertura = z.infer<typeof CoberturaSchema>;
 
 export type CoberturaKey = keyof Cobertura;
 
+/**
+ * Dois rótulos por item, e não é duplicação por preguiça.
+ *
+ * O CURTO é o que cabe embaixo do tracinho do trilho, no popup — dez marcas
+ * dividindo a largura de uma janela, com o dono na linha. O LONGO é o que a
+ * análise final entrega como "o que ficou de fora": ali quem lê é uma pessoa,
+ * dias depois, e "Espelho" sozinho não diz nada fora do contexto da chamada.
+ */
+export const COBERTURA_LABELS_CURTOS: Record<CoberturaKey, string> = {
+  abriu_sem_pergunta: "Abriu",
+  permissao_pedida: "2 min",
+  pergunta_feita: "Pergunta",
+  espelho_feito: "Espelho",
+  dor_aprofundada: "Tamanho",
+  numero_dele: "Número",
+  ponte_feita: "Ponte",
+  decisor_identificado: "Decide",
+  reuniao_proposta: "2 horários",
+  dia_e_hora_confirmados: "Dia e hora",
+};
+
 export const COBERTURA_LABELS: Record<CoberturaKey, string> = {
   abriu_sem_pergunta: "Abriu sem pergunta de cortesia",
   permissao_pedida: "Pediu os dois minutos",

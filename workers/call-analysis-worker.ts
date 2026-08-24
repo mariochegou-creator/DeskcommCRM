@@ -210,6 +210,7 @@ export async function analyzeCallRecording(row: EventRow): Promise<HandlerResult
       .eq("organization_id", call.organization_id);
 
     await emitAnalyzedActivity(admin, call, analysis);
+    await gravarNotaDoNegocio(admin, call, analysis);
     return { consumer_key, status: "ok" };
   } catch (err) {
     const detail = err instanceof Error ? err.message : String(err);
@@ -298,6 +299,59 @@ export function parseAnalysis(texto: string): CallAnalysis | null {
 }
 
 /**
+ * O QUE O DONO DISSE, virando nota do negócio.
+ *
+ * É o que a aula 10 do Caderno da Ligação Fria manda o SDR fazer à mão nos 30
+ * segundos depois de desligar: colar a dor nas notas com as palavras que ele
+ * usou. Feito à mão, quase nunca acontece — e sem isso a R1 começa genérica,
+ * porque a força dela vem de repetir as palavras que o dono falou no telefone
+ * três dias antes.
+ *
+ * VAI PARA `lead_notes` E NÃO PARA A TIMELINE, e os dois motivos são
+ * diferentes. (1) `lead_notes` é de onde o preparo da reunião já lê
+ * (`lib/agendamento/material-gerar.ts`) — escrever em outro lugar exigiria
+ * ensinar o preparo a ler duas fontes. (2) A linha da timeline é PII-free por
+ * decisão, e tem de continuar sendo: ela aparece em tela de lista e sai no
+ * export. A fala do dono precisa de um lugar que a cascata LGPD apague, e é o
+ * que a migration 0107 passou a garantir para `lead_notes`.
+ *
+ * A ANOTAÇÃO DO SDR ENTRA JUNTO, e é acrescentada em código, não pedida ao
+ * modelo. Ela é texto humano já escrito: mandar o modelo reescrevê-la só cria
+ * chance de ele resumir errado o que uma pessoa digitou.
+ *
+ * Falha aqui NÃO derruba a análise: a ligação já foi avaliada e gravada quando
+ * esta função roda. Nota perdida é um aborrecimento; jogar fora a análise
+ * inteira porque o insert falhou seria perder o trabalho que já foi pago.
+ */
+async function gravarNotaDoNegocio(
+  admin: ReturnType<typeof createAdminClient>,
+  call: CallRow,
+  analysis: CallAnalysis,
+): Promise<void> {
+  const nota = analysis.nota_do_negocio;
+  // `lead_notes` é indexado por CONTATO, não por negócio: sem contato não há
+  // onde pendurar, e o preparo da reunião também lê por contato.
+  if (!nota || !call.contact_id) return;
+
+  const anotacao = call.sdr_notes?.trim();
+  const corpo = anotacao ? `${nota.corpo.trim()}\n\nAnotação do SDR: ${anotacao}` : nota.corpo.trim();
+
+  const { error } = await admin.from("lead_notes").insert({
+    organization_id: call.organization_id,
+    contact_id: call.contact_id,
+    headline: nota.headline.trim().slice(0, 300),
+    body: corpo.slice(0, 4_000),
+  });
+
+  if (error) {
+    logger.warn("[call-analysis] nota do negócio não gravada", {
+      call_id: call.id,
+      detail: error.message,
+    });
+  }
+}
+
+/**
  * A linha na timeline do negócio.
  *
  * A `reason` é a "nota resumida no negócio" que o módulo pede: nota geral + o
@@ -305,8 +359,9 @@ export function parseAnalysis(texto: string): CallAnalysis | null {
  * sai no export LGPD, e o campo `acertos` da análise pede explicitamente
  * "trechos curtos da transcrição", ou seja, cita a fala do lead. Por isso o que
  * vai para a `reason` é o ponto de melhoria (coaching sobre o SDR) e nunca um
- * acerto (citação do lead). A análise inteira continua acessível pelo card, sob
- * controle de acesso, e some na anonimização.
+ * acerto (citação do lead). O que o dono disse tem lugar próprio — ver
+ * `gravarNotaDoNegocio` acima. A análise inteira continua acessível pelo card,
+ * sob controle de acesso, e some na anonimização.
  *
  * Ator `webhook_source` → `actor_kind = 'system'`: o produto agiu. Não é `ai`
  * porque `ai` exige lastro (`run_ids`/`llm_call_ids`) pela constraint da 0071, e
