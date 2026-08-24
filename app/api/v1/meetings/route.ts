@@ -29,6 +29,12 @@ export const OPTIONS = corsPreflight;
 const LIST_COLUMNS =
   "id, lead_id, contact_id, meeting_type, status, started_at, ended_at, meet_code, turn_count, summary, outcome, score, created_at, updated_at";
 
+/**
+ * ±90 min: cobre quem entra adiantado e a reunião que atrasou, sem alcançar a
+ * marcada de amanhã. Mesma fonte de verdade de /meetings/proximas.
+ */
+const JANELA_VINCULO_MS = 90 * 60 * 1000;
+
 export async function GET(req: NextRequest): Promise<Response> {
   const requestId = randomUUID();
 
@@ -143,12 +149,38 @@ export async function POST(req: NextRequest): Promise<Response> {
     }
   }
 
+  // A REUNIÃO ACHA O LEAD SOZINHA. O overlay do Meet não sabe com quem é a
+  // call (clicar "Iniciar R1" não pergunta), e reunião sem lead deixa o
+  // copiloto cego — foi assim que ele abriu uma R1 real perguntando dinheiro.
+  // A reunião MARCADA vive em `crm_leads.custom_fields.reuniao` (agendamento
+  // anti no-show, mesma fonte de /meetings/proximas): se existe EXATAMENTE UMA
+  // marcada numa janela de ±90 min de agora, é ela. Duas candidatas ou nenhuma
+  // = não adivinha, segue sem vínculo (vincular depois é PATCH).
+  let leadId = input.lead_id ?? null;
+  let contactId = input.contact_id ?? null;
+  if (!leadId) {
+    const de = new Date(Date.now() - JANELA_VINCULO_MS).toISOString();
+    const ate = new Date(Date.now() + JANELA_VINCULO_MS).toISOString();
+    const { data: marcadas } = await admin
+      .from("crm_leads")
+      .select("id, contact_id")
+      .eq("organization_id", authz.orgId)
+      .not("custom_fields->reuniao", "is", null)
+      .gte("custom_fields->reuniao->>em", de)
+      .lte("custom_fields->reuniao->>em", ate)
+      .limit(2);
+    if (marcadas && marcadas.length === 1) {
+      leadId = marcadas[0]!.id;
+      contactId = contactId ?? marcadas[0]!.contact_id;
+    }
+  }
+
   const { data: meeting, error } = await admin
     .from("crm_meetings")
     .insert({
       organization_id: authz.orgId,
-      lead_id: input.lead_id ?? null,
-      contact_id: input.contact_id ?? null,
+      lead_id: leadId,
+      contact_id: contactId,
       meeting_type: input.meeting_type,
       meet_code: input.meet_code ?? null,
       created_by_user_id: authz.userId,
@@ -169,7 +201,8 @@ export async function POST(req: NextRequest): Promise<Response> {
     metadata: {
       meeting_type: input.meeting_type,
       via_token: authz.viaToken,
-      lead_id: input.lead_id ?? null,
+      lead_id: leadId,
+      lead_vinculado_sozinho: leadId !== null && input.lead_id == null,
     },
   });
 

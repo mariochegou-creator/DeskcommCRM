@@ -111,7 +111,7 @@ export async function POST(req: NextRequest, ctx: RouteCtx): Promise<Response> {
   const admin = createAdminClient();
   const { data: meeting, error: loadErr } = await admin
     .from("crm_meetings")
-    .select("id, status, meeting_type, live_state, lead_id")
+    .select("id, status, meeting_type, live_state, lead_id, contact_id")
     .eq("id", id)
     .eq("organization_id", authz.orgId)
     .maybeSingle();
@@ -151,7 +151,7 @@ export async function POST(req: NextRequest, ctx: RouteCtx): Promise<Response> {
   // reunião, guardada no estado — não uma por chamada, na frente do modelo.
   let contexto = estado.contexto;
   if (contexto === undefined) {
-    contexto = await contextoDoLead(admin, authz.orgId, meeting.lead_id);
+    contexto = await contextoDoLead(admin, authz.orgId, meeting.lead_id, meeting.contact_id);
   }
 
   const suggestion = await runLiveModel({
@@ -378,22 +378,43 @@ async function runLiveModel(opts: {
 }
 
 /**
- * O que o CRM já sabe do lead, em duas linhas — a diferença entre um copiloto
- * e um teleprompter. Query tolerante a falha: se não vier, trabalha sem.
+ * O que o CRM já sabe do lead — a diferença entre um copiloto e um
+ * teleprompter. Título e descrição do negócio + as ANOTAÇÕES do contato
+ * (`lead_notes`): é nelas que mora o roteiro/preparo da R1 quando existe, e é
+ * o que faz o copiloto soprar a pergunta preparada para AQUELE negócio em vez
+ * do template. Queries tolerantes a falha: se não vier, trabalha sem.
  */
 async function contextoDoLead(
   admin: ReturnType<typeof createAdminClient>,
   organizationId: string,
   leadId: string | null,
+  contactId: string | null,
 ): Promise<string | null> {
-  if (!leadId) return null;
-  const { data } = await admin
-    .from("crm_leads")
-    .select("title, description")
-    .eq("id", leadId)
-    .eq("organization_id", organizationId)
-    .maybeSingle();
-  if (!data) return null;
-  const linhas = [data.title, data.description].filter(Boolean).join(" — ");
-  return linhas ? linhas.slice(0, CONTEXTO_MAX_CHARS) : null;
+  const partes: string[] = [];
+
+  if (leadId) {
+    const { data } = await admin
+      .from("crm_leads")
+      .select("title, description")
+      .eq("id", leadId)
+      .eq("organization_id", organizationId)
+      .maybeSingle();
+    if (data) partes.push([data.title, data.description].filter(Boolean).join(" — "));
+  }
+
+  if (contactId) {
+    const { data: notas } = await admin
+      .from("lead_notes")
+      .select("headline, body")
+      .eq("organization_id", organizationId)
+      .eq("contact_id", contactId)
+      .order("created_at", { ascending: false })
+      .limit(5);
+    for (const n of notas ?? []) {
+      partes.push([n.headline, n.body].filter(Boolean).join(": "));
+    }
+  }
+
+  const texto = partes.filter(Boolean).join("\n");
+  return texto ? texto.slice(0, CONTEXTO_MAX_CHARS) : null;
 }
