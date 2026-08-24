@@ -188,7 +188,13 @@ export async function POST(req: NextRequest, ctx: RouteCtx): Promise<Response> {
   // O que ainda não foi mostrado ao modelo. Bloco de 5 s raramente é uma fala
   // inteira: acumular aqui é o que separa "transcrição rápida na tela" de
   // "chamada ao modelo", que antes eram a mesma coisa por acidente.
-  const pendente = [estado.pendente ?? "", trechoUtil].filter(Boolean).join(" ");
+  //
+  // O recorte não é zelo: quando o modelo está fora do ar (conta sem crédito é
+  // o caso real), nada nunca zera o pendente e ele viraria a ligação inteira
+  // dentro do `live_state` — e, na hora que o modelo voltasse, a primeira
+  // chamada levaria dez minutos de conversa de uma vez. Cortado pelo fim, é a
+  // fala recente que sobrevive, que é a única que ainda serve de sugestão.
+  const pendente = recortarJanela([estado.pendente ?? "", trechoUtil].filter(Boolean).join(" "));
 
   let sugestao: LiveCallSuggestion | null = null;
   const podeSugerir =
