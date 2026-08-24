@@ -11,6 +11,7 @@ import {
   rawCallAnalysisPrompt,
 } from "@/lib/calls/analysis-prompt";
 import { CALL_OUTCOMES, CallAnalysisSchema } from "@/lib/calls/analysis-schema";
+import { EIXOS } from "@/lib/calls/palavras-eixo";
 import { parseAnalysis } from "@/workers/call-analysis-worker";
 
 const ANALISE_VALIDA = {
@@ -215,5 +216,39 @@ describe("o prompt da análise com o material do copiloto (0106)", () => {
       frase_para_treinar: "bom dia",
     };
     expect(CallAnalysisSchema.safeParse(vazia).success).toBe(false);
+  });
+
+  it("a rubrica cobra o que o caderno ensina — e nada do kit antigo", () => {
+    // A trava contra o defeito que de fato aconteceu: o copiloto ao vivo foi
+    // reescrito para o Caderno da Ligação Fria e a rubrica ficou no kit velho.
+    // O SDR treinava uma coisa e era avaliado por outra, e ninguém veria — as
+    // notas só começariam a sair estranhas.
+    const p = buildCallAnalysisPrompt("SDR: bom dia.");
+
+    // o esqueleto de quatro passos, cada um com nota própria
+    for (const passo of ["Espelho", "O número", "Ponte e não-venda", "A pergunta"]) {
+      expect(p).toContain(passo);
+    }
+    // as regras duras do caderno
+    expect(p).toContain("30 MINUTOS");
+    expect(p).toContain("DOIS MINUTOS");
+    expect(p).toContain("CALOU A BOCA");
+    expect(p).toContain("PALAVRA-EIXO");
+
+    // o vocabulário proibido tem de estar listado, senão o modelo não penaliza
+    for (const proibida of ["CRM", "chatbot", "SEO", "dashboard", "tráfego pago"]) {
+      expect(p).toContain(proibida);
+    }
+
+    // e o que saiu do roteiro não pode voltar pela rubrica
+    expect(p).not.toContain("SPIN");
+    expect(p).not.toContain("15 minutos");
+  });
+
+  it("todo eixo do caderno aparece na rubrica", () => {
+    // Eixo que existe no copiloto e não na rubrica é dor que o SDR aprende a
+    // trabalhar e nunca é avaliado.
+    const p = buildCallAnalysisPrompt("SDR: bom dia.");
+    for (const e of EIXOS) expect(p).toContain(e.palavra);
   });
 });
