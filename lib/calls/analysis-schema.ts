@@ -60,10 +60,20 @@ export function isTerminalCallStatus(s: CallStatus): boolean {
  * a análise inteira ser descartada porque o modelo escreveu "Abertura da
  * ligação" em vez de "Abertura".
  *
- * `.min(1)` nas listas, não `.nonempty()`: uma análise sem nenhum acerto e
- * nenhum ponto de melhoria não é análise, é resposta vazia com forma de JSON —
- * e ela passaria pelo parse, viraria card em branco e o SDR concluiria que a
+ * `pontos_de_melhoria` exige `.min(1)`, não `.nonempty()`: uma análise sem
+ * nenhum apontamento não é análise, é resposta vazia com forma de JSON — e ela
+ * passaria pelo parse, viraria card em branco e o SDR concluiria que a
  * ferramenta não funciona.
+ *
+ * `acertos` NÃO exige mínimo, e isso foi aprendido caro. Ligação que não se
+ * completou — caixa postal, número bloqueado, headset mudo — não tem acerto
+ * nenhum, e o modelo acertava ao devolver `[]`. O schema recusava, a análise
+ * inteira caía em `done_unformatted`, e o SDR via "a análise deu erro" numa
+ * ligação em que o modelo tinha feito o trabalho certo. Exigir pelo menos um
+ * elogio só teria duas saídas: descartar a análise, ou ensinar o modelo a
+ * inventar elogio — e elogio inventado corrói a nota que o SDR leva a sério.
+ * `pontos_de_melhoria` continua com mínimo, e é ele que garante que a resposta
+ * não é vazia.
  */
 export const CriterioSchema = z.object({
   criterio: z.string().min(1).max(120),
@@ -104,7 +114,7 @@ export const CallAnalysisSchema = z.object({
   resultado: z.enum(CALL_OUTCOMES),
   nota_geral: z.number().min(0).max(10),
   criterios: z.array(CriterioSchema).min(1).max(12),
-  acertos: z.array(z.string().min(1).max(2000)).min(1).max(8),
+  acertos: z.array(z.string().min(1).max(2000)).max(8),
   pontos_de_melhoria: z.array(z.string().min(1).max(2000)).min(1).max(8),
   frase_para_treinar: z.string().min(1).max(2000),
   nota_do_negocio: NotaDoNegocioSchema.nullable().default(null),

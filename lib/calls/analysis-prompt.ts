@@ -40,7 +40,7 @@ Responda SOMENTE com JSON válido, sem markdown e sem texto fora do JSON, neste 
     {"criterio": "Fechamento", "nota": 0-10, "comentario": "..."},
     {"criterio": "Comunicação", "nota": 0-10, "comentario": "..."}
   ],
-  "acertos": ["2 a 4 pontos fortes, citando trechos curtos da transcrição"],
+  "acertos": ["2 a 4 pontos fortes, citando trechos curtos da transcrição — LISTA VAZIA quando a ligação não se completou; não invente elogio"],
   "pontos_de_melhoria": ["2 a 4 pontos, cada um com o que fazer diferente na próxima ligação, prático e direto"],
   "frase_para_treinar": "uma frase pronta que o SDR pode usar na próxima ligação para corrigir o principal erro",
   "nota_do_negocio": {

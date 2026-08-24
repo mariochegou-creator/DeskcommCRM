@@ -186,4 +186,34 @@ describe("o prompt da análise com o material do copiloto (0106)", () => {
     });
     expect(comNota.nota_do_negocio?.corpo).toContain("outro dia");
   });
+
+  it("ligação que não completou pode não ter acerto nenhum", () => {
+    // O defeito real, visto em 24/08: caixa postal e numero bloqueado nao tem
+    // acerto, o modelo devolvia `acertos: []` — e o schema recusava a analise
+    // INTEIRA. O SDR via "a analise deu erro" numa ligacao em que o modelo tinha
+    // acertado. Exigir um elogio so ensina o modelo a inventar elogio.
+    const semAcerto = {
+      resultado: "nao_atendeu_ou_invalida",
+      nota_geral: 0,
+      criterios: [{ criterio: "Abertura", nota: 0, comentario: "número bloqueado para chamadas" }],
+      acertos: [],
+      pontos_de_melhoria: ["testar o headset antes de discar"],
+      frase_para_treinar: "bom dia, o senhor consegue me ouvir?",
+    };
+    expect(CallAnalysisSchema.safeParse(semAcerto).success).toBe(true);
+  });
+
+  it("mas resposta sem NENHUM apontamento continua recusada", () => {
+    // É `pontos_de_melhoria` que separa "análise honesta de ligação vazia" de
+    // "JSON vazio com forma de análise" — esse mínimo não pode cair junto.
+    const vazia = {
+      resultado: "nao_atendeu_ou_invalida",
+      nota_geral: 0,
+      criterios: [{ criterio: "Abertura", nota: 0, comentario: "nada aconteceu" }],
+      acertos: [],
+      pontos_de_melhoria: [],
+      frase_para_treinar: "bom dia",
+    };
+    expect(CallAnalysisSchema.safeParse(vazia).success).toBe(false);
+  });
 });
