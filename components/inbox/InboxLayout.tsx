@@ -2,6 +2,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { useAuth } from "@/hooks/auth/AuthProvider";
+import { useChannelSessions } from "@/hooks/channels/useChannelSessions";
 import { useClaimConversation } from "@/hooks/inbox/useClaimConversation";
 import { useCloseConversation } from "@/hooks/inbox/useCloseConversation";
 import {
@@ -61,7 +62,7 @@ interface InboxLayoutProps {
 }
 
 export function InboxLayout({ initialSelectedId = null }: InboxLayoutProps = {}) {
-  const { activeOrg } = useAuth();
+  const { user, activeOrg } = useAuth();
   const orgId = activeOrg?.orgId ?? null;
 
   const router = useRouter();
@@ -114,6 +115,8 @@ export function InboxLayout({ initialSelectedId = null }: InboxLayoutProps = {})
 
   // Reentrada pelo menu chega em /app/inbox sem query — a URL só cobre o botão
   // voltar, então a última seleção (por org) fica também em sessionStorage.
+  // Sem seleção nenhuma, o inbox abre no número do usuário logado ("Meu número
+  // de WhatsApp", Configurações → Perfil): cada um cai no seu.
   const restoredOrgRef = useRef<string | null>(null);
   useEffect(() => {
     if (!orgId || restoredOrgRef.current === orgId) return;
@@ -125,26 +128,32 @@ export function InboxLayout({ initialSelectedId = null }: InboxLayoutProps = {})
       searchParams.get("stage")
     )
       return; // URL já traz filtros explícitos (deep-link) — respeita
+    const params = new URLSearchParams(searchParams);
+    interface FiltrosSalvos {
+      tab?: string;
+      channel?: string | null;
+      tag?: string | null;
+      stage?: string | null;
+    }
+    let saved: FiltrosSalvos | null = null;
     try {
       const raw = sessionStorage.getItem(`inbox-filters:${orgId}`);
-      if (!raw) return;
-      const saved = JSON.parse(raw) as {
-        tab?: string;
-        channel?: string | null;
-        tag?: string | null;
-        stage?: string | null;
-      };
-      const params = new URLSearchParams(searchParams);
+      saved = raw ? (JSON.parse(raw) as FiltrosSalvos) : null;
+    } catch {
+      saved = null; // storage indisponível/corrompido — segue com defaults
+    }
+    if (saved) {
       if (saved.tab && FILTER_TABS.includes(saved.tab as InboxTab))
         params.set("filter", saved.tab);
       if (saved.channel) params.set("channel", saved.channel);
       if (saved.tag) params.set("tag", saved.tag);
       if (saved.stage) params.set("stage", saved.stage);
-      if (params.toString() !== searchParams.toString())
-        router.replace(`${pathname}?${params.toString()}`, { scroll: false });
-    } catch {
-      /* storage indisponível/corrompido — segue com defaults */
+    } else {
+      const meu = user.meu_numero?.[orgId];
+      if (meu) params.set("channel", meu);
     }
+    if (params.toString() !== searchParams.toString())
+      router.replace(`${pathname}?${params.toString()}`, { scroll: false });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [orgId]);
   useEffect(() => {
@@ -163,6 +172,18 @@ export function InboxLayout({ initialSelectedId = null }: InboxLayoutProps = {})
       /* sem persistência */
     }
   }, [orgId, tab, channelParam, tagParam, stageParam]);
+
+  // Filtro apontando para número que já não existe (vínculo do perfil ou
+  // storage antigos) deixaria a lista vazia sem pista do porquê — quando a
+  // lista de canais chega, o filtro morto cai sozinho.
+  const { data: canais } = useChannelSessions();
+  useEffect(() => {
+    if (!canais || !channelParam) return;
+    if (canais.some((c) => c.id === channelParam)) return;
+    const params = new URLSearchParams(searchParams);
+    params.delete("channel");
+    router.replace(`${pathname}?${params.toString()}`, { scroll: false });
+  }, [canais, channelParam, searchParams, router, pathname]);
 
   const [selectedId, setSelectedId] = useState<string | null>(initialSelectedId);
   const [visibleIds, setVisibleIds] = useState<string[]>([]);

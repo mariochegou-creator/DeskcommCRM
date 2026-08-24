@@ -15,6 +15,12 @@ import {
 } from "@/components/ui/select";
 import { updateProfile } from "@/app/actions/settings/updateProfile";
 import { profileSchema, type Locale } from "@/lib/schemas/settings";
+import { useAuth } from "@/hooks/auth/AuthProvider";
+import { useChannelSessions } from "@/hooks/channels/useChannelSessions";
+import { rotuloDoNumero } from "@/components/inbox/NumeroDeSaida";
+
+/** Valor do Select para "nenhum vínculo" — Select não aceita value vazio. */
+const SEM_NUMERO = "none";
 
 const TIMEZONES = [
   "America/Sao_Paulo",
@@ -32,11 +38,20 @@ interface Props {
 }
 
 export function ProfileForm({ email, initialFullName, initialAvatarUrl }: Props) {
+  const { user, activeOrg } = useAuth();
+  const { data: canais } = useChannelSessions();
   const [fullName, setFullName] = useState(initialFullName ?? "");
   const [locale, setLocale] = useState<Locale>("pt-BR");
   const [timezone, setTimezone] = useState("America/Sao_Paulo");
   const [avatarUrl, setAvatarUrl] = useState(initialAvatarUrl ?? "");
+  const [meuNumero, setMeuNumero] = useState(
+    (activeOrg && user.meu_numero?.[activeOrg.orgId]) || SEM_NUMERO,
+  );
   const [isPending, startTransition] = useTransition();
+
+  // Com um número só não há vínculo a escolher; o campo aparece a partir de 2 —
+  // o mesmo limiar do seletor "Falando pelo" do inbox.
+  const mostrarMeuNumero = (canais?.length ?? 0) >= 2;
 
   function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
@@ -45,6 +60,7 @@ export function ProfileForm({ email, initialFullName, initialAvatarUrl }: Props)
       locale,
       timezone,
       avatar_url: avatarUrl || null,
+      meu_numero_channel_id: meuNumero === SEM_NUMERO ? null : meuNumero,
     });
     if (!parsed.success) {
       toast.error("Dados inválidos.");
@@ -105,6 +121,28 @@ export function ProfileForm({ email, initialFullName, initialAvatarUrl }: Props)
             </Select>
           </div>
         </div>
+        {mostrarMeuNumero && (
+          <div className="space-y-2">
+            <Label htmlFor="meu_numero">Meu número de WhatsApp</Label>
+            <Select value={meuNumero} onValueChange={setMeuNumero}>
+              <SelectTrigger id="meu_numero">
+                <SelectValue placeholder="Sem número padrão" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value={SEM_NUMERO}>Sem número padrão</SelectItem>
+                {canais?.map((c) => (
+                  <SelectItem key={c.id} value={c.id}>
+                    {rotuloDoNumero(c)}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+            <p className="text-xs text-muted-foreground">
+              O inbox abre neste número e conversa nova sai por ele. Vale para a
+              sua conta em qualquer computador.
+            </p>
+          </div>
+        )}
         <div className="space-y-2">
           <Label htmlFor="avatar_url">Avatar URL</Label>
           <Input

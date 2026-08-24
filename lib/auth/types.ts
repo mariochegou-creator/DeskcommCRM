@@ -21,6 +21,13 @@ export interface AuthUser {
   avatar_url: string | null;
   is_platform_admin: boolean;
   organizations: UserOrgMembership[];
+  /**
+   * "Meu número de WhatsApp" por org (orgId → channel_sessions.id), escolhido em
+   * Configurações → Perfil. Mora no cadastro (raw_user_meta_data) de propósito:
+   * segue o e-mail em qualquer computador — o localStorage que existia antes
+   * ficava preso ao navegador. Opcional: conta antiga não tem a chave.
+   */
+  meu_numero?: Record<string, string>;
 }
 
 export interface ActiveOrg {

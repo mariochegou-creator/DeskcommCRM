@@ -91,6 +91,12 @@ export async function resolverSessao(
   admin: SupabaseClient,
   organizationId: string,
   contactId: string,
+  /**
+   * "Meu número" de quem está mandando (Configurações → Perfil) — só decide
+   * onde uma conversa NOVA nasce. Conversa existente vence sempre, pelo motivo
+   * acima. Automação sem usuário logado não passa nada e cai no mais antigo.
+   */
+  preferidaSeNova?: string | null,
 ): Promise<string | null> {
   const { data: conversa } = await admin
     .from("conversations")
@@ -110,6 +116,17 @@ export async function resolverSessao(
       ? daConversa.channel_sessions[0]
       : daConversa.channel_sessions;
     if (sessao?.status === "WORKING") return daConversa.channel_session_id;
+  }
+
+  if (preferidaSeNova) {
+    const { data: pref } = await admin
+      .from("channel_sessions")
+      .select("id")
+      .eq("id", preferidaSeNova)
+      .eq("organization_id", organizationId)
+      .eq("status", "WORKING")
+      .maybeSingle();
+    if (pref) return preferidaSeNova;
   }
 
   const { data } = await admin

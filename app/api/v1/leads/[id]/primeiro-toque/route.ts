@@ -128,7 +128,15 @@ export async function POST(
     );
   }
 
-  const sessionId = await resolverSessao(admin, lead.organization_id, c.id);
+  // Conversa nova nasce no "meu número" de quem clicou (Perfil) — o David
+  // prospecta pelo número do David, o Mario pelo dele. Conversa existente
+  // continua no número em que nasceu (resolverSessao decide).
+  const sessionId = await resolverSessao(
+    admin,
+    lead.organization_id,
+    c.id,
+    user.meu_numero?.[lead.organization_id] ?? null,
+  );
   if (!sessionId) {
     return fail("conflict", "Nenhum número de WhatsApp conectado para enviar.", 409, { requestId });
   }

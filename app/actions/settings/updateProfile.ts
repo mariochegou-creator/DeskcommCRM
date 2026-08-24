@@ -27,19 +27,42 @@ export async function updateProfile(input: ProfileInput): Promise<UpdateProfileR
   const ip = hdrs.get("x-forwarded-for")?.split(",")[0]?.trim() ?? null;
   const userAgent = hdrs.get("user-agent") ?? null;
 
+  const activeOrg = await resolveActiveOrg(authUser);
+
+  // "Meu número" é por org: o mapa inteiro é reescrito (updateUser substitui a
+  // chave toda), então parte do que já está gravado e mexe só na org ativa.
+  const meuNumero: Record<string, string> = { ...(authUser.meu_numero ?? {}) };
+  if (parsed.data.meu_numero_channel_id !== undefined && activeOrg) {
+    if (parsed.data.meu_numero_channel_id === null) {
+      delete meuNumero[activeOrg.orgId];
+    } else {
+      // O id precisa ser um número DESTA org — a RLS só devolve canal que o
+      // usuário pode ver, então um id de outra org (ou inventado) morre aqui.
+      const { data: canal } = await supabase
+        .from("channel_sessions")
+        .select("id")
+        .eq("id", parsed.data.meu_numero_channel_id)
+        .eq("organization_id", activeOrg.orgId)
+        .maybeSingle();
+      if (!canal) {
+        return { ok: false, error: "channel_not_found" };
+      }
+      meuNumero[activeOrg.orgId] = parsed.data.meu_numero_channel_id;
+    }
+  }
+
   const { error } = await supabase.auth.updateUser({
     data: {
       full_name: parsed.data.full_name ?? null,
       locale: parsed.data.locale,
       timezone: parsed.data.timezone,
       avatar_url: parsed.data.avatar_url ?? null,
+      meu_numero: meuNumero,
     },
   });
   if (error) {
     return { ok: false, error: error.message };
   }
-
-  const activeOrg = await resolveActiveOrg(authUser);
 
   await audit({
     action: "profile.updated",
@@ -73,5 +96,8 @@ export async function updateProfile(input: ProfileInput): Promise<UpdateProfileR
   }
 
   revalidatePath("/app/settings/profile");
+  // O AuthProvider recebe o usuário do layout — sem revalidar o layout, o
+  // "meu número" novo só chegaria ao inbox depois de um F5.
+  revalidatePath("/app", "layout");
   return { ok: true };
 }

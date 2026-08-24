@@ -139,6 +139,11 @@ export const profileSchema = z.object({
     .nullable()
     .optional()
     .or(z.literal("").transform(() => null)),
+  /**
+   * "Meu número de WhatsApp" (channel_sessions.id) na org ativa. `null` limpa o
+   * vínculo; ausente não mexe nele — quem manda só nome/fuso não perde o número.
+   */
+  meu_numero_channel_id: z.string().uuid().nullable().optional(),
 });
 export type ProfileInput = z.infer<typeof profileSchema>;
 

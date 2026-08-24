@@ -64,6 +64,16 @@ export async function loadAuthUser(): Promise<AuthUser | null> {
   const fullName = (user.user_metadata?.full_name as string | undefined) ?? null;
   const avatarUrl = (user.user_metadata?.avatar_url as string | undefined) ?? null;
 
+  // Metadata é escrita por nós mas lida como não-confiável: chave com formato
+  // errado (migração antiga, edição manual) não pode derrubar o login inteiro.
+  const meuNumeroRaw = user.user_metadata?.meu_numero;
+  const meuNumero: Record<string, string> = {};
+  if (meuNumeroRaw && typeof meuNumeroRaw === "object" && !Array.isArray(meuNumeroRaw)) {
+    for (const [orgId, sessionId] of Object.entries(meuNumeroRaw as Record<string, unknown>)) {
+      if (typeof sessionId === "string" && sessionId) meuNumero[orgId] = sessionId;
+    }
+  }
+
   return {
     id: user.id,
     email: user.email ?? "",
@@ -71,6 +81,7 @@ export async function loadAuthUser(): Promise<AuthUser | null> {
     avatar_url: avatarUrl,
     is_platform_admin: !!paRow,
     organizations: memberships,
+    meu_numero: meuNumero,
   };
 }
 

@@ -37,10 +37,9 @@ export function rotuloDoNumero(c: ChannelSession): string {
 }
 
 /**
- * O "meu número" de quem está logado, por org. Mora no navegador de propósito:
- * é preferência de quem atende, não fato da organização — e o vínculo
- * usuário↔número não existe no schema. Aprende sozinho da última escolha, para
- * não custar mais uma tela de configuração que ninguém abriria.
+ * O "meu número" aprendido da última escolha, por org. Fallback de navegador
+ * para quem nunca preencheu "Meu número de WhatsApp" no Perfil — o vínculo do
+ * cadastro (user.meu_numero) vem primeiro e segue a conta em qualquer máquina.
  */
 function chaveDoMeuNumero(orgId: string, userId: string) {
   return `meu-numero:${orgId}:${userId}`;
@@ -73,7 +72,10 @@ export function NumeroDeSaida({ conversation, onIrPara }: Props) {
   // risco de descasar do HTML do servidor. `escolhidoAgora` existe só para
   // redesenhar a marcação depois de gravar.
   const [escolhidoAgora, setEscolhidoAgora] = useState<string | null>(null);
-  const meuNumeroId = escolhidoAgora ?? lerMeuNumero(orgId, user.id);
+  // O vínculo do cadastro manda: trocar o número de UMA conversa não muda qual
+  // é "o seu" — só o Perfil muda isso. O aprendido só vale sem vínculo salvo.
+  const doPerfil = orgId ? (user.meu_numero?.[orgId] ?? null) : null;
+  const meuNumeroId = doPerfil ?? escolhidoAgora ?? lerMeuNumero(orgId, user.id);
 
   // Só número conectado entra: mandar por um STOPPED deixa a mensagem parada em
   // `queued` sem explicação, que é o pior dos dois erros possíveis aqui.
