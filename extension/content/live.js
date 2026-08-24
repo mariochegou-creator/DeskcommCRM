@@ -90,6 +90,7 @@
           fase_label: res.suggestion.fase_label,
           sugestao: res.suggestion.sugestao,
           alerta: res.suggestion.alerta,
+          tipo: res.suggestion.tipo,
         },
       }),
     );

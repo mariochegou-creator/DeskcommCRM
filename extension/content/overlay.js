@@ -69,6 +69,10 @@
         min-height: 60px;
       }
       .suggestion.flash { animation: flash .6s ease 1; }
+      /* "calar" é sugestão de NÃO falar — âmbar, pra não ser lida em voz alta. */
+      .suggestion.calar { color: #ffb84d; }
+      /* Script de objeção é longo de propósito; encolhe pra caber sem rolagem. */
+      .suggestion.longa { font-size: 16px; font-weight: 600; }
       @keyframes flash { 0% { color: #7fe3ee; } 100% { color: #f2f6fa; } }
       .alert {
         font-size: 15px; font-weight: 700; color: #ffb84d;
@@ -156,9 +160,11 @@
     $("phase").textContent = label || "—";
   }
 
-  function setSuggestion(text) {
+  function setSuggestion(text, tipo) {
     const el = $("suggestion");
-    el.textContent = text;
+    el.textContent = tipo === "calar" ? `🤫 ${text}` : text;
+    el.classList.toggle("calar", tipo === "calar");
+    el.classList.toggle("longa", text.length > 140);
     el.classList.remove("flash");
     void el.offsetWidth; // reinicia a animação
     el.classList.add("flash");
@@ -304,11 +310,11 @@
 
   // A Fase 3 escuta este canal para atualizar fase/sugestão/alerta.
   window.addEventListener("nexo-copiloto:live-update", (e) => {
-    const { fase_label, sugestao, alerta } = e.detail || {};
+    const { fase_label, sugestao, alerta, tipo } = e.detail || {};
     if (fase_label) setPhase(fase_label);
     if (sugestao && Date.now() - lastSuggestionAt > 1000) {
       lastSuggestionAt = Date.now();
-      setSuggestion(sugestao);
+      setSuggestion(sugestao, tipo);
     }
     if (alerta) setAlert(alerta);
   });
