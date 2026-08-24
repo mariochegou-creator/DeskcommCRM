@@ -111,14 +111,16 @@ Use isto como pista, não como veredito — o copiloto ouve a mesma trilha imper
  * é feio mas nunca some.
  */
 const COBERTURA_EM_PORTUGUES: Record<string, string> = {
-  abriu_sem_pergunta: "abrir se apresentando e dizendo o motivo, sem começar por pergunta",
-  entendeu_o_negocio: "entender como o negócio funciona",
-  dor_declarada: "fazer o dono contar um caso concreto, não só a palavra genérica",
-  prejuizo_dimensionado:
-    "fazer o próprio dono dizer o tamanho do prejuízo (quantos, quanto vale, quantas horas)",
+  abriu_sem_pergunta: "abrir se apresentando e dizendo o motivo, sem pergunta de cortesia",
+  permissao_pedida: "pedir os dois minutos antes de emendar a pergunta",
+  pergunta_feita: "fazer a pergunta aberta sobre o cliente dele (aula 03)",
+  espelho_feito: "repetir a dor devolvendo as palavras do próprio dono",
+  dor_aprofundada: "medir a dor — frequência, há quanto tempo, se já deu problema",
+  numero_dele: "fazer o próprio dono botar quantidade ou dinheiro na mesa",
+  ponte_feita: "dizer que precisa mostrar na tela e pedir os 30 minutos",
   decisor_identificado: "descobrir quem decide quando envolve dinheiro",
-  reuniao_proposta: "propor a reunião com dois horários (OU-OU)",
-  dia_e_hora_confirmados: "confirmar dia e hora no fim da ligação",
+  reuniao_proposta: "propor com dois horários (OU-OU), nunca pergunta aberta",
+  dia_e_hora_confirmados: "repetir dia e hora no fim da ligação",
 };
 
 /** Só para o teste que garante que o marcador não sumiu numa edição do prompt. */

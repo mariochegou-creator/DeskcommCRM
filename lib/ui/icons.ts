@@ -56,6 +56,8 @@ export {
   Archive,
   // feedback
   CheckCircle,
+  // o "cale a boca" do copiloto da ligação — a sugestão que manda NÃO falar
+  HandPalm,
   Warning,
   WarningOctagon,
   Info,

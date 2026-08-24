@@ -38,6 +38,7 @@ import {
   resolveModel,
 } from "@/lib/ai/gateway";
 import { requireRole } from "@/lib/auth/require-role";
+import { fecharAConta, type ContaDaDor, type NumerosDaDor } from "@/lib/calls/conta-da-dor";
 import {
   JANELA_MAX_CHARS,
   RETRY_DE_FORMATO_LIGACAO,
@@ -47,9 +48,16 @@ import {
 } from "@/lib/calls/live-prompt";
 import {
   COBERTURA_VAZIA,
+  degrauDaCobertura,
+  faseDaCobertura,
   parseLiveCallSuggestion,
   parseLiveState,
+  type CallPhase,
+  type Cobertura,
+  type CoberturaKey,
+  type DegrauDaDor,
   type LiveCallSuggestion,
+  type Numeros,
 } from "@/lib/calls/live-schema";
 import { isAllowedCallMime, normalizeMime } from "@/lib/calls/storage";
 import { groqTranscriptionProvider } from "@/lib/calls/transcribe";
@@ -209,20 +217,62 @@ export async function POST(req: NextRequest, ctx: RouteCtx): Promise<Response> {
     contexto = await contextoDoLead(admin, call.organization_id, call.lead_id);
   }
 
+  // A ETAPA NÃO É PERGUNTADA AO MODELO — é deduzida do checklist e entregue a
+  // ele pronta. Ver `faseDaCobertura` em `live-schema.ts` para o porquê (a fase
+  // andava para trás, e podia dizer "agendamento" com a dor por declarar).
+  const coberturaAtual = estado.cobertura ?? COBERTURA_VAZIA;
+
   if (podeSugerir) {
     sugestao = await sugerir({
       janela: recortarJanela(transcricao),
       ultimoTrecho: pendente,
-      estado: {
-        fase: estado.fase,
-        degrau: estado.degrau ?? null,
-        cobertura: estado.cobertura ?? COBERTURA_VAZIA,
-      },
+      estado: { cobertura: coberturaAtual },
+      fase: faseDaCobertura(coberturaAtual),
+      degrau: degrauDaCobertura(coberturaAtual),
       segundos,
       contexto: contexto ?? null,
+      eixo: estado.eixo ?? null,
+      // A conta é fechada em CÓDIGO, com os números que o dono já deu, e chega
+      // ao modelo como frase pronta. Ver `conta-da-dor.ts`: modelo pequeno
+      // errando multiplicação na frente do dono é o pior defeito desta tela.
+      conta: fecharAConta(numerosDoEstado(estado.numeros)),
+      desviosDoNumero: estado.desviou_do_numero ?? 0,
       organizationId: call.organization_id,
     });
   }
+
+  // O checklist NUNCA desmarca: o modelo enxerga só a janela recente, e sem
+  // esta trava um item marcado no minuto 1 apagaria no minuto 4 — o SDR veria o
+  // roteiro "desandar" sozinho e perderia a confiança na única parte da tela que
+  // ele consulta de relance. Como a fase sai daqui, a trava agora também é o que
+  // garante que a ETAPA só anda para frente.
+  const coberturaNova = sugestao
+    ? mesclarCobertura(coberturaAtual, sugestao.cobertura)
+    : coberturaAtual;
+  const faseNova = faseDaCobertura(coberturaNova);
+  const degrauNovo = degrauDaCobertura(coberturaNova);
+
+  // O EIXO TRAVA NA PRIMEIRA ESCOLHA. Ele é o galho da ligação: escolhido
+  // quando a dor aparece, ele guia espelho, aprofunda, número e ponte. Deixar o
+  // modelo reescolher a cada chamada devolveria o defeito que o eixo existe
+  // para resolver — a janela desliza, a dor original sai dela, e o copiloto
+  // volta ao genérico no minuto 5. Trocar é decisão do roteiro (dor claramente
+  // outra e maior), não consequência de a conversa ter dado uma volta, e o
+  // modelo não tem como provar isso olhando três frases.
+  const eixoNovo = estado.eixo ?? sugestao?.eixo ?? null;
+
+  // Os números do dono se acumulam: ele dá a quantidade num momento e o valor
+  // no seguinte. Sem juntar, a conta nunca fecharia — cada chamada veria metade.
+  const numerosNovos = mesclarNumeros(estado.numeros ?? null, sugestao?.numeros ?? null);
+
+  // O contador zera quando ele finalmente dá o número. Só sobe em esquiva
+  // seguida — quem responde e depois desconversa outra vez não está fugindo, e
+  // desistir dele cedo demais perde a parte que faz a R1 valer.
+  const desvios = coberturaNova.numero_dele
+    ? 0
+    : sugestao?.desviou_do_numero
+      ? (estado.desviou_do_numero ?? 0) + 1
+      : (estado.desviou_do_numero ?? 0);
 
   const novoEstado = {
     ...estado,
@@ -234,15 +284,15 @@ export async function POST(req: NextRequest, ctx: RouteCtx): Promise<Response> {
     pendente: sugestao ? "" : pendente,
     ...(sugestao
       ? {
-          fase: sugestao.fase,
-          degrau: sugestao.degrau,
+          fase: faseNova,
+          degrau: degrauNovo,
           sugestao: sugestao.sugestao,
+          tipo: sugestao.tipo,
           alerta: sugestao.alerta,
-          // O checklist NUNCA desmarca: o modelo enxerga só a janela recente, e
-          // sem esta trava um item marcado no minuto 1 apagaria no minuto 4 —
-          // o SDR veria o roteiro "desandar" sozinho e perderia a confiança na
-          // única parte da tela que ele consulta de relance.
-          cobertura: mesclarCobertura(estado.cobertura, sugestao.cobertura),
+          cobertura: coberturaNova,
+          eixo: eixoNovo,
+          numeros: numerosNovos,
+          desviou_do_numero: desvios,
         }
       : {}),
   };
@@ -265,11 +315,14 @@ export async function POST(req: NextRequest, ctx: RouteCtx): Promise<Response> {
       texto: trechoUtil,
       sugestao: sugestao
         ? {
-            fase: sugestao.fase,
-            degrau: sugestao.degrau,
+            fase: faseNova,
+            degrau: degrauNovo,
             sugestao: sugestao.sugestao,
+            tipo: sugestao.tipo,
             alerta: sugestao.alerta,
-            cobertura: novoEstado.cobertura ?? COBERTURA_VAZIA,
+            eixo: eixoNovo,
+            objecao: sugestao.objecao,
+            cobertura: coberturaNova,
           }
         : null,
     },
@@ -277,14 +330,42 @@ export async function POST(req: NextRequest, ctx: RouteCtx): Promise<Response> {
   );
 }
 
+/**
+ * O `numeros` do estado, já no formato que `fecharAConta` entende.
+ *
+ * O zod do estado usa `valor_unitario` (snake_case, é o que o modelo devolve) e
+ * a conta usa `valorUnitario` — a tradução mora aqui, num lugar só, em vez de
+ * espalhada pelos dois pontos de uso.
+ */
+function numerosDoEstado(n: Numeros | null | undefined): NumerosDaDor | null {
+  if (!n) return null;
+  return { quantidade: n.quantidade, periodo: n.periodo, valorUnitario: n.valor_unitario };
+}
+
+/**
+ * Junta o que o dono já tinha dito com o que ele acabou de dizer.
+ *
+ * A quantidade e o valor quase nunca vêm na mesma fala: ele diz "umas duas por
+ * semana" e só duas perguntas depois diz "uns 800 reais". Campo novo sobrescreve
+ * o antigo (ele corrigiu), campo ausente preserva (ele não falou disso agora).
+ */
+function mesclarNumeros(anterior: Numeros | null, novo: Numeros | null): Numeros | null {
+  if (!novo) return anterior;
+  if (!anterior) return novo;
+  return {
+    quantidade: novo.quantidade,
+    periodo: novo.periodo,
+    valor_unitario: novo.valor_unitario ?? anterior.valor_unitario,
+  };
+}
+
 /** `true` vence sempre — ver o comentário no ponto de uso. */
-function mesclarCobertura(
-  anterior: Record<string, boolean> | undefined,
-  nova: Record<string, boolean>,
-): Record<string, boolean> {
-  const base = anterior ?? COBERTURA_VAZIA;
-  const saida: Record<string, boolean> = { ...base };
-  for (const [k, v] of Object.entries(nova)) saida[k] = Boolean(saida[k]) || Boolean(v);
+function mesclarCobertura(anterior: Partial<Cobertura> | undefined, nova: Partial<Cobertura>): Cobertura {
+  const saida: Cobertura = { ...COBERTURA_VAZIA, ...(anterior ?? {}) };
+  for (const [k, v] of Object.entries(nova)) {
+    const chave = k as CoberturaKey;
+    saida[chave] = Boolean(saida[chave]) || Boolean(v);
+  }
   return saida;
 }
 
@@ -301,6 +382,11 @@ async function sugerir(opts: {
   segundos: number;
   contexto: string | null;
   organizationId: string;
+  fase: CallPhase;
+  degrau: DegrauDaDor | null;
+  eixo: string | null;
+  conta: ContaDaDor | null;
+  desviosDoNumero: number;
 }): Promise<LiveCallSuggestion | null> {
   const cfg = gatewayConfig();
   const headers = cfg ? gatewayHeaders({ organizationId: opts.organizationId }) : undefined;
@@ -310,6 +396,11 @@ async function sugerir(opts: {
     estado: opts.estado,
     segundos: opts.segundos,
     contexto: opts.contexto,
+    fase: opts.fase,
+    degrau: opts.degrau,
+    eixo: opts.eixo,
+    conta: opts.conta,
+    desviosDoNumero: opts.desviosDoNumero,
   });
 
   // O roteiro inteiro (~1.500 tokens) é IGUAL em toda chamada da ligação e

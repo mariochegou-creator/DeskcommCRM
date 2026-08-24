@@ -142,10 +142,16 @@ export interface BlocoAoVivo {
   texto: string;
   sugestao: {
     fase: string;
-    /** Só na fase "dor": aprofundar | prejuizo | ponte. Fora dela, null. */
+    /** Só na fase "dor": espelho | aprofunda | numero | ponte. Fora dela, null. */
     degrau: string | null;
     sugestao: string;
+    /** "calar" quando a coisa certa é o SDR ficar quieto — aula 03 do caderno. */
+    tipo: string;
     alerta: string | null;
+    /** A palavra-eixo travada nesta ligação. Ver `lib/calls/palavras-eixo.ts`. */
+    eixo: string | null;
+    /** Qual das respostas prontas da aula 08 está na tela, se alguma. */
+    objecao: string | null;
     cobertura: Record<string, boolean>;
   } | null;
   transcription_error?: boolean;

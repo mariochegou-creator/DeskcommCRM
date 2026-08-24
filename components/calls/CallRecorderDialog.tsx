@@ -53,17 +53,23 @@ import {
 } from "@/hooks/calls/useCalls";
 import { STATUS_LABELS, isTerminalCallStatus } from "@/lib/calls/analysis-schema";
 import {
+  CALL_PHASE_LABELS,
   COBERTURA_LABELS,
   COBERTURA_VAZIA,
   DEGRAU_LABELS,
   LIVE_CHUNK_SECONDS,
+  OBJECAO_LABELS,
+  type CallPhase,
   type CoberturaKey,
   type DegrauDaDor,
+  type Objecao,
 } from "@/lib/calls/live-schema";
+import { rotuloDoEixo } from "@/lib/calls/palavras-eixo";
 import { formatPhoneBR } from "@/lib/calls/phone";
 import {
   CheckCircle,
   CircleNotch,
+  HandPalm,
   Lightbulb,
   Microphone,
   Pause,
@@ -176,8 +182,20 @@ export function CallRecorderDialog({
 
   const [transcricao, setTranscricao] = useState("");
   const [sugestao, setSugestao] = useState<string | null>(null);
+  /**
+   * Em que etapa do ROTEIRO a ligação está — nada a ver com `fase` acima, que é
+   * o estado do gravador (pronto/gravando/enviando). Vem calculada do checklist
+   * no servidor, não da opinião do modelo: ver `faseDaCobertura`.
+   */
+  const [etapa, setEtapa] = useState<CallPhase | null>(null);
   /** Em que degrau da dor a conversa está. Fora da fase "dor", null. */
   const [degrau, setDegrau] = useState<DegrauDaDor | null>(null);
+  /** "calar" quando a coisa certa é esperar — a regra da aula 03 do caderno. */
+  const [tipo, setTipo] = useState<string>("falar");
+  /** A palavra-eixo travada. Uma vez escolhida, ela fica na tela até o fim. */
+  const [eixo, setEixo] = useState<string | null>(null);
+  /** Qual resposta pronta está na tela, quando o dono soltou uma objeção. */
+  const [objecao, setObjecao] = useState<string | null>(null);
   const [alerta, setAlerta] = useState<string | null>(null);
   const [cobertura, setCobertura] = useState<Record<string, boolean>>(COBERTURA_VAZIA);
   const [avisoAoVivo, setAvisoAoVivo] = useState<string | null>(null);
@@ -362,7 +380,11 @@ export function CallRecorderDialog({
         if (r.texto) setTranscricao((t) => (t ? `${t} ${r.texto}` : r.texto));
         if (r.sugestao) {
           setSugestao(r.sugestao.sugestao);
+          setEtapa((r.sugestao.fase as CallPhase | null) ?? null);
           setDegrau((r.sugestao.degrau as DegrauDaDor | null) ?? null);
+          setTipo(r.sugestao.tipo ?? "falar");
+          setEixo(r.sugestao.eixo ?? null);
+          setObjecao(r.sugestao.objecao ?? null);
           setAlerta(r.sugestao.alerta);
           setCobertura(r.sugestao.cobertura);
         }
@@ -568,7 +590,11 @@ export function CallRecorderDialog({
     callIdRef.current = novoCallId;
     setTranscricao("");
     setSugestao(null);
+    setEtapa(null);
     setDegrau(null);
+    setTipo("falar");
+    setEixo(null);
+    setObjecao(null);
     setAlerta(null);
     setCobertura(COBERTURA_VAZIA);
     setNotas("");
@@ -701,7 +727,11 @@ export function CallRecorderDialog({
       setErro(null);
       setTranscricao("");
       setSugestao(null);
+      setEtapa(null);
       setDegrau(null);
+      setTipo("falar");
+      setEixo(null);
+      setObjecao(null);
       setAlerta(null);
       setCobertura(COBERTURA_VAZIA);
       setNotas("");
@@ -712,6 +742,9 @@ export function CallRecorderDialog({
   };
 
   const itensDoChecklist = Object.entries(COBERTURA_LABELS) as [CoberturaKey, string][];
+  const calando = tipo === "calar" && Boolean(sugestao);
+  const rotuloEixo = rotuloDoEixo(eixo);
+  const rotuloObjecao = objecao ? (OBJECAO_LABELS[objecao as Objecao] ?? null) : null;
   const rotulo = (d: MediaDeviceInfo, i: number) =>
     d.label || (d.deviceId === "default" ? "Padrão do Windows" : `Entrada de áudio ${i + 1}`);
   const celularNaLista = entradas.some((d) => pareceCelularPareado(d.label));
@@ -826,14 +859,39 @@ export function CallRecorderDialog({
                 aria-live="polite"
                 className={cn(
                   "rounded-lg border p-4",
-                  sugestao
-                    ? "border-accent-500/50 bg-accent-500/10"
-                    : "border-dashed border-border bg-surface-elevated",
+                  // "Calar" tem desenho PRÓPRIO, e isso não é enfeite: a frase
+                  // "Silêncio. Deixe ele responder." desenhada como as outras
+                  // seria lida em voz alta na frente do dono. A cor e o rótulo
+                  // mudarem juntos é o que faz o SDR perceber de relance que
+                  // esta não é uma frase para dizer.
+                  calando
+                    ? "border-warning-fg/40 bg-warning-bg"
+                    : sugestao
+                      ? "border-accent-500/50 bg-accent-500/10"
+                      : "border-dashed border-border bg-surface-elevated",
                 )}
               >
-                <p className="flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
-                  <Lightbulb size={14} weight="duotone" aria-hidden />
-                  Fale agora
+                <p className="flex flex-wrap items-center gap-1.5 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+                  {calando ? (
+                    <>
+                      <HandPalm size={14} weight="duotone" aria-hidden />
+                      Não fale
+                    </>
+                  ) : (
+                    <>
+                      <Lightbulb size={14} weight="duotone" aria-hidden />
+                      Fale agora
+                    </>
+                  )}
+                  {/* Em que ponto do roteiro a ligação está. Calculada do
+                      checklist, então ela nunca discorda das caixinhas logo
+                      abaixo nem anda para trás — era o que acontecia quando o
+                      modelo respondia a fase junto com a sugestão. */}
+                  {etapa && (
+                    <span className="rounded-full border border-border px-2 py-0.5 text-[10px] font-semibold normal-case tracking-normal text-muted-foreground">
+                      {CALL_PHASE_LABELS[etapa]}
+                    </span>
+                  )}
                   {/* O degrau da dor. Só aparece quando o copiloto está nela —
                       fora disso não há etapa a mostrar, e um rótulo permanente
                       viraria ruído no elemento mais lido da tela. */}
@@ -842,8 +900,31 @@ export function CallRecorderDialog({
                       {DEGRAU_LABELS[degrau]}
                     </span>
                   )}
+                  {/* A palavra-eixo travada. Ela fica na tela do momento em que
+                      a dor aparece até o fim da ligação — é o lembrete de que
+                      todas as frases seguintes falam DESTA palavra. */}
+                  {rotuloEixo && (
+                    <span className="rounded-full border border-accent-500/50 px-2 py-0.5 text-[10px] font-semibold normal-case tracking-normal text-accent-700 dark:text-accent-300">
+                      eixo: {rotuloEixo}
+                    </span>
+                  )}
+                  {/* Qual resposta pronta está na tela. Sem isto o SDR vê um
+                      parágrafo aparecer do nada e não sabe que é script. */}
+                  {rotuloObjecao && (
+                    <span className="rounded-full bg-warning-bg px-2 py-0.5 text-[10px] font-semibold normal-case tracking-normal text-warning-fg">
+                      {rotuloObjecao}
+                    </span>
+                  )}
                 </p>
-                <p className="mt-1 text-xl font-semibold leading-snug">
+                <p
+                  className={cn(
+                    "mt-1 font-semibold leading-snug",
+                    // Script de objeção é longo por natureza. No corpo de 20px
+                    // ele estoura a janela e empurra o checklist para fora da
+                    // tela — o SDR perde as duas coisas de uma vez.
+                    sugestao && sugestao.length > 120 ? "text-base" : "text-xl",
+                  )}
+                >
                   {sugestao ?? "Ouvindo a conversa…"}
                 </p>
               </div>

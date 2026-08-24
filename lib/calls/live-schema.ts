@@ -5,7 +5,7 @@
  * DIFERENÇA PARA `lib/sala-reunioes/live-schema.ts`, e por que não é o mesmo
  * arquivo: lá as fases são as do SPIN de uma reunião de uma hora e a cobertura
  * é um `record` livre, porque o overlay do Meet não desenha checklist. Aqui a
- * ligação dura cinco minutos, tem SETE itens fechados, e o popup os desenha em
+ * ligação dura cinco minutos, tem DEZ itens fechados, e o popup os desenha em
  * caixinhas que se marcam sozinhas — checklist com chave livre viraria uma
  * lista que muda de tamanho no meio da ligação, que é exatamente o tipo de tela
  * inquieta que tira o SDR da conversa.
@@ -39,10 +39,20 @@ import { z } from "zod";
  */
 export const LIVE_CHUNK_SECONDS = 5;
 
-/** Onde a ligação de qualificação está agora. Ver `lib/calls/live-prompt.ts`. */
+/**
+ * Onde a ligação FRIA está agora — as fases do Caderno da Ligação Fria.
+ *
+ * `situacao` SAIU. Ela vinha do kit antigo ("entender o negócio em 3 a 4
+ * perguntas") e não existe no caderno: numa ligação fria o SDR não tem crédito
+ * para um questionário, e cada pergunta de situação é um convite a desligar. O
+ * caderno abre, faz UMA pergunta escolhida antes de discar, e a resposta dela é
+ * de onde a dor sai — normalmente sem o dono perceber que entregou.
+ *
+ * Ver `lib/calls/live-prompt.ts`.
+ */
 export const CALL_PHASES = [
   "abertura",
-  "situacao",
+  "pergunta",
   "dor",
   "decisor",
   "agendamento",
@@ -52,39 +62,42 @@ export type CallPhase = (typeof CALL_PHASES)[number];
 
 export const CALL_PHASE_LABELS: Record<CallPhase, string> = {
   abertura: "Abertura",
-  situacao: "Entender o negócio",
-  dor: "Dor",
+  pergunta: "A pergunta",
+  dor: "A dor",
   decisor: "Quem decide",
-  agendamento: "Marcar a reunião",
-  encerramento: "Encerramento",
+  agendamento: "Marcar 30 min",
+  encerramento: "Confirmar",
 };
 
 /**
- * DENTRO da fase "dor", em que degrau a conversa está.
+ * O ESQUELETO DE QUATRO PASSOS — aula 04 do Caderno da Ligação Fria, a aula que
+ * o caderno chama de "a mais importante".
  *
- * A fase "dor" sozinha não bastava. O lead responde "minha dificuldade é só
- * manter a organização" e o copiloto marcava dor_declarada e ia embora para o
- * decisor — o SDR saía da ligação com uma frase vaga que não sustenta uma R1.
- * Uma dor sem tamanho não é dor, é assunto: na reunião o dono não lembra por
- * que aceitou conversar.
+ * "Se você decorar uma única coisa do caderno inteiro, que seja esta sequência:
+ * Espelho → Aprofunda → Número → Ponte." Ele roda em cima de QUALQUER dor que
+ * apareça — é por isso que o SDR não precisa decorar sete roteiros.
  *
- * Os três degraus, sempre nesta ordem:
- * - `aprofundar`: sair do genérico. Fazer o dono contar o caso concreto — o
- *   que exatamente se perde, quando aconteceu a última vez.
- * - `prejuizo`: fazer O DONO (nunca o SDR) botar tamanho — quantos por semana,
- *   quanto vale um cliente, quanto tempo por dia. É o degrau que transforma
- *   "é chato" em "custa X".
- * - `ponte`: uma frase ligando o que ele acabou de dizer ao que a reunião vai
- *   mostrar, e vai marcar. NÃO é vender: sem preço, sem pacote, sem detalhe
- *   técnico — ver a regra de ouro em `live-prompt.ts`.
+ * - `espelho`: repetir a dor que ele acabou de contar COM AS PALAVRAS DELE.
+ *   Ele se escuta por fora, o que incomoda mais que pensar por dentro, e de
+ *   quebra percebe que alguém estava ouvindo de verdade. Era o passo que
+ *   faltava aqui: sem ele o copiloto ia direto interrogar.
+ * - `aprofunda`: mostrar o TAMANHO que a dor já tem — com que frequência, há
+ *   quanto tempo, já deu problema. Não é aumentar a dor; é medir a que existe e
+ *   que ele nunca parou para olhar.
+ * - `numero`: fazer o dono botar quantidade ou dinheiro na mesa. O SDR só soma,
+ *   devagar, na frente dele — e a soma é feita em `conta-da-dor.ts`, não de
+ *   cabeça pelo modelo.
+ * - `ponte`: dizer que aquilo não dá para mostrar por telefone, e pedir os 30
+ *   minutos. A reunião vira consequência do que ele mesmo acabou de dizer.
  */
-export const DEGRAUS_DA_DOR = ["aprofundar", "prejuizo", "ponte"] as const;
+export const DEGRAUS_DA_DOR = ["espelho", "aprofunda", "numero", "ponte"] as const;
 export type DegrauDaDor = (typeof DEGRAUS_DA_DOR)[number];
 
 export const DEGRAU_LABELS: Record<DegrauDaDor, string> = {
-  aprofundar: "Aprofundar a dor",
-  prejuizo: "Quanto isso custa",
-  ponte: "Ponte para a reunião",
+  espelho: "Espelho",
+  aprofunda: "Aprofunda",
+  numero: "Número",
+  ponte: "Ponte",
 };
 
 /**
@@ -96,9 +109,12 @@ export const DEGRAU_LABELS: Record<DegrauDaDor, string> = {
  */
 export const CoberturaSchema = z.object({
   abriu_sem_pergunta: z.boolean().default(false),
-  entendeu_o_negocio: z.boolean().default(false),
-  dor_declarada: z.boolean().default(false),
-  prejuizo_dimensionado: z.boolean().default(false),
+  permissao_pedida: z.boolean().default(false),
+  pergunta_feita: z.boolean().default(false),
+  espelho_feito: z.boolean().default(false),
+  dor_aprofundada: z.boolean().default(false),
+  numero_dele: z.boolean().default(false),
+  ponte_feita: z.boolean().default(false),
   decisor_identificado: z.boolean().default(false),
   reuniao_proposta: z.boolean().default(false),
   dia_e_hora_confirmados: z.boolean().default(false),
@@ -108,35 +124,188 @@ export type Cobertura = z.infer<typeof CoberturaSchema>;
 export type CoberturaKey = keyof Cobertura;
 
 export const COBERTURA_LABELS: Record<CoberturaKey, string> = {
-  abriu_sem_pergunta: "Se apresentou e disse o motivo",
-  entendeu_o_negocio: "Entendeu o negócio dele",
-  dor_declarada: "Ele contou um caso concreto",
-  prejuizo_dimensionado: "Ele mesmo disse o tamanho",
+  abriu_sem_pergunta: "Abriu sem pergunta de cortesia",
+  permissao_pedida: "Pediu os dois minutos",
+  pergunta_feita: "Fez a pergunta que abre",
+  espelho_feito: "Repetiu a dor com as palavras dele",
+  dor_aprofundada: "Mediu o tamanho da dor",
+  numero_dele: "O dono deu o número",
+  ponte_feita: "Pediu os 30 minutos",
   decisor_identificado: "Descobriu quem decide",
   reuniao_proposta: "Ofereceu dois horários",
-  dia_e_hora_confirmados: "Dia e hora confirmados",
+  dia_e_hora_confirmados: "Repetiu dia e hora",
 };
 
 export const COBERTURA_VAZIA: Cobertura = CoberturaSchema.parse({});
 
-export const LiveCallSuggestionSchema = z.object({
-  fase: z.enum(CALL_PHASES),
+/**
+ * O ROTEIRO COMO LISTA DE PORTÕES, na ordem em que a ligação acontece: cada
+ * fase é atravessada quando o item de checklist correspondente marca. É desta
+ * lista que a fase é CALCULADA — ela não é mais perguntada ao modelo.
+ */
+const PORTOES: ReadonlyArray<readonly [CallPhase, CoberturaKey]> = [
+  ["abertura", "abriu_sem_pergunta"],
+  ["abertura", "permissao_pedida"],
+  ["pergunta", "pergunta_feita"],
+  ["dor", "espelho_feito"],
+  ["dor", "dor_aprofundada"],
+  ["dor", "numero_dele"],
+  ["dor", "ponte_feita"],
+  ["decisor", "decisor_identificado"],
+  ["agendamento", "reuniao_proposta"],
+  ["encerramento", "dia_e_hora_confirmados"],
+] as const;
+
+/**
+ * Em que fase a ligação está, DEDUZIDA do checklist — não perguntada ao modelo.
+ *
+ * POR QUE DEIXOU DE SER PERGUNTADA: a fase era um campo que o Haiku devolvia em
+ * todo bloco, olhando só a janela recente da transcrição. Duas coisas quebravam
+ * sozinhas. (1) Ela andava PARA TRÁS: um trecho em que o SDR retoma o nome da
+ * empresa fazia o modelo dizer "abertura" no minuto 6, e o popup voltava a
+ * sugerir apresentação. (2) Ela podia CONTRADIZER o próprio checklist —
+ * "agendamento" com `dor_declarada` ainda falso, que é exatamente a ligação que
+ * marca reunião sem motivo e vira no-show. Nada conferia as duas coisas uma
+ * contra a outra, porque as duas vinham da mesma opinião do modelo.
+ *
+ * Calculada, a fase é de graça, nunca alucina, nunca discorda do checklist, e o
+ * modelo passa a fazer só o que sabe fazer: marcar o que aconteceu e escrever a
+ * próxima frase.
+ *
+ * O ALGORITMO É "DEPOIS DO ÚLTIMO MARCADO", e não "primeiro não marcado" — a
+ * diferença importa. Um portão que nunca marca congelaria a ligação inteira
+ * naquela fase, e o caso real existe: numa ligação FRIA a pergunta vai direto
+ * na dor e `entendeu_o_negocio` nunca acontece. Com "primeiro não marcado" o
+ * copiloto sugeriria perguntas de situação até o SDR desligar. Pular etapa é
+ * assunto do alerta, não motivo para a tela parar.
+ */
+export function faseDaCobertura(cobertura: Partial<Cobertura> | undefined): CallPhase {
+  let ultimo = -1;
+  PORTOES.forEach(([, chave], i) => {
+    if (cobertura?.[chave]) ultimo = i;
+  });
+  const proximo = PORTOES[ultimo + 1];
+  return proximo ? proximo[0] : "encerramento";
+}
+
+/**
+ * Em que degrau da dor a conversa está — também calculado, e `null` fora da
+ * fase "dor". Mesma razão da fase: o degrau é consequência do que já marcou,
+ * não uma segunda leitura da conversa que pode discordar da primeira.
+ */
+export function degrauDaCobertura(cobertura: Partial<Cobertura> | undefined): DegrauDaDor | null {
+  if (faseDaCobertura(cobertura) !== "dor") return null;
+  if (!cobertura?.espelho_feito) return "espelho";
+  if (!cobertura?.dor_aprofundada) return "aprofunda";
+  if (!cobertura?.numero_dele) return "numero";
+  return "ponte";
+}
+
+/**
+ * O QUE O MODELO AINDA DEVOLVE. `fase` e `degrau` saíram daqui de propósito:
+ * são calculados de `cobertura` (ver `faseDaCobertura`), então o modelo não tem
+ * mais como colocar a tela numa etapa que o checklist desmente. Chave a mais na
+ * resposta é ignorada pelo zod — modelo teimando em mandar "fase" não quebra
+ * nada, só não é ouvido.
+ */
+/**
+ * A sugestão é para FALAR ou para CALAR.
+ *
+ * "Fez a pergunta? Cale a boca" é regra do caderno, aula 03, e é a instrução que
+ * mais salva ligação: o silêncio é o dono pensando, e quem preenche o silêncio
+ * perde a resposta — que é a ligação inteira. Um copiloto que só sabe sugerir
+ * frases empurra o SDR a falar exatamente na hora em que ele deveria esperar.
+ * Por isso "calar" é uma sugestão de primeira classe, com desenho próprio no
+ * popup, e não um texto que se confunde com algo a ser lido em voz alta.
+ */
+export const TIPOS_DE_SUGESTAO = ["falar", "calar"] as const;
+export type TipoDeSugestao = (typeof TIPOS_DE_SUGESTAO)[number];
+
+/** O que o dono disse em número — o modelo EXTRAI, `conta-da-dor.ts` calcula. */
+export const NumerosSchema = z.object({
+  quantidade: z.number().positive().max(100_000),
+  periodo: z.enum(["dia", "semana", "mes"]),
+  valor_unitario: z.number().positive().max(10_000_000).nullable().default(null),
+});
+export type Numeros = z.infer<typeof NumerosSchema>;
+
+/** As cinco respostas da aula 08. `null` quando nenhuma apareceu. */
+export const OBJECOES = [
+  "manda_whatsapp",
+  "quanto_custa",
+  "sem_tempo",
+  "ja_tenho_quem_faz",
+  "liga_outro_dia",
+  "ta_tranquilo",
+] as const;
+export type Objecao = (typeof OBJECOES)[number];
+
+export const OBJECAO_LABELS: Record<Objecao, string> = {
+  manda_whatsapp: "Manda no WhatsApp",
+  quanto_custa: "Quanto custa?",
+  sem_tempo: "Não tenho tempo",
+  ja_tenho_quem_faz: "Já tenho quem faz",
+  liga_outro_dia: "Me liga outro dia",
+  ta_tranquilo: "Tá tudo tranquilo",
+};
+
+const LiveCallSuggestionBase = z.object({
   /**
    * 5-12 palavras, uma pergunta pronta para o SDR falar em voz alta. O teto de
    * caracteres é a guarda dura: o prompt PEDE curto, o schema RECUSA longo.
    * Uma sugestão de três linhas no meio de uma ligação não é lida — é ignorada,
    * e junto com ela o resto da tela.
+   *
+   * A EXCEÇÃO É A OBJEÇÃO: as respostas da aula 08 são scripts inteiros, de
+   * propósito ("mando sim, e já te mando agora. Só que o que eu tenho pra te
+   * mostrar é tela…"). Elas não cabem em 12 palavras e encurtá-las destrói o
+   * que as faz funcionar. Por isso o teto é 320 e a regra de tamanho vive no
+   * prompt, onde consegue distinguir os dois casos.
    */
-  sugestao: z.string().trim().min(5).max(120),
-  /**
-   * Em que degrau da dor a conversa está. `null` fora da fase "dor" — e o
-   * popup só desenha o rótulo quando vem preenchido, para não inventar etapa
-   * onde não há.
-   */
-  degrau: z.enum(DEGRAUS_DA_DOR).nullable().default(null),
+  sugestao: z.string().trim().min(5).max(320),
+  tipo: z.enum(TIPOS_DE_SUGESTAO).default("falar"),
   /** Quase sempre null. Só quando o SDR furou uma regra do roteiro. */
   alerta: z.string().trim().min(3).max(90).nullable().default(null),
+  /**
+   * A palavra-eixo escolhida. Uma vez escolhida ela NÃO troca por capricho: o
+   * merge no servidor só aceita troca quando o modelo manda uma chave diferente
+   * e a dor de fato mudou — ver o comentário em `route.ts`.
+   */
+  eixo: z.string().trim().max(40).nullable().default(null),
+  /** Preenchido só quando o DONO acabou de dar quantidade ou valor. */
+  numeros: NumerosSchema.nullable().default(null),
+  /** Qual das respostas prontas está sendo usada, para a tela dizer qual é. */
+  objecao: z.enum(OBJECOES).nullable().default(null),
+  /** O dono acabou de desconversar de uma pergunta de número. Alimenta a regra de desistir. */
+  desviou_do_numero: z.boolean().default(false),
   cobertura: CoberturaSchema.default(COBERTURA_VAZIA),
+});
+
+/**
+ * O teto de tamanho, que é DOIS tetos.
+ *
+ * A guarda original era 120 caracteres e existia por um motivo específico: uma
+ * sugestão de três linhas no meio de uma ligação não é lida — é ignorada, e
+ * junto com ela o resto da tela. Os scripts de objeção da aula 08 obrigaram a
+ * subir o limite do campo para 320, e subir o limite para todo mundo teria
+ * jogado fora a guarda: nada mais impediria o modelo de escrever um parágrafo
+ * numa sugestão comum.
+ *
+ * Então o teto passou a depender do que a sugestão É. Script de objeção pode ser
+ * longo porque encurtá-lo destrói o que o faz funcionar; qualquer outra coisa
+ * continua presa aos 120 caracteres de sempre. O prompt PEDE curto; isto RECUSA
+ * longo.
+ */
+export const MAX_CHARS_SUGESTAO_CURTA = 120;
+
+export const LiveCallSuggestionSchema = LiveCallSuggestionBase.superRefine((v, ctx) => {
+  if (v.objecao === null && v.sugestao.length > MAX_CHARS_SUGESTAO_CURTA) {
+    ctx.addIssue({
+      code: "custom",
+      path: ["sugestao"],
+      message: `Sugestão sem objeção passa de ${MAX_CHARS_SUGESTAO_CURTA} caracteres — não seria lida.`,
+    });
+  }
 });
 export type LiveCallSuggestion = z.infer<typeof LiveCallSuggestionSchema>;
 
@@ -189,11 +358,30 @@ export const LiveStateSchema = z.object({
   fase: z.enum(CALL_PHASES).optional(),
   degrau: z.enum(DEGRAUS_DA_DOR).nullable().optional(),
   sugestao: z.string().optional(),
+  tipo: z.enum(TIPOS_DE_SUGESTAO).optional(),
   alerta: z.string().nullable().optional(),
   cobertura: CoberturaSchema.optional(),
   chunks: z.number().int().min(0).optional(),
   pendente: z.string().optional(),
   contexto: z.string().nullable().optional(),
+  /**
+   * A palavra-eixo da ligação. GRAVADA, e é essa gravação que responde ao
+   * problema do galho: o copiloto enxerga só a janela recente da transcrição, e
+   * a dor declarada no minuto 2 sai da janela lá pelo minuto 5. Sem guardar o
+   * eixo, o copiloto voltava ao genérico no meio da ligação — acertava o galho
+   * no começo e depois esquecia qual era. Guardado, ele entra em todo prompt
+   * seguinte e a ligação inteira segue naquele galho.
+   */
+  eixo: z.string().nullable().optional(),
+  /** O que o dono já disse em número, para a conta não recomeçar do zero. */
+  numeros: NumerosSchema.nullable().optional(),
+  /**
+   * Quantas vezes seguidas o dono desconversou no passo do número. Aos 2, o
+   * roteiro DESISTE e segue para o decisor — ver a escada em `live-prompt.ts`.
+   * Sem contador, o copiloto insiste até o dono ficar incomodado, e o SDR perde
+   * a reunião para ganhar um número.
+   */
+  desviou_do_numero: z.number().int().min(0).optional(),
 });
 export type LiveState = z.infer<typeof LiveStateSchema>;
 
