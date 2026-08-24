@@ -9,6 +9,7 @@ import {
 import {
   COBERTURA_LABELS,
   COBERTURA_VAZIA,
+  DEGRAUS_DA_DOR,
   parseLiveCallSuggestion,
   parseLiveState,
 } from "@/lib/calls/live-schema";
@@ -124,5 +125,35 @@ describe("o prompt do copiloto", () => {
       contexto: null,
     });
     expect(u).not.toContain("SOBRE O LEAD");
+  });
+});
+
+describe("os degraus da dor", () => {
+  it("aceita o degrau e devolve null quando o modelo não mandou", () => {
+    const com = parseLiveCallSuggestion(JSON.stringify({ ...SUGESTAO_VALIDA, degrau: "prejuizo" }));
+    expect(com?.degrau).toBe("prejuizo");
+    // Fora da fase "dor" o campo não vem — e `undefined` na tela desenharia um
+    // rótulo vazio em cima da sugestão, que é o elemento mais lido do popup.
+    expect(parseLiveCallSuggestion(JSON.stringify(SUGESTAO_VALIDA))?.degrau).toBeNull();
+  });
+
+  it("recusa degrau fora do vocabulário", () => {
+    const r = parseLiveCallSuggestion(JSON.stringify({ ...SUGESTAO_VALIDA, degrau: "implicacao" }));
+    expect(r).toBeNull();
+  });
+
+  it("o prompt ensina os três degraus, na ordem", () => {
+    // A mesma trava do checklist: degrau que existe no schema e não existe no
+    // prompt nunca é preenchido, e o rótulo some da tela sem ninguém notar.
+    const sistema = liveCallSystemPrompt();
+    for (const degrau of DEGRAUS_DA_DOR) expect(sistema).toContain(degrau);
+    expect(sistema.indexOf("aprofundar")).toBeLessThan(sistema.indexOf("prejuizo"));
+    expect(sistema.indexOf("prejuizo")).toBeLessThan(sistema.indexOf("ponte"));
+  });
+
+  it("manda o LEAD dizer o número, e não o SDR", () => {
+    // O degrau só vale se o dono quantifica. Número dito pelo SDR não convence
+    // ninguém na R1 — foi o dono que precisa ter ouvido a própria conta.
+    expect(liveCallSystemPrompt()).toContain("O DONO botar tamanho");
   });
 });

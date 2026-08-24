@@ -142,6 +142,8 @@ export interface BlocoAoVivo {
   texto: string;
   sugestao: {
     fase: string;
+    /** Só na fase "dor": aprofundar | prejuizo | ponte. Fora dela, null. */
+    degrau: string | null;
     sugestao: string;
     alerta: string | null;
     cobertura: Record<string, boolean>;

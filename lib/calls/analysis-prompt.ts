@@ -113,7 +113,9 @@ Use isto como pista, não como veredito — o copiloto ouve a mesma trilha imper
 const COBERTURA_EM_PORTUGUES: Record<string, string> = {
   abriu_sem_pergunta: "abrir se apresentando e dizendo o motivo, sem começar por pergunta",
   entendeu_o_negocio: "entender como o negócio funciona",
-  dor_declarada: "fazer o dono declarar um problema",
+  dor_declarada: "fazer o dono contar um caso concreto, não só a palavra genérica",
+  prejuizo_dimensionado:
+    "fazer o próprio dono dizer o tamanho do prejuízo (quantos, quanto vale, quantas horas)",
   decisor_identificado: "descobrir quem decide quando envolve dinheiro",
   reuniao_proposta: "propor a reunião com dois horários (OU-OU)",
   dia_e_hora_confirmados: "confirmar dia e hora no fim da ligação",

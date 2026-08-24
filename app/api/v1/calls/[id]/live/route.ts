@@ -1,11 +1,15 @@
 /**
  * POST /api/v1/calls/[id]/live — o copiloto ao vivo da ligação.
  *
- * O popup manda um bloco de áudio de ~15 s (um arquivo COMPLETO, não um pedaço
+ * O popup manda um bloco de áudio de ~5 s (um arquivo COMPLETO, não um pedaço
  * de stream: o gravador é reiniciado a cada bloco justamente para que cada um
- * seja decodificável sozinho). Aqui o bloco é transcrito pelo Groq Whisper,
- * APENSADO em `crm_call_recordings.transcript` e mandado ao Haiku, que devolve
- * a próxima frase para o SDR falar e o checklist do roteiro.
+ * seja decodificável sozinho). Aqui o bloco é transcrito pelo Groq Whisper e
+ * APENSADO em `crm_call_recordings.transcript`.
+ *
+ * BLOCO ≠ CHAMADA AO MODELO. O texto sobe a cada bloco (é o que faz a tela
+ * andar), mas o Haiku só é acordado quando junta fala suficiente — ver
+ * `MIN_CHARS_PARA_SUGERIR`. Ele devolve a próxima frase para o SDR falar, em
+ * que degrau da dor a conversa está, e o checklist do roteiro.
  *
  * O ÁUDIO DO BLOCO NÃO É GUARDADO. Ele vive no buffer desta requisição e morre
  * com ela — a gravação que fica é a íntegra, enviada uma vez só em
@@ -60,19 +64,34 @@ interface RouteCtx {
 }
 
 /**
- * 8 MB. Um bloco de 15 s em Opus 32 kbps tem ~60 KB — o teto existe para
+ * 8 MB. Um bloco de 5 s em Opus 32 kbps tem ~20 KB — o teto existe para
  * recusar um upload errado (a ligação inteira, um vídeo) antes de ele virar
  * chamada ao Whisper, não para apertar o caso normal.
  */
 const MAX_CHUNK_BYTES = 8 * 1024 * 1024;
 
 /**
- * Abaixo disto o bloco não vira chamada ao modelo. Quinze segundos de silêncio
- * transcrevem para "…" ou uma interjeição solta, e pedir uma sugestão em cima
- * disso gasta dinheiro para produzir uma frase genérica que ainda por cima
- * substitui na tela uma sugestão boa que estava lá.
+ * Quanta fala NOVA precisa juntar antes de acordar o modelo.
+ *
+ * O bloco encolheu de 15 s para 5 s para a transcrição chegar rápido na tela,
+ * mas um pedaço de 5 s quase nunca é uma fala inteira — pedir sugestão em cima
+ * de meia frase gasta dinheiro para trocar, na tela, uma sugestão boa por uma
+ * genérica. Então o bloco e a chamada ao modelo deixaram de ser a mesma coisa:
+ * o texto é apensado sempre, e o que ainda não foi mostrado ao modelo se
+ * acumula em `live_state.pendente` até dar ~uma fala (45 caracteres, uns 8
+ * segundos de conversa contínua). Silêncio não acumula nada e não custa nada.
+ *
+ * Efeito na conta: mesmo com 3x mais blocos, o número de chamadas ao modelo
+ * fica na mesma ordem de antes — o que aumenta é só o Groq, que é centavos.
  */
-const MIN_CHARS_PARA_SUGERIR = 25;
+const MIN_CHARS_PARA_SUGERIR = 45;
+
+/**
+ * Teto de saída do modelo. O JSON do copiloto tem quatro campos curtos; sem
+ * teto o Haiku às vezes escreve um parágrafo de justificativa antes do objeto,
+ * e cada token a mais é tempo com o SDR esperando na tela.
+ */
+const MAX_OUTPUT_TOKENS = 220;
 
 export async function POST(req: NextRequest, ctx: RouteCtx): Promise<Response> {
   const requestId = randomUUID();
@@ -166,20 +185,35 @@ export async function POST(req: NextRequest, ctx: RouteCtx): Promise<Response> {
   }
 
   // ---- 2. a sugestão ----
+  // O que ainda não foi mostrado ao modelo. Bloco de 5 s raramente é uma fala
+  // inteira: acumular aqui é o que separa "transcrição rápida na tela" de
+  // "chamada ao modelo", que antes eram a mesma coisa por acidente.
+  const pendente = [estado.pendente ?? "", trechoUtil].filter(Boolean).join(" ");
+
   let sugestao: LiveCallSuggestion | null = null;
   const podeSugerir =
-    trechoUtil.length >= MIN_CHARS_PARA_SUGERIR && isModelConfigured(DEFAULT_CLASSIFIER_MODEL);
+    pendente.length >= MIN_CHARS_PARA_SUGERIR && isModelConfigured(DEFAULT_CLASSIFIER_MODEL);
+
+  // O que o CRM sabe do lead não muda no meio da ligação: uma consulta por
+  // ligação, guardada no estado. Antes era uma ida ao banco em TODO bloco,
+  // sempre devolvendo a mesma linha, e ela ficava na frente do modelo no
+  // caminho crítico — tempo puro com o SDR olhando a tela parada.
+  let contexto = estado.contexto;
+  if (podeSugerir && contexto === undefined) {
+    contexto = await contextoDoLead(admin, call.organization_id, call.lead_id);
+  }
 
   if (podeSugerir) {
     sugestao = await sugerir({
       janela: recortarJanela(transcricao),
-      ultimoTrecho: trechoUtil,
+      ultimoTrecho: pendente,
       estado: {
         fase: estado.fase,
+        degrau: estado.degrau ?? null,
         cobertura: estado.cobertura ?? COBERTURA_VAZIA,
       },
       segundos,
-      contexto: await contextoDoLead(admin, call.organization_id, call.lead_id),
+      contexto: contexto ?? null,
       organizationId: call.organization_id,
     });
   }
@@ -187,9 +221,15 @@ export async function POST(req: NextRequest, ctx: RouteCtx): Promise<Response> {
   const novoEstado = {
     ...estado,
     chunks,
+    ...(contexto === undefined ? {} : { contexto }),
+    // Zera só quando o modelo de fato viu o texto. Se a chamada falhou, o
+    // pendente continua acumulando e entra na tentativa seguinte — perder um
+    // bloco de fala é o que faria a sugestão citar algo que ninguém disse.
+    pendente: sugestao ? "" : pendente,
     ...(sugestao
       ? {
           fase: sugestao.fase,
+          degrau: sugestao.degrau,
           sugestao: sugestao.sugestao,
           alerta: sugestao.alerta,
           // O checklist NUNCA desmarca: o modelo enxerga só a janela recente, e
@@ -220,6 +260,7 @@ export async function POST(req: NextRequest, ctx: RouteCtx): Promise<Response> {
       sugestao: sugestao
         ? {
             fase: sugestao.fase,
+            degrau: sugestao.degrau,
             sugestao: sugestao.sugestao,
             alerta: sugestao.alerta,
             cobertura: novoEstado.cobertura ?? COBERTURA_VAZIA,
@@ -265,12 +306,30 @@ async function sugerir(opts: {
     contexto: opts.contexto,
   });
 
+  // O roteiro inteiro (~1.500 tokens) é IGUAL em toda chamada da ligação e
+  // entre ligações. Marcado como prefixo cacheável, o provedor para de reler
+  // esse bloco a cada bloco de áudio: a resposta chega mais cedo e o pedaço
+  // cacheado custa uma fração. É o mesmo padrão do agent-engine
+  // (`lib/agent-engine/edge/llm/stable-prefix.ts`), aqui em miniatura porque
+  // não há tools nem playbook por org — só o system.
+  //
+  // TTL de 5 min de propósito: o cache precisa sobreviver ao intervalo entre
+  // um bloco e o seguinte (segundos), não ao dia. Nada volátil pode entrar
+  // neste texto, ou o cache nunca acerta — por isso tempo, lead e transcrição
+  // vivem na mensagem do usuário, DEPOIS do breakpoint.
+  const system = {
+    role: "system" as const,
+    content: liveCallSystemPrompt(),
+    providerOptions: { anthropic: { cacheControl: { type: "ephemeral", ttl: "5m" } } },
+  };
+
   for (const prompt of [user, user + RETRY_DE_FORMATO_LIGACAO]) {
     try {
       const res = await generateText({
         model: resolveModel(DEFAULT_CLASSIFIER_MODEL),
-        system: liveCallSystemPrompt(),
+        system,
         messages: [{ role: "user", content: prompt }],
+        maxOutputTokens: MAX_OUTPUT_TOKENS,
         headers,
       });
       const parsed = parseLiveCallSuggestion(res.text ?? "");

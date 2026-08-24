@@ -55,8 +55,10 @@ import { STATUS_LABELS, isTerminalCallStatus } from "@/lib/calls/analysis-schema
 import {
   COBERTURA_LABELS,
   COBERTURA_VAZIA,
+  DEGRAU_LABELS,
   LIVE_CHUNK_SECONDS,
   type CoberturaKey,
+  type DegrauDaDor,
 } from "@/lib/calls/live-schema";
 import { formatPhoneBR } from "@/lib/calls/phone";
 import {
@@ -174,6 +176,8 @@ export function CallRecorderDialog({
 
   const [transcricao, setTranscricao] = useState("");
   const [sugestao, setSugestao] = useState<string | null>(null);
+  /** Em que degrau da dor a conversa está. Fora da fase "dor", null. */
+  const [degrau, setDegrau] = useState<DegrauDaDor | null>(null);
   const [alerta, setAlerta] = useState<string | null>(null);
   const [cobertura, setCobertura] = useState<Record<string, boolean>>(COBERTURA_VAZIA);
   const [avisoAoVivo, setAvisoAoVivo] = useState<string | null>(null);
@@ -358,6 +362,7 @@ export function CallRecorderDialog({
         if (r.texto) setTranscricao((t) => (t ? `${t} ${r.texto}` : r.texto));
         if (r.sugestao) {
           setSugestao(r.sugestao.sugestao);
+          setDegrau((r.sugestao.degrau as DegrauDaDor | null) ?? null);
           setAlerta(r.sugestao.alerta);
           setCobertura(r.sugestao.cobertura);
         }
@@ -563,6 +568,7 @@ export function CallRecorderDialog({
     callIdRef.current = novoCallId;
     setTranscricao("");
     setSugestao(null);
+    setDegrau(null);
     setAlerta(null);
     setCobertura(COBERTURA_VAZIA);
     setNotas("");
@@ -695,6 +701,7 @@ export function CallRecorderDialog({
       setErro(null);
       setTranscricao("");
       setSugestao(null);
+      setDegrau(null);
       setAlerta(null);
       setCobertura(COBERTURA_VAZIA);
       setNotas("");
@@ -827,6 +834,14 @@ export function CallRecorderDialog({
                 <p className="flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
                   <Lightbulb size={14} weight="duotone" aria-hidden />
                   Fale agora
+                  {/* O degrau da dor. Só aparece quando o copiloto está nela —
+                      fora disso não há etapa a mostrar, e um rótulo permanente
+                      viraria ruído no elemento mais lido da tela. */}
+                  {degrau && (
+                    <span className="rounded-full bg-accent-500 px-2 py-0.5 text-[10px] font-semibold normal-case tracking-normal text-accent-foreground">
+                      {DEGRAU_LABELS[degrau]}
+                    </span>
+                  )}
                 </p>
                 <p className="mt-1 text-xl font-semibold leading-snug">
                   {sugestao ?? "Ouvindo a conversa…"}
