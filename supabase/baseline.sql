@@ -8830,9 +8830,13 @@ alter table public.saved_audios drop constraint if exists saved_audios_storage_p
 alter table public.saved_audios add constraint saved_audios_storage_path_unique
   unique (storage_path);
 
+-- 0109: a gaveta guarda foto também. O tipo sai do media_mime, sem coluna
+-- `kind` — duas verdades pro mesmo fato divergem. Vídeo e documento ficam de
+-- fora: pesam no bucket e não são o que se repete.
 alter table public.saved_audios drop constraint if exists saved_audios_mime_audio_check;
-alter table public.saved_audios add constraint saved_audios_mime_audio_check
-  check (media_mime like 'audio/%');
+alter table public.saved_audios drop constraint if exists saved_audios_mime_check;
+alter table public.saved_audios add constraint saved_audios_mime_check
+  check (media_mime like 'audio/%' or media_mime like 'image/%');
 
 alter table public.saved_audios drop constraint if exists saved_audios_size_check;
 alter table public.saved_audios add constraint saved_audios_size_check
