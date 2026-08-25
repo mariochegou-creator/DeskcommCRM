@@ -126,6 +126,43 @@ export const grupoDaReuniaoSchema = z
   });
 export type GrupoDaReuniaoConfig = z.infer<typeof grupoDaReuniaoSchema>;
 
+/**
+ * organizations.settings.broadcasts — o interruptor geral do disparador (0108).
+ *
+ * POR QUE UMA CHAVE PRÓPRIA, E NÃO `ai_dispatch_mode`
+ *
+ * A tentação era reusar o interruptor que já cala a automação
+ * (`automacaoDesligada`, lib/agendamento/envio.ts), e o cabeçalho dele até
+ * argumenta que dois interruptores para a MESMA pergunta é como se chega a
+ * surpresa. O ponto é que aqui a pergunta é outra.
+ *
+ * `ai_dispatch_mode = 'external'` responde "a IA está calada?". Disparo é texto
+ * escrito por gente, disparado por gente, assinado por gente (`sent_via=user`).
+ * Amarrar um no outro produziria as duas falhas opostas: com a IA calada — que é
+ * como a org roda hoje — o disparador nasceria morto; e religar a IA só pra
+ * mandar um vídeo religaria junto o atendimento automático no WhatsApp do
+ * cliente.
+ *
+ * Então: interruptor próprio, mesma disciplina. `.catch` em cada campo degrada
+ * para o default sem derrubar o tick, e a LEITURA é fail-closed (ver
+ * `disparosDesligados` em lib/broadcasts/interruptor.ts): erro ao ler = tratado
+ * como desligado, porque mensagem que sai no WhatsApp do lead não tem desfazer.
+ */
+export const broadcastsSettingsSchema = z
+  .object({
+    /** Vem LIGADO: a trava que importa é por campanha (status) e o cap de destinatários. */
+    enabled: z.boolean().catch(true),
+    /**
+     * Quantas campanhas podem estar `running` ao mesmo tempo na org. Os envios
+     * de todas compartilham o mesmo chip e o mesmo teto diário — mais
+     * campanhas simultâneas não manda mais rápido, só torna imprevisível qual
+     * lead recebe o quê primeiro.
+     */
+    max_running: z.number().int().min(1).max(10).catch(3),
+  })
+  .catch({ enabled: true, max_running: 3 });
+export type BroadcastsSettings = z.infer<typeof broadcastsSettingsSchema>;
+
 export type Locale = (typeof LOCALES)[number];
 
 export const profileSchema = z.object({

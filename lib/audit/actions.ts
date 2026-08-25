@@ -248,4 +248,23 @@ export type AuditAction =
    * a chegar de outro número. Quando alguém perguntar "por que este lead recebeu
    * de um número estranho", é esta linha que responde (metadata guarda de/para).
    */
-  | "conversation.channel_session_changed";
+  | "conversation.channel_session_changed"
+  /**
+   * Disparador (0108). Mandar a mesma mensagem para centenas de pessoas é a
+   * operação mais irreversível que este produto oferece — e a que mais pode
+   * custar: o número da empresa. `activated` é a linha que importa (guarda o
+   * tamanho do público e quantos foram pulados); as outras existem para que
+   * "quem parou a campanha, e quando" tenha resposta.
+   *
+   * `tick` é do worker e não tem ator humano — entra com `bypassedRls`, como os
+   * demais crons, e agrega o placar do minuto em vez de uma linha por envio (o
+   * envio já gera `message.sent`).
+   */
+  | "broadcast.created"
+  | "broadcast.updated"
+  | "broadcast.media_attached"
+  | "broadcast.activated"
+  | "broadcast.pause"
+  | "broadcast.resume"
+  | "broadcast.cancel"
+  | "broadcast.tick";

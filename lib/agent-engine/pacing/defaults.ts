@@ -47,6 +47,32 @@ export const KNOB_BOUNDS = {
   hourEnd: 24,
 } as const;
 
+/**
+ * Números do DISPARO EM MASSA (0108) — moram aqui pela mesma regra do resto do
+ * arquivo: número de pacing é fonte única, nunca literal espalhado.
+ *
+ * O disparo é mais lento que a conversa de propósito. `throttleMs` de 1,2s é o
+ * intervalo entre respostas de um atendimento — gente conversando. Campanha é
+ * outra coisa: mesmo texto, muitos destinos, nenhum deles esperando. A doutrina
+ * do repo já dizia o número (CLAUDE.md, seção WAHA: "Campanha 1 msg/5s") e a
+ * spec do WAHA repetia; faltava alguém implementar.
+ *
+ * Consequência prática: ~8 envios por tick de 1 minuto. Um público de 300 leva
+ * ~40 minutos. É lento, e é o ponto — o chip é o ativo mais caro da operação.
+ */
+export const BROADCAST_DEFAULTS = {
+  /** Intervalo mínimo entre dois envios da MESMA campanha (ms). */
+  gapMs: 5000,
+  /** Quantos destinatários um tick do cron reivindica por vez. */
+  sendsPerTick: 8,
+  /** Lease do claim (s) — folga sobre o pior tick (8 × ~6s ≈ 48s). */
+  leaseSeconds: 120,
+  /** Orçamento de parede do tick (ms): sair antes do `-m55` do curl no scheduler. */
+  tickBudgetMs: 50_000,
+  /** Tentativas por destinatário antes de marcar `failed` em definitivo. */
+  maxAttempts: 3,
+} as const;
+
 export const PACING_DEFAULTS: PacingKnobs = {
   throttleMs: 1200, // 1 msg / 1,2s
   jitterMaxMs: 800,
