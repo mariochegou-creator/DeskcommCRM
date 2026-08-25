@@ -87,6 +87,10 @@ export {
   Microphone,
   Image as ImageIcon,
   ImageSquare,
+  // gaveta de salvos do composer: guarda áudio E foto, então nada de nota
+  // musical. Marcador = "isto eu guardei". Archive não serve: no CRM ele já
+  // quer dizer "arquivar", que é o contrário (tirar de circulação).
+  BookmarkSimple,
   MusicNote,
   Note,
   FileText,

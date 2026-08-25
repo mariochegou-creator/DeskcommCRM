@@ -14,7 +14,7 @@ import {
 import { Button } from "@/components/ui/button";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { SaveAudioDialog } from "@/components/inbox/composer/SaveAudioDialog";
-import { ImageSquare, MusicNote, PaperPlaneTilt, Plus, Trash, UsersThree } from "@/lib/ui/icons";
+import { BookmarkSimple, ImageSquare, PaperPlaneTilt, Plus, Trash, UsersThree } from "@/lib/ui/icons";
 import {
   savedAudioSrc,
   useAttachSavedAudio,
@@ -100,7 +100,7 @@ export function SavedAudioMenu({ conversationId, disabled, caption, onSent }: Pr
             aria-label="Áudios e fotos salvos"
             disabled={disabled}
           >
-            <MusicNote size={18} weight="regular" aria-hidden />
+            <BookmarkSimple size={18} weight="regular" aria-hidden />
           </Button>
         </PopoverTrigger>
         <PopoverContent align="start" side="top" className="max-h-80 w-80 overflow-y-auto p-1">
