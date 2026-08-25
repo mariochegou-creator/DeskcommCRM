@@ -15,6 +15,13 @@ import { EmptyPipeline } from "@/components/empty";
 import { ProspectingSection } from "./ProspectingSection";
 import { SixtyDayPlanSection } from "./SixtyDayPlanSection";
 import { TarefasDeHojeSection } from "./TarefasDeHojeSection";
+import { NumeroFilter } from "./NumeroFilter";
+import { useLeadChannels } from "@/hooks/metrics/useLeadChannels";
+import {
+  SEM_CONVERSA,
+  TODOS_OS_NUMEROS,
+  filtrarPorNumero,
+} from "@/lib/dashboard/numeros";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -50,7 +57,9 @@ export function DashboardClient({
   firstName,
 }: Props) {
   const [period, setPeriod] = useState<PeriodId>("month");
+  const [numeroId, setNumeroId] = useState<string>(TODOS_OS_NUMEROS);
   const board = useBoard(pipelineId);
+  const canais = useLeadChannels(pipelineId);
 
   // O INSTANTE DO RENDER, congelado. Sem o `useMemo` cada re-render criaria um
   // `new Date()` novo e as janelas de dois KPIs poderiam cair em lados opostos
@@ -59,18 +68,47 @@ export function DashboardClient({
   const now = useMemo(() => new Date(), []);
   const range = useMemo(() => periodRange(period, now), [period, now]);
 
+  const canaisData = canais.data?.data ?? null;
+
+  /**
+   * O quadro já recortado pelo número escolhido.
+   *
+   * Com "Todos os números" devolve o MESMO objeto do board — sem cópia — para
+   * os `useMemo` de baixo não recalcularem a cada render quando não há filtro,
+   * que é o caso da maioria das visitas ao Painel.
+   *
+   * Enquanto o mapa de números não chega, o filtro fica inerte em vez de
+   * esvaziar a tela: um Painel que pisca "0 negócios" antes de mostrar o número
+   * certo é pior que um Painel que demora meio segundo a mais para filtrar.
+   */
+  const boardFiltrado = useMemo(() => {
+    if (!board.data) return null;
+    if (numeroId === TODOS_OS_NUMEROS || !canaisData) return board.data;
+    return {
+      ...board.data,
+      leads: filtrarPorNumero(board.data.leads, canaisData.byLead, numeroId),
+    };
+  }, [board.data, canaisData, numeroId]);
+
   const metrics = useMemo(
-    () => (board.data ? computeDashboardMetrics(board.data, range) : null),
-    [board.data, range],
+    () => (boardFiltrado ? computeDashboardMetrics(boardFiltrado, range) : null),
+    [boardFiltrado, range],
   );
   const activity = useMemo(
-    () => (board.data ? weeklyActivity(board.data.leads, now) : []),
-    [board.data, now],
+    () => (boardFiltrado ? weeklyActivity(boardFiltrado.leads, now) : []),
+    [boardFiltrado, now],
   );
 
   const periodLabel =
     PERIOD_OPTIONS.find((p) => p.id === period)?.label ?? "Este mês";
   const comparison = PERIOD_COMPARISON_LABEL[period];
+
+  const filtrando = numeroId !== TODOS_OS_NUMEROS;
+  const nomeDoNumero = filtrando
+    ? numeroId === SEM_CONVERSA
+      ? "quem ainda não tem conversa"
+      : (canaisData?.numeros.find((n) => n.id === numeroId)?.nome ?? "um número")
+    : null;
 
   if (!pipelineId) {
     return (
@@ -92,31 +130,46 @@ export function DashboardClient({
             {pipelineName
               ? `Seu funil "${pipelineName}" em um relance.`
               : "Seu funil em um relance."}
+            {nomeDoNumero ? ` Vendo só ${nomeDoNumero}.` : ""}
           </p>
         </div>
 
-        <DropdownMenu>
-          <DropdownMenuTrigger asChild>
-            <Button variant="secondary" className="gap-2">
-              <span>{periodLabel}</span>
-              <CaretDown size={14} aria-hidden />
-            </Button>
-          </DropdownMenuTrigger>
-          <DropdownMenuContent align="end" className="min-w-[200px]">
-            {PERIOD_OPTIONS.map((opt) => (
-              <DropdownMenuItem
-                key={opt.id}
-                onClick={() => setPeriod(opt.id)}
-                disabled={opt.id === period}
-              >
-                {opt.label}
-                {opt.id === period && (
-                  <span className="ml-auto text-xs text-text-subtle">atual</span>
-                )}
-              </DropdownMenuItem>
-            ))}
-          </DropdownMenuContent>
-        </DropdownMenu>
+        <div className="flex flex-wrap items-center gap-2">
+          {/* O seletor só nasce quando há mais de uma linha para comparar: com
+              um número só ele seria um botão que não muda nada. */}
+          {canaisData && canaisData.numeros.length > 1 && (
+            <NumeroFilter
+              numeros={canaisData.numeros}
+              semConversa={canaisData.semConversa}
+              total={board.data?.leads.length ?? 0}
+              valor={numeroId}
+              onChange={setNumeroId}
+            />
+          )}
+
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <Button variant="secondary" className="gap-2">
+                <span>{periodLabel}</span>
+                <CaretDown size={14} aria-hidden />
+              </Button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="end" className="min-w-[200px]">
+              {PERIOD_OPTIONS.map((opt) => (
+                <DropdownMenuItem
+                  key={opt.id}
+                  onClick={() => setPeriod(opt.id)}
+                  disabled={opt.id === period}
+                >
+                  {opt.label}
+                  {opt.id === period && (
+                    <span className="ml-auto text-xs text-text-subtle">atual</span>
+                  )}
+                </DropdownMenuItem>
+              ))}
+            </DropdownMenuContent>
+          </DropdownMenu>
+        </div>
       </header>
 
       {/* O plano de 60 dias abre o Painel: é a resposta de "o que eu faço
@@ -228,6 +281,16 @@ export function DashboardClient({
             </Card>
           </section>
         </>
+      )}
+
+      {/* O seletor de número NÃO governa a seção de baixo: ela agrega no banco
+          (fn_prospecting_metrics) e recebe o funil, não a lista de leads. Dizer
+          isso na tela é o mínimo — número filtrado em cima e número cheio
+          embaixo, sem aviso, viraria "o Painel se contradiz". */}
+      {filtrando && prospectingPipelineId && (
+        <p className="-mb-2 text-xs text-text-subtle">
+          A prospecção abaixo continua somando todos os números.
+        </p>
       )}
 
       {/* Fora do ternário do board de propósito: a seção busca os próprios
