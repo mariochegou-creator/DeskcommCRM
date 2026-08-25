@@ -1,4 +1,4 @@
-import { loadAuthUser } from "@/lib/auth/server";
+import { loadAuthUser, resolveActiveOrg } from "@/lib/auth/server";
 import { detectProspectingPipeline } from "@/lib/dashboard/prospecting-pipeline";
 import { createClient } from "@/lib/supabase/server";
 import { DashboardClient } from "./_components/DashboardClient";
@@ -14,20 +14,36 @@ export const metadata = { title: "Painel" };
  * o cliente já montar com o id em mãos: buscar a lista de pipelines no cliente
  * só para descobrir qual pedir custaria duas idas de rede em série antes de a
  * primeira métrica aparecer.
+ *
+ * As duas queries filtram por `organization_id` EXPLICITAMENTE, e não é
+ * redundância com a RLS: a policy de `crm_pipelines` libera tudo para
+ * `fn_is_platform_admin()`. Para o dono da instância — o único platform admin —
+ * a lista vinha com os funis de TODAS as organizações, e `find(is_default)`
+ * ordenado por `position` caía no funil "Pedidos" de uma org de teste vazia
+ * (position 1000, `is_default`), antes do funil real (position 2000). Resultado:
+ * Painel zerado só para ele, com "Sem dados no período" no donut, enquanto o
+ * resto da equipe — que não é platform admin — via os números certos.
  */
 export default async function DashboardPage() {
   const user = await loadAuthUser();
+  const org = user ? await resolveActiveOrg(user) : null;
   const supabase = await createClient();
+
+  // Sem organização ativa não há funil para mostrar — a tela cai no estado
+  // vazio do cliente em vez de listar o funil de outra empresa.
+  const orgId = org?.orgId ?? "00000000-0000-0000-0000-000000000000";
 
   const [{ data: pipelines }, { data: stages }] = await Promise.all([
     supabase
       .from("crm_pipelines")
       .select("id, name, slug, position, is_default")
+      .eq("organization_id", orgId)
       .eq("is_archived", false)
       .order("position"),
     supabase
       .from("crm_stages")
       .select("pipeline_id, slug")
+      .eq("organization_id", orgId)
       .eq("is_archived", false),
   ]);
 
