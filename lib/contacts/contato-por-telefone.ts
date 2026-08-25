@@ -74,7 +74,15 @@ export async function contatoPorTelefone(
       organization_id: input.organizationId,
       created_by_user_id: input.createdByUserId,
       name: input.name,
-      phone_number: input.phone,
+      // GRAVA A FORMA QUE O WHATSAPP ATENDE, não a que o Maps entregou. A
+      // busca acima já era pela identidade, mas o insert guardava o texto cru:
+      // o contato nascia com +55 75 9 8219-5465 enquanto `wa_identity` (coluna
+      // gerada, migration 0102) virava +55 75 8219-5465. Como
+      // `resolveWahaChatId` monta o destino a partir de `phone_number`, o
+      // primeiro toque apontava para um chat que não existe — e o guard
+      // `telefoneDivergeDaIdentidade` travava o envio. 78 leads nesta base em
+      // 25/08/2026, todos importados do Maps e nenhum ainda contatado.
+      phone_number: identidade ?? input.phone,
       email: input.email ?? null,
       source: input.source,
       source_metadata: input.sourceMetadata ?? {},

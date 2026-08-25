@@ -69,9 +69,16 @@ function hojeAs18(agora: Date): Date {
     : new Date(agora.getTime() + 2 * HORA_MS);
 }
 
-/** Amanhã às 9h (hora civil da Bahia) — o começo do próximo expediente. */
-function amanhaAs9(agora: Date): Date {
-  return instanteDaReuniao(dataCivilBahia(agora, 1), "09:00");
+/**
+ * Daqui a `dias` dias, às 9h civis da Bahia — o começo daquele expediente.
+ *
+ * Hora civil e não `agora + 48h`: prazo de vários dias cai em hora arbitrária
+ * quando sai do relógio do arrasto (arrastar às 23h põe o follow-up vencendo às
+ * 23h), e a aba Tarefas ordena por prazo. Com 9h, o que vence naquele dia
+ * aparece junto, na ordem em que se trabalha.
+ */
+function emDiasAs9(dias: number) {
+  return (agora: Date) => instanteDaReuniao(dataCivilBahia(agora, dias), "09:00");
 }
 
 function daquiA(horas: number) {
@@ -79,7 +86,13 @@ function daquiA(horas: number) {
 }
 
 /** As colunas que têm checklist. Coluna fora desta lista não cria nada. */
-export type EtapaDeModelo = "r1-agendada" | "r1-realizada" | "non-show";
+export type EtapaDeModelo =
+  | "respondeu"
+  | "r1-agendada"
+  | "r1-realizada"
+  | "r2-realizada"
+  | "non-show"
+  | "flow-up";
 
 /**
  * O checklist de cada coluna.
@@ -89,6 +102,24 @@ export type EtapaDeModelo = "r1-agendada" | "r1-realizada" | "non-show";
  * percorreria se contasse tudo em aberto (ver `TarefasBadge`).
  */
 const MODELOS: Record<EtapaDeModelo, readonly ModeloDeTarefa[]> = {
+  /**
+   * Uma tarefa só, e de propósito.
+   *
+   * «Respondeu» é o momento mais quente do funil: o lead falou e a janela é de
+   * horas. A segunda tarefa que se pensa em pôr aqui («insistir se não marcou»)
+   * nasce obsoleta na hora em que a R1 é agendada — e é justamente a coluna
+   * seguinte que já cobra o preparo. Tarefa que costuma nascer resolvida é o
+   * ruído que faz a lista inteira parar de ser lida.
+   */
+  respondeu: [
+    {
+      chave: "respondeu-puxar-r1",
+      oQue: "Puxar para a R1",
+      kind: "mensagem",
+      papel: "sdr",
+      prazo: hojeAs18,
+    },
+  ],
   "r1-agendada": [
     {
       chave: "r1-roteiro",
@@ -118,7 +149,48 @@ const MODELOS: Record<EtapaDeModelo, readonly ModeloDeTarefa[]> = {
       oQue: "Montar a APN (proposta)",
       kind: "outro",
       papel: "closer",
-      prazo: amanhaAs9,
+      prazo: emDiasAs9(1),
+    },
+  ],
+  /**
+   * A proposta já foi apresentada. As duas coisas que somem aqui: a objeção
+   * exata (que é o que o follow-up precisa citar) e o próprio follow-up.
+   */
+  "r2-realizada": [
+    {
+      chave: "r2-registrar",
+      oQue: "Anotar a objeção e o que ficou combinado",
+      kind: "nota",
+      papel: "closer",
+      prazo: hojeAs18,
+    },
+    {
+      chave: "r2-followup",
+      oQue: "Follow-up da proposta",
+      kind: "mensagem",
+      papel: "closer",
+      prazo: emDiasAs9(2),
+    },
+  ],
+  /**
+   * A coluna onde o negócio apodrece. A segunda tarefa é a que impede isso: uma
+   * DATA em que alguém decide insistir ou dar por perdido. Sem ela, «Flow up»
+   * vira depósito — o cartão fica lá, ninguém o move, e ninguém o mata.
+   */
+  "flow-up": [
+    {
+      chave: "flowup-mandar",
+      oQue: "Mandar o follow-up",
+      kind: "mensagem",
+      papel: "closer",
+      prazo: hojeAs18,
+    },
+    {
+      chave: "flowup-decidir",
+      oQue: "Decidir: insiste ou marca como perdido",
+      kind: "outro",
+      papel: "closer",
+      prazo: emDiasAs9(5),
     },
   ],
   "non-show": [
@@ -150,10 +222,19 @@ function normalizar(texto: string): string {
 }
 
 const R1_RE = /\br1\b/;
+const R2_RE = /\br2\b/;
 const REALIZADA_RE = /\b(realizad[ao]s?|feita|aconteceu)\b/;
 const MARCADA_RE = /\b(agendad|marcad)/;
 /** "Non Show", "No-show", "noshow" — o espaço é opcional porque o slug o come. */
 const NO_SHOW_RE = /\bn[oa]n? ?show\b/;
+/** "Respondeu", "Respondeu no WhatsApp" — o lead falou. */
+const RESPONDEU_RE = /\brespondeu\b/;
+/**
+ * "Flow up" é como a coluna se chama no funil da NEXO — é "follow up" escrito
+ * de ouvido, e renomear a coluna para consertar a grafia quebraria o histórico
+ * de quem já a usa. As duas formas entram aqui, com o espaço opcional.
+ */
+const FLOW_UP_RE = /\b(flow|follow) ?up\b/;
 
 export interface EtapaComNome {
   name?: string | null;
@@ -166,14 +247,20 @@ export interface EtapaComNome {
  * «Realizada» é testada ANTES de «agendada» de propósito: as duas colunas
  * dizem "R1" e convivem lado a lado no mesmo funil. Errar aqui criaria o
  * preparo da reunião no dia em que ela já aconteceu.
+ *
+ * «Non Show» continua em primeiro: ela também é uma reunião que não aconteceu,
+ * e o nome de um tenant pode carregar as duas palavras ("R1 — Non Show").
  */
 export function etapaDeModelo(etapa: EtapaComNome): EtapaDeModelo | null {
   for (const bruto of [etapa.slug, etapa.name]) {
     if (!bruto) continue;
     const texto = normalizar(bruto);
     if (NO_SHOW_RE.test(texto)) return "non-show";
+    if (FLOW_UP_RE.test(texto)) return "flow-up";
+    if (R2_RE.test(texto) && REALIZADA_RE.test(texto)) return "r2-realizada";
     if (R1_RE.test(texto) && REALIZADA_RE.test(texto)) return "r1-realizada";
     if (R1_RE.test(texto) && MARCADA_RE.test(texto)) return "r1-agendada";
+    if (RESPONDEU_RE.test(texto)) return "respondeu";
   }
   return null;
 }

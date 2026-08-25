@@ -12,6 +12,7 @@ import { NextResponse, type NextRequest } from "next/server";
 import { fail, ok } from "@/lib/api/wrappers";
 import { audit } from "@/lib/audit";
 import { checkRateLimit } from "@/lib/ai/dispatcher/rate-limit";
+import { chaveWhatsAppBR } from "@/lib/calls/phone";
 import { logger } from "@/lib/logger";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { createLeadHandler } from "@/app/api/v1/leads/_handler";
@@ -180,6 +181,12 @@ export async function POST(req: NextRequest, ctx: RouteCtx): Promise<NextRespons
   if (!mapped.name && !mapped.phone && !mapped.email) {
     return fail("invalid_request", "Nenhum campo mapeável (nome/telefone/email).", 400, { requestId });
   }
+
+  // Mesma canonização da importação de lista: o número guardado é o que o
+  // WhatsApp atende (DDD >= 31 sem o nono dígito — migration 0102), senão o
+  // select abaixo não acha o contato que já existe pela conversa e o primeiro
+  // toque monta um chat que não existe.
+  if (mapped.phone) mapped.phone = chaveWhatsAppBR(mapped.phone) ?? mapped.phone;
 
   // Contato: upsert por telefone (se houver) — reusa a coluna E.164 canônica.
   // is_merged_into null: contato mesclado não deve ser reaproveitado (o índice

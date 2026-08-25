@@ -11,6 +11,7 @@ import { type NextRequest } from "next/server";
 import { ApiError } from "@/lib/api/types";
 import { ok, fail } from "@/lib/api/wrappers";
 import { requireRole } from "@/lib/auth/require-role";
+import { chaveWhatsAppBR } from "@/lib/calls/phone";
 import { camposPersonalizados, resumoDeVenda, type KaptarLead } from "@/lib/import/kaptar";
 import { importKaptarSchema, validateRequest, type LeadKaptarInput } from "@/lib/schemas";
 import { createClient } from "@/lib/supabase/server";
@@ -79,7 +80,20 @@ export async function POST(req: NextRequest): Promise<Response> {
 
   const supabase = await createClient();
   const orgId = activeOrg.orgId;
-  const { leads, pipeline_id, stage_id } = input;
+  const { pipeline_id, stage_id } = input;
+
+  // O TELEFONE VIRA A FORMA QUE O WHATSAPP ATENDE ANTES DE QUALQUER CONSULTA.
+  // O Maps entrega +55 75 9 8219-5465 e o WhatsApp desses DDDs fala pelo
+  // +55 75 8219-5465 (migration 0102). Gravar o texto cru fazia duas coisas
+  // ruins de uma vez: a dedup por `phone_number` não reconhecia o contato que
+  // já existia pela conversa, e o card nascia com um número que
+  // `resolveWahaChatId` transforma num chat inexistente — o primeiro toque
+  // saía "enviado" e não chegava. Canonizando aqui, as três consultas de
+  // deduplicação, o insert e o envio falam todos da mesma chave.
+  const leads = input.leads.map((l) => ({
+    ...l,
+    telefone: chaveWhatsAppBR(l.telefone) ?? l.telefone,
+  }));
 
   // A etapa tem que ser do funil escolhido. Sem esta checagem um stage_id de
   // outro funil entraria e o cartão sumiria do quadro sem erro nenhum.

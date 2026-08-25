@@ -181,6 +181,12 @@ export function CallRecorderDialog({
   const [micId, setMicId] = useState<string>("");
   const [leadId, setLeadId] = useState<string>(LEAD_SISTEMA);
   const [temVozDoLead, setTemVozDoLead] = useState<boolean | null>(null);
+  /**
+   * O SDR já foi avisado de que a voz do lead não vai entrar e decidiu gravar
+   * assim mesmo. Vale para ESTA ligação: `fecharTudo` zera, e a próxima volta a
+   * checar. Ver a barreira dentro de `iniciarGravacao`.
+   */
+  const [gravarSoMinhaVoz, setGravarSoMinhaVoz] = useState(false);
 
   const [transcricao, setTranscricao] = useState("");
   const [sugestao, setSugestao] = useState<string | null>(null);
@@ -551,6 +557,36 @@ export function CallRecorderDialog({
     }
     setTemVozDoLead(Boolean(vozDoLead));
 
+    /**
+     * ---- 2b. A BARREIRA: sem a voz do lead a ligação nasce perdida ----
+     *
+     * O QUE ACONTECEU EM 25/08/2026: as oito ligações do dia foram gravadas só
+     * com a voz do SDR — o áudio do computador não chegou a ser compartilhado.
+     * A transcrição virou "E aí E aí Alô? Alô?" (o toque da chamada) e a
+     * análise devolveu `nao_atendeu_ou_invalida` nas OITO, inclusive naquela em
+     * que o dono atendeu e conversou. Um dia inteiro de prospecção sem uma
+     * análise aproveitável, e nada na tela dizia por quê.
+     *
+     * O aviso já existia — mas embaixo dos medidores, DEPOIS de a gravação
+     * começar. Ninguém lê aviso com o telefone no ouvido e o lead falando.
+     *
+     * Então a gravação para aqui e pede uma decisão. Insistir continua sendo um
+     * clique ("Gravar só a minha voz"), nunca um acidente. E para AQUI, antes
+     * do `startCall`: assim não nasce uma ligação no banco para uma gravação
+     * que não vai acontecer.
+     */
+    if (!vozDoLead && !gravarSoMinhaVoz) {
+      mic.getTracks().forEach((t) => t.stop());
+      setErro(
+        leadId === LEAD_SISTEMA
+          ? "A voz do lead NÃO vai ser gravada — o áudio do computador não foi compartilhado. Clique de novo e, na janela que o Chrome abrir, escolha a tela e marque “Compartilhar áudio do sistema”. Com o celular pareado, o melhor é escolhê-lo em “Voz do lead” aqui em cima."
+          : "A voz do lead NÃO vai ser gravada — o aparelho escolhido em “Voz do lead” não respondeu (fone desligado?). Escolha outro na lista, ou “Áudio do computador (pede a tela)”.",
+      );
+      setFase("erro");
+      setGravarSoMinhaVoz(true);
+      return;
+    }
+
     // ---- 3. registrar a tentativa ----
     // Antes de gravar: se o servidor recusar (contato anonimizado, sem telefone),
     // é melhor descobrir agora que depois de cinco minutos de áudio sem para
@@ -626,7 +662,16 @@ export function CallRecorderDialog({
     // precisa gravar já está gravando. Discar primeiro custaria os primeiros
     // segundos da ligação, que é onde mora a abertura.
     discar();
-  }, [discar, iniciarCicloDeBlocos, iniciarMedidores, leadId, micId, origin, startCall]);
+  }, [
+    discar,
+    gravarSoMinhaVoz,
+    iniciarCicloDeBlocos,
+    iniciarMedidores,
+    leadId,
+    micId,
+    origin,
+    startCall,
+  ]);
 
   const alternarPausa = useCallback(() => {
     const rec = recorderRef.current;
@@ -675,6 +720,10 @@ export function CallRecorderDialog({
     setNotas("");
     setAvisoAoVivo(null);
     setTemVozDoLead(null);
+    // A permissão de gravar sem a voz do lead morre com a ligação: a próxima
+    // volta a ser barrada. Deixá-la ligada faria o SDR perder a tarde inteira
+    // depois de UM clique — que é exatamente o que aconteceu em 25/08.
+    setGravarSoMinhaVoz(false);
     onOpenChange(false);
   }, [liberarRecursos, onOpenChange]);
 
@@ -1087,7 +1136,11 @@ export function CallRecorderDialog({
           {fase === "pronto" || fase === "erro" ? (
             <Button onClick={() => void iniciarGravacao()} disabled={startCall.isPending}>
               <Phone size={16} weight="bold" aria-hidden />
-              <span>Ligar e gravar</span>
+              {/* O rótulo muda depois da barreira da voz do lead: o mesmo botão
+                  passa a dizer o que ele de fato vai fazer se for clicado de
+                  novo. "Ligar e gravar" ali seria a promessa que o dia 25/08
+                  provou ser falsa. */}
+              <span>{gravarSoMinhaVoz ? "Gravar só a minha voz" : "Ligar e gravar"}</span>
             </Button>
           ) : null}
 

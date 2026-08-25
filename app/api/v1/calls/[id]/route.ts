@@ -17,6 +17,7 @@ import { z } from "zod";
 
 import { fail, ok } from "@/lib/api/wrappers";
 import { requireRole } from "@/lib/auth/require-role";
+import { ligacaoAbandonada, MOTIVO_ABANDONO } from "@/lib/calls/abandonadas";
 import { CALL_BUCKET } from "@/lib/calls/storage";
 import { logger } from "@/lib/logger";
 import { createAdminClient } from "@/lib/supabase/admin";
@@ -55,6 +56,36 @@ export async function GET(_req: NextRequest, ctx: RouteCtx): Promise<Response> {
   if (error) return fail("internal_error", error.message, 500, { requestId });
   if (!call) return fail("not_found", "Ligação não encontrada.", 404, { requestId });
 
+  // A LIGAÇÃO QUE FICOU PELA METADE TERMINA AQUI. Sem isto, uma gravação cujo
+  // áudio nunca subiu fica em `pending` para sempre — e `pending` é desenhado
+  // como "Analisando…". O card fica girando por dias e o botão "Analisar de
+  // novo" não tem o que reanalisar. Ver lib/calls/abandonadas.ts para o
+  // critério (silêncio de 15 min numa ligação sem áudio) e para por que marcar
+  // `failed` não atrapalha um upload atrasado.
+  //
+  // Cliente ADMIN e não o do usuário: quem lê esta tela pode ser `viewer`, e um
+  // papel de leitura não escreve pela RLS. As condições `status = 'pending'` e
+  // `storage_path is null` vão junto no update para que duas abas lendo ao
+  // mesmo tempo não sobrescrevam um áudio que acabou de chegar.
+  const abandonada = ligacaoAbandonada(call);
+  if (abandonada) {
+    const { error: encerrarErr } = await createAdminClient()
+      .from("crm_call_recordings")
+      .update({ status: "failed", error_detail: MOTIVO_ABANDONO })
+      .eq("id", call.id)
+      .eq("status", "pending")
+      .is("storage_path", null);
+    if (encerrarErr) {
+      // Não derruba a leitura: mostrar erro no lugar da ligação inteira seria
+      // pior que mostrar o estado antigo.
+      logger.warn("[calls] não consegui encerrar ligação abandonada", {
+        call_id: call.id,
+        detail: encerrarErr.message,
+        requestId,
+      });
+    }
+  }
+
   // A URL assinada precisa do service role (o bucket não tem policy para
   // authenticated). A autorização já aconteceu acima, pela RLS que devolveu a
   // linha — o admin client entra só para assinar o objeto que ela aponta.
@@ -83,12 +114,15 @@ export async function GET(_req: NextRequest, ctx: RouteCtx): Promise<Response> {
       contact_id: call.contact_id,
       lead_id: call.lead_id,
       activity_id: call.activity_id,
-      status: call.status,
+      // Responde já com o desfecho que acabou de ser gravado: reler a linha só
+      // para confirmar o que este processo mesmo escreveu seria uma ida a mais
+      // ao banco em toda consulta de ligação.
+      status: abandonada ? "failed" : call.status,
       outcome: call.outcome,
       score: call.score,
       transcript: call.transcript,
       analysis: call.analysis,
-      error_detail: call.error_detail,
+      error_detail: abandonada ? MOTIVO_ABANDONO : call.error_detail,
       duration_seconds: call.duration_seconds,
       mime_type: call.mime_type,
       sdr_notes: call.sdr_notes,
