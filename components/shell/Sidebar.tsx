@@ -2,7 +2,7 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useEffect, useMemo, useState, useTransition } from "react";
-import { Kanban, Users, UsersThree, Gear, CaretDoubleLeft, CaretDoubleRight, CaretDown, Inbox, ScalesSimple, Robot, Brain, PlugsConnected, ChartBar, ChartLineUp, WebhooksLogo, FlowArrow, FileText, ClockCountdown, PuzzlePiece, Signpost, Sparkle, Gauge, Target, VideoCamera, Checks, Phone } from "@/lib/ui/icons";
+import { Kanban, Users, UsersThree, Gear, CaretDoubleLeft, CaretDoubleRight, CaretDown, Inbox, ScalesSimple, Robot, Brain, PlugsConnected, ChartBar, ChartLineUp, WebhooksLogo, FlowArrow, FileText, ClockCountdown, PuzzlePiece, Signpost, Sparkle, Gauge, Target, VideoCamera, Checks, Phone, PaperPlaneTilt } from "@/lib/ui/icons";
 import type { Icon as PhosphorIcon } from "@phosphor-icons/react";
 import { cn } from "@/lib/utils";
 import { toggleSidebar } from "@/app/actions/shell/toggleSidebar";
@@ -61,6 +61,10 @@ export const NAV_ITEMS: NavItem[] = [
   { href: "/app/ai/skills", label: "Skills da IA", icon: PuzzlePiece, permission: "ai.skills.view", section: "IA" },
   { href: "/app/ai/evolution", label: "Evolução da IA", icon: ChartLineUp, permission: "ai.evolution.view", section: "IA" },
 
+  // Disparos (0108) no topo da Gestão: é a operação com maior alcance e maior
+  // risco do produto (uma campanha fala com centenas de leads pelo número da
+  // empresa), e quem opera precisa achar o botão de pausar sem procurar.
+  { href: "/app/disparos", label: "Disparos", icon: PaperPlaneTilt, section: "Gestão" },
   { href: "/app/team", label: "Equipe", icon: UsersThree, section: "Gestão" },
   { href: "/app/metrics", label: "Desempenho", icon: ChartBar, section: "Gestão" },
   { href: "/app/templates", label: "Templates", icon: FileText, section: "Gestão" },
