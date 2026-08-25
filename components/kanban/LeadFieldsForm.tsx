@@ -12,6 +12,7 @@ import { Phone } from "@/lib/ui/icons";
 import type { Lead } from "@/lib/types/leads";
 import { updateLeadSchema, type UpdateLeadInput } from "@/lib/schemas/leads";
 import { parseReaisToCents } from "@/lib/money";
+import { paraDiscarBR } from "@/lib/calls/phone";
 import { telLink, formatarTelefone } from "@/lib/contacts/telefone";
 import { EcoDoValor } from "./EcoDoValor";
 
@@ -55,7 +56,20 @@ function centsToReais(cents: number | null | undefined): string {
  */
 export function LeadFieldsForm({ lead, pipelineId, phoneNumber, onSaved, onCancel }: Props) {
   const edit = useEditLead(pipelineId);
-  const discar = telLink(phoneNumber);
+  /**
+   * `paraDiscarBR` ANTES do `telLink`, e é o conserto de 25/08/2026.
+   *
+   * O banco guarda o telefone na forma do WhatsApp: para DDD >= 31 o celular
+   * fica SEM o nono dígito (+55 77 9936-3725 — migration 0102). Discar isso não
+   * completa. O botão "Ligar" do `ContactActions`, logo acima nesta mesma
+   * gaveta, já reconstruía o 9; este aqui — que também se chama "Ligar" — não.
+   * Dois botões com o mesmo nome, um discando certo e o outro no vazio.
+   *
+   * O `?? phoneNumber` mantém a promessa do `telLink`: número que
+   * `paraDiscarBR` não sabe normalizar (central 0800/4003, digitação torta)
+   * segue pelo caminho de antes, em vez de sumir o botão.
+   */
+  const discar = telLink(paraDiscarBR(phoneNumber) ?? phoneNumber);
   const telefoneLegivel = formatarTelefone(phoneNumber);
 
   const form = useForm<FormShape>({
