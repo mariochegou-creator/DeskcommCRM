@@ -181,7 +181,17 @@ export const Composer = forwardRef<ComposerHandle, Props>(function Composer(
           {mode === "reply" && (
             <DraftReplyButton conversationId={conversationId} disabled={isDisabled} onDraft={applyDraft} />
           )}
-          {mode === "reply" && <SavedAudioMenu conversationId={conversationId} disabled={isDisabled} />}
+          {mode === "reply" && (
+            <SavedAudioMenu
+              conversationId={conversationId}
+              disabled={isDisabled}
+              caption={text}
+              onSent={() => {
+                setText("");
+                requestAnimationFrame(() => autoresize());
+              }}
+            />
+          )}
           <EmojiButton
             disabled={isDisabled}
             onPick={(emoji) => {

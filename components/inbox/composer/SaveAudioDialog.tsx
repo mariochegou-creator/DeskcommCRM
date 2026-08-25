@@ -11,26 +11,38 @@ import { useCreateSavedAudio } from "@/hooks/inbox/useSavedAudios";
 import { usePermission } from "@/hooks/auth/AuthProvider";
 
 interface Props {
+  /**
+   * Foto escolhida do computador (0109). Preenchido → o dialog pula o
+   * microfone e vira "guardar esta foto": mesma tela de nome/compartilhar,
+   * outra fonte. Vazio → grava áudio, como sempre.
+   */
+  file?: File;
   onClose: () => void;
 }
 
 /**
- * Grava um áudio e guarda na gaveta. O take fica em memória até salvar: o
- * vendedor OUVE antes (é o mesmo áudio que o cliente vai receber, dezenas de
- * vezes) e pode regravar sem custo — nada sobe pro servidor até o "Salvar".
+ * Guarda na gaveta o que se repete: um áudio gravado aqui, ou a foto que veio
+ * de fora. Nada sobe pro servidor até o "Salvar" — o vendedor confere antes (é
+ * o mesmo arquivo que dezenas de clientes vão receber) e pode trocar sem custo.
  *
  * Montado só enquanto aberto (quem controla é o SavedAudioMenu): desmontar
  * fecha o microfone pelo cleanup do useAudioRecording e zera o rascunho.
  */
-export function SaveAudioDialog({ onClose }: Props) {
+export function SaveAudioDialog({ file, onClose }: Props) {
   const [take, setTake] = useState<AudioTake | null>(null);
-  const [title, setTitle] = useState("");
+  // Nome do arquivo sem a extensão: o print já chega com um nome, e digitar de
+  // novo o que o Windows escreveu é trabalho à toa. Editável, e o maxLength 80
+  // do Input espelha o schema.
+  const [title, setTitle] = useState(() => (file ? file.name.replace(/\.[^.]+$/, "").slice(0, 80) : ""));
   const [shared, setShared] = useState(false);
   const canShare = usePermission("inbox.saved_audio.share");
   const create = useCreateSavedAudio();
+  // Hook sempre chamado (regra de hooks); com `file` ninguém aperta start, então
+  // o microfone nunca abre.
   const rec = useAudioRecording(useCallback((t: AudioTake) => setTake(t), []));
 
-  const previewUrl = useMemo(() => (take ? URL.createObjectURL(take.blob) : null), [take]);
+  const sourceBlob: Blob | null = file ?? take?.blob ?? null;
+  const previewUrl = useMemo(() => (sourceBlob ? URL.createObjectURL(sourceBlob) : null), [sourceBlob]);
   useEffect(
     () => () => {
       if (previewUrl) URL.revokeObjectURL(previewUrl);
@@ -39,14 +51,14 @@ export function SaveAudioDialog({ onClose }: Props) {
   );
 
   async function handleSave() {
-    if (!take || !title.trim()) return;
+    if (!sourceBlob || !title.trim()) return;
     try {
       await create.mutateAsync({
-        blob: take.blob,
-        filename: take.filename,
+        blob: sourceBlob,
+        filename: file ? file.name : (take?.filename ?? "audio.ogg"),
         title: title.trim(),
         shared: shared && canShare,
-        durationSeconds: take.seconds,
+        durationSeconds: take?.seconds,
       });
       onClose();
     } catch {
@@ -58,10 +70,10 @@ export function SaveAudioDialog({ onClose }: Props) {
     <Dialog open onOpenChange={(o) => !o && onClose()}>
       <DialogContent className="max-w-md">
         <DialogHeader>
-          <DialogTitle>Gravar áudio para guardar</DialogTitle>
+          <DialogTitle>{file ? "Guardar esta foto" : "Gravar áudio para guardar"}</DialogTitle>
         </DialogHeader>
 
-        {!take ? (
+        {!sourceBlob ? (
           <div className="flex flex-col items-center gap-3 rounded-lg bg-muted/40 py-6">
             {rec.recording ? (
               <>
@@ -87,14 +99,22 @@ export function SaveAudioDialog({ onClose }: Props) {
           </div>
         ) : (
           <div className="flex flex-col gap-3">
-            {previewUrl && (
-              <audio src={previewUrl} controls className="w-full" aria-label="Ouvir a gravação" />
-            )}
+            {previewUrl &&
+              (file ? (
+                // eslint-disable-next-line @next/next/no-img-element -- blob: local, sem loader do next/image
+                <img
+                  src={previewUrl}
+                  alt="Foto escolhida"
+                  className="max-h-56 w-full rounded-md bg-muted object-contain"
+                />
+              ) : (
+                <audio src={previewUrl} controls className="w-full" aria-label="Ouvir a gravação" />
+              ))}
             <Input
               value={title}
               onChange={(e) => setTitle(e.target.value)}
-              placeholder="Nome do áudio (ex.: abertura)"
-              aria-label="Nome do áudio"
+              placeholder={file ? "Nome da foto (ex.: pesquisa do Google)" : "Nome do áudio (ex.: abertura)"}
+              aria-label={file ? "Nome da foto" : "Nome do áudio"}
               maxLength={80}
               onKeyDown={(e) => {
                 if (e.key === "Enter" && title.trim() && !create.isPending) void handleSave();
@@ -105,21 +125,24 @@ export function SaveAudioDialog({ onClose }: Props) {
                 <span>
                   Compartilhar com o time
                   <span className="block text-xs text-muted-foreground">
-                    Desligado, o áudio fica só na sua gaveta.
+                    Desligado, {file ? "a foto fica" : "o áudio fica"} só na sua gaveta.
                   </span>
                 </span>
                 <Switch checked={shared} onCheckedChange={setShared} aria-label="Compartilhar com o time" />
               </label>
             )}
-            <Button
-              variant="ghost"
-              className="self-start text-destructive"
-              onClick={() => setTake(null)}
-              disabled={create.isPending}
-            >
-              <Trash size={16} weight="regular" aria-hidden className="mr-1.5" />
-              Regravar
-            </Button>
+            {/* Foto não tem "regravar": pra trocar, fecha e escolhe outra. */}
+            {!file && (
+              <Button
+                variant="ghost"
+                className="self-start text-destructive"
+                onClick={() => setTake(null)}
+                disabled={create.isPending}
+              >
+                <Trash size={16} weight="regular" aria-hidden className="mr-1.5" />
+                Regravar
+              </Button>
+            )}
           </div>
         )}
 
@@ -127,7 +150,7 @@ export function SaveAudioDialog({ onClose }: Props) {
           <Button variant="ghost" onClick={onClose} disabled={create.isPending}>
             Cancelar
           </Button>
-          <Button onClick={() => void handleSave()} disabled={!take || !title.trim() || create.isPending}>
+          <Button onClick={() => void handleSave()} disabled={!sourceBlob || !title.trim() || create.isPending}>
             Salvar
           </Button>
         </DialogFooter>

@@ -82,8 +82,11 @@ export async function POST(req: NextRequest): Promise<Response> {
     const status = verdict.code === "payload_too_large" ? 413 : verdict.code === "unsupported_media_type" ? 415 : 422;
     return fail(verdict.code, verdict.message, status, { requestId });
   }
-  if (verdict.kind !== "audio") {
-    return fail("unsupported_media_type", "Só áudio pode ser salvo aqui.", 415, { requestId });
+  // Áudio (a fala repetida) e imagem (o print que o vendedor manda sempre —
+  // 0109). Vídeo e documento ficam de fora: pesam no bucket e não são o que se
+  // repete. O check da tabela barra igual se algo escapar daqui.
+  if (verdict.kind !== "audio" && verdict.kind !== "image") {
+    return fail("unsupported_media_type", "Só áudio ou foto pode ser salvo aqui.", 415, { requestId });
   }
 
   // Compartilhado exige manager+ (espelha message-templates). A RLS with_check

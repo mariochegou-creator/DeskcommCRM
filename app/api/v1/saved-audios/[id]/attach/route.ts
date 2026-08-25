@@ -77,7 +77,10 @@ export async function POST(req: NextRequest, { params }: RouteParams): Promise<R
       storage_path: destination,
       media_mime: row.media_mime,
       media_size_bytes: row.media_size_bytes,
-      kind: "audio" as const,
+      // O tipo sai do mime (0109): a mesma gaveta guarda áudio e foto, e é este
+      // `kind` que a UI usa como type da mensagem — foto vai como image, com o
+      // texto do composer de legenda.
+      kind: row.media_mime.startsWith("image/") ? ("image" as const) : ("audio" as const),
     },
     { requestId },
   );
