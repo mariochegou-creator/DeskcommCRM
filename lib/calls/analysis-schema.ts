@@ -110,6 +110,36 @@ export const NotaDoNegocioSchema = z.object({
 });
 export type NotaDoNegocio = z.infer<typeof NotaDoNegocioSchema>;
 
+/**
+ * O retorno que o LEAD pediu — "me liga quinta de manhã", "me chama depois das 18h".
+ *
+ * Isto existe porque o combinado morria dentro da nota: o corpo da
+ * `nota_do_negocio` já pedia "o que ficou combinado (dia e hora)", mas nota é
+ * texto que alguém precisa ler. Quem lembrava do horário era o SDR, de cabeça,
+ * no fim de um dia de ligações — e o CRM inteiro só cria tarefa quando um card
+ * muda de coluna, o que aqui não acontece.
+ *
+ * DIA E HORA SEPARADOS, no vocabulário que o resto do repo já usa
+ * (`dataValida`/`horaValida`/`instanteDaReuniao` em lib/agendamento/reuniao.ts).
+ * Um ISO completo obrigaria o modelo a escolher fuso, e ele escolheria UTC —
+ * "quinta às 9h" viraria 6h da manhã na Bahia, uma hora antes de alguém acordar.
+ * A hora é civil da Bahia e a conversão é do nosso lado, onde já está testada.
+ *
+ * NULLABLE de propósito, como `nota_do_negocio`: ligação sem combinado não tem
+ * retorno a marcar, e campo obrigatório faria o modelo inventar um horário —
+ * tarefa falsa é pior que tarefa faltando, porque ela consome a confiança na
+ * lista inteira.
+ */
+export const RetornoCombinadoSchema = z.object({
+  /** AAAA-MM-DD, hora civil da Bahia. */
+  data: z.string().regex(/^d{4}-d{2}-d{2}$/),
+  /** HH:MM em 24h. */
+  hora: z.string().regex(/^([01]d|2[0-3]):[0-5]d$/),
+  /** O combinado nas palavras do lead — vira a nota da tarefa. */
+  combinado: z.string().min(1).max(300),
+});
+export type RetornoCombinado = z.infer<typeof RetornoCombinadoSchema>;
+
 export const CallAnalysisSchema = z.object({
   resultado: z.enum(CALL_OUTCOMES),
   nota_geral: z.number().min(0).max(10),
@@ -118,6 +148,7 @@ export const CallAnalysisSchema = z.object({
   pontos_de_melhoria: z.array(z.string().min(1).max(2000)).min(1).max(8),
   frase_para_treinar: z.string().min(1).max(2000),
   nota_do_negocio: NotaDoNegocioSchema.nullable().default(null),
+  retorno_combinado: RetornoCombinadoSchema.nullable().default(null),
 });
 
 export type CallAnalysis = z.infer<typeof CallAnalysisSchema>;

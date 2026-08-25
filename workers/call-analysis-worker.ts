@@ -32,6 +32,8 @@ import {
 } from "@/lib/ai/gateway";
 import { buildCallAnalysisPrompt } from "@/lib/calls/analysis-prompt";
 import { CallAnalysisSchema, type CallAnalysis } from "@/lib/calls/analysis-schema";
+import { tarefaDeRetorno } from "@/lib/calls/tarefa-de-retorno";
+import { dataCivilBahia } from "@/lib/agendamento/reuniao";
 import { LIVE_CHUNK_SECONDS, parseLiveState } from "@/lib/calls/live-schema";
 import { CALL_BUCKET } from "@/lib/calls/storage";
 import { groqTranscriptionProvider } from "@/lib/calls/transcribe";
@@ -57,6 +59,8 @@ interface CallRow {
   duration_seconds: number | null;
   sdr_notes: string | null;
   live_state: unknown;
+  /** Quem gravou a ligação — vira o dono da tarefa de retorno. */
+  created_by_user_id: string | null;
 }
 
 export async function analyzeCallRecording(row: EventRow): Promise<HandlerResult> {
@@ -67,7 +71,7 @@ export async function analyzeCallRecording(row: EventRow): Promise<HandlerResult
   const admin = createAdminClient();
   const { data, error } = await admin
     .from("crm_call_recordings")
-    .select("id, organization_id, contact_id, lead_id, status, storage_path, mime_type, transcript, duration_seconds, sdr_notes, live_state")
+    .select("id, organization_id, contact_id, lead_id, status, storage_path, mime_type, transcript, duration_seconds, sdr_notes, live_state, created_by_user_id")
     .eq("id", callId)
     .eq("organization_id", row.organization_id)
     .maybeSingle();
@@ -211,6 +215,7 @@ export async function analyzeCallRecording(row: EventRow): Promise<HandlerResult
 
     await emitAnalyzedActivity(admin, call, analysis);
     await gravarNotaDoNegocio(admin, call, analysis);
+    await marcarRetorno(admin, call, analysis, new Date());
     return { consumer_key, status: "ok" };
   } catch (err) {
     const detail = err instanceof Error ? err.message : String(err);
@@ -240,7 +245,7 @@ async function runAnalysis(
 ): Promise<{ analysis: CallAnalysis | null; raw: string }> {
   const cfg = gatewayConfig();
   const headers = cfg ? gatewayHeaders({ organizationId }) : undefined;
-  const prompt = buildCallAnalysisPrompt(transcript, extras);
+  const prompt = buildCallAnalysisPrompt(transcript, { ...extras, hoje: dataCivilBahia(new Date()) });
 
   const tentativas = [
     prompt,
@@ -413,4 +418,150 @@ function primeiroPonto(analysis: CallAnalysis): string {
   const p = analysis.pontos_de_melhoria[0]?.trim() ?? "";
   if (!p) return "sem apontamentos";
   return p.length > 160 ? `${p.slice(0, 157)}…` : p;
+}
+
+/**
+ * O combinado da ligação virando tarefa com hora na agenda de quem ligou.
+ *
+ * SE vira tarefa é decisão do módulo puro (`lib/calls/tarefa-de-retorno.ts`),
+ * que recusa tudo que cheira a alucinação. Aqui só se resolve o mundo: dono,
+ * nome do lead, conversa, e a trava contra duplicata.
+ *
+ * O DONO É QUEM GRAVOU A LIGAÇÃO, não o papel `sdr` da organização. Quem
+ * combinou o retorno foi essa pessoa, com a voz dela, e é a ela que o dono do
+ * negócio espera de volta — mandar para o "SDR da casa" entregaria a ligação a
+ * quem o lead nunca ouviu. O papel entra só como rede: gravação antiga (antes da
+ * coluna existir) ou importada não tem autor, e sem dono o INSERT cai por
+ * `assigned_to_user_id NOT NULL`.
+ *
+ * A TRAVA CONTRA DUPLICATA É O TÍTULO EM ABERTO NO MESMO NEGÓCIO — a mesma
+ * convenção de `criarTarefasDaEtapa`, e não uma coluna nova. "Analisar de novo"
+ * é rotina no card da ligação (e a reanálise é justamente o que se faz quando a
+ * primeira saiu torta); sem a trava, cada clique empilharia uma cópia da mesma
+ * ligação de volta. Já resolvida não conta: se o SDR ligou e o lead pediu outro
+ * horário, a tarefa nova é legítima.
+ *
+ * Falha aqui é WARN e nunca derruba o job: a análise inteira já está gravada, e
+ * o combinado continua legível na nota do negócio. Perder a tarefa é um
+ * aborrecimento; perder a análise por causa dela seria trocar o certo pelo
+ * duvidoso.
+ */
+async function marcarRetorno(
+  admin: ReturnType<typeof createAdminClient>,
+  call: CallRow,
+  analysis: CallAnalysis,
+  agora: Date,
+): Promise<void> {
+  try {
+    if (!call.lead_id) return;
+
+    const { data: lead } = await admin
+      .from("crm_leads")
+      .select("title")
+      .eq("id", call.lead_id)
+      .eq("organization_id", call.organization_id)
+      .maybeSingle();
+
+    const tarefa = tarefaDeRetorno(
+      analysis.retorno_combinado,
+      (lead?.title as string | undefined) ?? null,
+      agora,
+    );
+    if (!tarefa) return;
+
+    const dono = call.created_by_user_id ?? (await papelSdr(admin, call.organization_id));
+    if (!dono) {
+      logger.warn("[call-analysis] retorno sem dono — tarefa não criada", { call_id: call.id });
+      return;
+    }
+
+    const { data: jaExiste } = await admin
+      .from("crm_tasks")
+      .select("id")
+      .eq("organization_id", call.organization_id)
+      .eq("lead_id", call.lead_id)
+      .eq("title", tarefa.titulo)
+      .eq("status", "pending")
+      .maybeSingle();
+    if (jaExiste) return;
+
+    // A conversa mais recente do contato: é por `conversation_id` que o relógio
+    // do inbox e o aviso de abertura do lead enxergam a tarefa.
+    const { data: conversa } = await admin
+      .from("conversations")
+      .select("id")
+      .eq("organization_id", call.organization_id)
+      .eq("contact_id", call.contact_id)
+      .order("last_message_at", { ascending: false, nullsFirst: false })
+      .limit(1)
+      .maybeSingle();
+
+    const { error } = await admin.from("crm_tasks").insert({
+      organization_id: call.organization_id,
+      title: tarefa.titulo,
+      kind: tarefa.kind,
+      notes: tarefa.nota,
+      due_at: tarefa.prazo.toISOString(),
+      assigned_to_user_id: dono,
+      created_by_user_id: null,
+      lead_id: call.lead_id,
+      contact_id: call.contact_id,
+      conversation_id: (conversa?.id as string | undefined) ?? null,
+      status: "pending",
+    });
+
+    if (error) {
+      logger.warn("[call-analysis] tarefa de retorno não gravada", {
+        call_id: call.id,
+        detail: error.message,
+      });
+      return;
+    }
+
+    logger.info("[call-analysis] retorno marcado", {
+      call_id: call.id,
+      due_at: tarefa.prazo.toISOString(),
+    });
+  } catch (err) {
+    logger.warn("[call-analysis] retorno falhou", {
+      call_id: call.id,
+      detail: err instanceof Error ? err.message : String(err),
+    });
+  }
+}
+
+/**
+ * O `sdr` de `organizations.settings.papeis`, conferido contra a organização.
+ *
+ * A conferência não é zelo: um id velho na configuração (alguém que saiu do
+ * time) criaria tarefa que ninguém desta org consegue ver nem resolver —
+ * trabalho perdido sem erro nenhum na tela. Mesma guarda de `lerPapeis` em
+ * `lib/tarefas/criar-da-etapa.ts`.
+ */
+async function papelSdr(
+  admin: ReturnType<typeof createAdminClient>,
+  organizationId: string,
+): Promise<string | null> {
+  const { data } = await admin
+    .from("organizations")
+    .select("settings")
+    .eq("id", organizationId)
+    .maybeSingle();
+
+  const papeis = (data?.settings as Record<string, unknown> | null)?.["papeis"];
+  const sdr =
+    papeis && typeof papeis === "object"
+      ? (papeis as Record<string, unknown>)["sdr"]
+      : null;
+  if (typeof sdr !== "string" || sdr.length === 0) return null;
+
+  const { data: membro } = await admin
+    .from("user_organizations")
+    .select("user_id")
+    .eq("organization_id", organizationId)
+    .eq("user_id", sdr)
+    .is("revoked_at", null)
+    .maybeSingle();
+
+  return membro ? sdr : null;
 }

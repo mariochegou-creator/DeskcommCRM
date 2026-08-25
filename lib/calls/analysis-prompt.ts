@@ -66,6 +66,11 @@ Responda SOMENTE com JSON válido, sem markdown e sem texto fora do JSON, neste 
   "nota_do_negocio": {
     "headline": "uma linha que identifique a ligação na lista de notas do negócio",
     "corpo": "o que o DONO disse, nas palavras dele"
+  },
+  "retorno_combinado": {
+    "data": "AAAA-MM-DD",
+    "hora": "HH:MM",
+    "combinado": "o que ele pediu, nas palavras dele"
   }
 }
 
@@ -74,6 +79,14 @@ SOBRE "nota_do_negocio" — é a única parte que NÃO fala do SDR, e ela vai pa
 - No corpo, em linhas curtas e só o que de fato apareceu: a dor; os números que ele deu; quem decide quando envolve dinheiro; o que ficou combinado (dia e hora, ou o próximo passo).
 - Nada de conselho, nada de nota, nada de opinião sobre o SDR — isso já está nos outros campos.
 - Se a ligação não chegou a nenhuma dor (caixa postal, número errado, ele desligou), devolva "nota_do_negocio": null. NÃO invente nota para preencher o campo.
+
+SOBRE "retorno_combinado" — é o único campo que vira TAREFA com hora marcada na agenda de quem ligou. Por isso ele é o mais fácil de estragar. Regras:
+- Preencha SÓ quando o próprio lead pediu um retorno com momento identificável: "me liga quinta de manhã", "depois das 6 da tarde", "semana que vem". Se ele não pediu, devolva "retorno_combinado": null.
+- "Vou pensar", "depois eu vejo", "me manda no zap" NÃO são retorno marcado. Devolva null. Tarefa inventada faz o SDR parar de confiar na lista inteira, e aí as verdadeiras também morrem.
+- Resolva a data em cima da data do bloco HOJE, no fim deste prompt. "Quinta" é a próxima quinta; "semana que vem" é a segunda-feira seguinte.
+- Sem hora exata, use a faixa que ele deu: manhã 09:00, início da tarde 14:00, fim de tarde 17:00, "à noite" 19:00. Nunca deixe a hora vazia.
+- "combinado" é o que ELE disse, curto, sem interpretação: "pediu pra ligar quinta de manhã, antes das 10".
+- Reunião marcada NÃO entra aqui: nesse caso o resultado é "agendou" e a reunião tem lugar próprio. Este campo é para o retorno de quem ainda não marcou.
 
 Se a transcrição indicar que a ligação não se completou (caixa postal, número errado, caiu), use resultado "nao_atendeu_ou_invalida", nota_geral 0, "nota_do_negocio": null e explique em um único ponto de melhoria.
 
@@ -102,11 +115,26 @@ export const PLACEHOLDER_TRANSCRICAO = "[TRANSCRICAO_AQUI]";
  */
 export function buildCallAnalysisPrompt(
   transcricao: string,
-  extras: { notas?: string | null; cobertura?: Record<string, boolean> | null } = {},
+  extras: {
+    notas?: string | null;
+    cobertura?: Record<string, boolean> | null;
+    /** Data civil da Bahia no dia da ligação (AAAA-MM-DD) — âncora de 'quinta', 'semana que vem'. */
+    hoje?: string | null;
+  } = {},
 ): string {
   const base = PROMPT.split(PLACEHOLDER_TRANSCRICAO).join(transcricao);
 
   const blocos: string[] = [];
+
+  // O bloco HOJE vem PRIMEIRO e existe só para o "retorno_combinado": sem uma
+  // âncora explícita o modelo resolve "quinta" contra a data em que ele foi
+  // treinado, e a tarefa nasce meses no passado — vencida antes de existir.
+  const hoje = extras.hoje?.trim();
+  if (hoje) {
+    blocos.push(
+      `HOJE É ${hoje} (data civil da Bahia). Use esta data para resolver qualquer dia relativo que o lead tenha dito.`,
+    );
+  }
 
   const notas = extras.notas?.trim();
   if (notas) {
