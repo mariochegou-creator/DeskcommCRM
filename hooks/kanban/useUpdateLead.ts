@@ -67,3 +67,20 @@ export function useEditLead(pipelineId: string) {
     },
   });
 }
+
+/**
+ * Apaga o negócio. Sem eco local de propósito: eco existe para a MINHA ação não
+ * pulsar o card duas vezes, e aqui não sobra card para pulsar — marcar liberaria
+ * depois um id que já não existe.
+ */
+export function useDeleteLead(pipelineId: string) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async ({ leadId }: { leadId: string }) =>
+      apiClient.delete<{ data: { id: string } }>(`/api/v1/leads/${leadId}`),
+    onError: showApiError,
+    onSettled: () => {
+      invalidaLeitoresDeLead(qc, pipelineId);
+    },
+  });
+}

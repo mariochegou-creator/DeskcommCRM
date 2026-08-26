@@ -303,6 +303,10 @@ export function LeadDossier({
             lead={lead}
             pipelineId={pipelineId}
             phoneNumber={contato.data?.data.phone_number}
+            // Apagado o negócio, a gaveta FECHA — ao contrário do salvar, que a
+            // deixa aberta de propósito. Não há timeline para mostrar o que
+            // acabou de acontecer: ela foi junto.
+            onDeleted={() => onOpenChange(false)}
           />
         </div>
       </SheetContent>

@@ -168,6 +168,7 @@ const NOME_DO_CAMPO: Record<string, string> = {
   description: "a descrição",
   value_cents: "o valor",
   currency: "a moeda",
+  contact_id: "o contato",
   owner_user_id: "o responsável",
   owner_agent_id: "o agente responsável",
   expected_close_date: "a data prevista de fechamento",

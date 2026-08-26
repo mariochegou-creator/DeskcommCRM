@@ -97,7 +97,8 @@ export function PrimeiroToque({ leadId, contactId, pipelineId, ganchos, whatsapp
           erro no lugar errado. */}
       {!contactId && (
         <p className="text-[11px] leading-snug text-text-muted">
-          Este negócio ainda não tem contato ligado — cadastre o WhatsApp para enviar por aqui.
+          Este negócio ainda não tem contato ligado. Role até <strong>Dados do negócio</strong>,
+          aqui embaixo, e preencha o WhatsApp — o envio libera assim que salvar.
         </p>
       )}
 

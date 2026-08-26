@@ -101,6 +101,37 @@ export const updateLeadSchema = z.object({
   title: z.string().min(2).max(200).optional(),
   description: z.string().max(2000).nullable().optional(),
   contact_id: z.string().uuid().nullable().optional(),
+  /**
+   * O WhatsApp do negócio, como a pessoa digitou — o MESMO campo do create, e
+   * pela mesma razão: quem edita um lead tem o NÚMERO, não o `contact_id`.
+   *
+   * O caso que trouxe isto: lead importado da prospecção nasce sem contato (9
+   * nesta base em 26/08/2026), e a caixa de primeiro toque diz "cadastre o
+   * WhatsApp para enviar por aqui" apontando para um lugar que não existia. O
+   * SDR achava o número no Maps e não tinha onde digitar — o botão de enviar
+   * ficava desabilitado para sempre.
+   *
+   * Ignorado quando `contact_id` vem junto: quem sabe o contato não precisa que
+   * a gente adivinhe pelo telefone.
+   */
+  contact_phone: z.string().trim().max(30).nullable().optional(),
+  /**
+   * O dossiê de prospecção (Site, Instagram, "Tem site"…), que mora em
+   * `crm_leads.custom_fields`.
+   *
+   * É MERGE, nunca substituição — e não é preferência de estilo: a lista
+   * enriquecida grava aqui de 8 a 20 chaves por lead (Dores, Entregáveis,
+   * Google Maps, os ganchos), e um PATCH que mandasse o objeto inteiro apagaria
+   * tudo que o formulário não conhece no dia em que a lista ganhar uma coluna
+   * nova. `null` (ou string vazia) remove a chave; é assim que se desfaz um
+   * campo preenchido por engano.
+   */
+  custom_fields: z
+    .record(
+      z.string().min(1).max(120),
+      z.union([z.string().max(2000), z.number(), z.boolean(), z.null()]),
+    )
+    .optional(),
   value_cents: z.coerce.number().int().nonnegative().nullable().optional(),
   currency: z.string().length(3).optional(),
   owner_user_id: z.string().uuid().nullable().optional(),

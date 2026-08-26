@@ -1,24 +1,38 @@
 "use client";
-import { useEffect } from "react";
+import { useEffect, useState } from "react";
 import { useForm } from "react-hook-form";
 import { toast } from "sonner";
 
+import {
+  AlertDialog,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
-import { useEditLead } from "@/hooks/kanban/useUpdateLead";
-import { Phone } from "@/lib/ui/icons";
+import { useDeleteLead, useEditLead } from "@/hooks/kanban/useUpdateLead";
+import { Phone, Trash } from "@/lib/ui/icons";
 import type { Lead } from "@/lib/types/leads";
 import { updateLeadSchema, type UpdateLeadInput } from "@/lib/schemas/leads";
 import { parseReaisToCents } from "@/lib/money";
 import { paraDiscarBR } from "@/lib/calls/phone";
-import { telLink, formatarTelefone } from "@/lib/contacts/telefone";
+import { telLink, formatarTelefone, telefoneE164 } from "@/lib/contacts/telefone";
+import { whatsappLink } from "@/lib/contacts/whatsapp";
+import { instagramDoLead, patchDosLinks, siteDoLead } from "@/lib/leads/campos-editaveis";
 import { EcoDoValor } from "./EcoDoValor";
 
 interface FormShape {
   title: string;
   description: string;
+  whatsapp: string;
+  site: string;
+  instagram: string;
   valueReais: string;
   tagsRaw: string;
   expected_close_date: string;
@@ -30,14 +44,15 @@ interface Props {
   /**
    * Telefone do contato ligado ao lead, em E.164. Vem de fora porque é dado do
    * CONTATO, não do negócio: este formulário edita o lead e não deve saber
-   * buscar contato. Ausente = a seção de telefone simplesmente não aparece —
-   * é o que acontece no diálogo de edição, que não carrega contato.
+   * buscar contato. Ausente = o campo nasce vazio, esperando o número.
    */
   phoneNumber?: string | null;
   /** Quando o salvamento dá certo. O dossiê NÃO fecha aqui — ver abaixo. */
   onSaved?: () => void;
   /** O dossiê não tem "cancelar"; o diálogo tem. */
   onCancel?: () => void;
+  /** Quando o negócio é apagado. Aqui o dossiê FECHA — não sobrou o que mostrar. */
+  onDeleted?: () => void;
 }
 
 function centsToReais(cents: number | null | undefined): string {
@@ -53,9 +68,24 @@ function centsToReais(cents: number | null | undefined): string {
  * atividade que acabou de gerar entrar na timeline. Fechar esconderia o
  * registro justamente de quem o produziu — a funcionalidade que prova "sua ação
  * fica registrada" provaria isso para todo mundo menos para o autor.
+ *
+ * WHATSAPP, SITE E INSTAGRAM SÃO EDITÁVEIS AQUI desde 26/08/2026, e o caso que
+ * trouxe isso é o lead de prospecção que nasce sem contato: a caixa de primeiro
+ * toque mandava "cadastre o WhatsApp para enviar por aqui" e não existia tela
+ * onde cadastrar. Quem achava o número no Maps ficava com o botão de enviar
+ * desabilitado para sempre.
  */
-export function LeadFieldsForm({ lead, pipelineId, phoneNumber, onSaved, onCancel }: Props) {
+export function LeadFieldsForm({
+  lead,
+  pipelineId,
+  phoneNumber,
+  onSaved,
+  onCancel,
+  onDeleted,
+}: Props) {
   const edit = useEditLead(pipelineId);
+  const apagar = useDeleteLead(pipelineId);
+  const [confirmando, setConfirmando] = useState(false);
   /**
    * `paraDiscarBR` ANTES do `telLink`, e é o conserto de 25/08/2026.
    *
@@ -72,26 +102,32 @@ export function LeadFieldsForm({ lead, pipelineId, phoneNumber, onSaved, onCance
   const discar = telLink(paraDiscarBR(phoneNumber) ?? phoneNumber);
   const telefoneLegivel = formatarTelefone(phoneNumber);
 
-  const form = useForm<FormShape>({
-    defaultValues: {
-      title: lead.title,
-      description: lead.description ?? "",
-      valueReais: centsToReais(lead.value_cents),
-      tagsRaw: (lead.tags ?? []).join(", "),
-      expected_close_date: lead.expected_close_date ?? "",
-    },
+  const valoresIniciais = (): FormShape => ({
+    title: lead.title,
+    description: lead.description ?? "",
+    whatsapp: telefoneLegivel ?? "",
+    site: siteDoLead(lead.custom_fields),
+    instagram: instagramDoLead(lead.custom_fields),
+    valueReais: centsToReais(lead.value_cents),
+    tagsRaw: (lead.tags ?? []).join(", "),
+    expected_close_date: lead.expected_close_date ?? "",
   });
 
+  const form = useForm<FormShape>({ defaultValues: valoresIniciais() });
+
   useEffect(() => {
-    form.reset({
-      title: lead.title,
-      description: lead.description ?? "",
-      valueReais: centsToReais(lead.value_cents),
-      tagsRaw: (lead.tags ?? []).join(", "),
-      expected_close_date: lead.expected_close_date ?? "",
-    });
+    form.reset(valoresIniciais());
+    // `phoneNumber` entra na lista porque ele chega DEPOIS do lead: a gaveta
+    // abre, o campo nasce vazio e a busca do contato responde um instante mais
+    // tarde. Sem isto o número aparecia no topo da gaveta e não no campo, e
+    // salvar qualquer outra coisa mandaria "apagar o telefone" junto.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [lead.id]);
+  }, [lead.id, phoneNumber]);
+
+  const whatsappDigitado = form.watch("whatsapp");
+  const atual = telefoneE164(phoneNumber ?? "");
+  const digitado = telefoneE164(whatsappDigitado);
+  const trocandoNumero = !!atual && digitado !== atual;
 
   async function onSubmit(values: FormShape) {
     const tags = values.tagsRaw
@@ -117,6 +153,35 @@ export function LeadFieldsForm({ lead, pipelineId, phoneNumber, onSaved, onCance
       expected_close_date: values.expected_close_date || null,
     };
 
+    // O número é conferido AQUI, antes de sair do navegador, pelo mesmo motivo
+    // do formulário de novo lead: a resposta do servidor chegaria como um toast
+    // solto e a pessoa já teria perdido de vista qual campo consertar.
+    const cru = values.whatsapp.trim();
+    if (cru) {
+      const e164 = telefoneE164(cru);
+      if (!e164 || !whatsappLink(e164)) {
+        form.setError("whatsapp", {
+          message: "Número não abre WhatsApp. Confira o DDD — ex: (73) 99134-6237.",
+        });
+        return;
+      }
+      // Só manda quando MUDOU. Reenviar o mesmo número faria o servidor
+      // reprocessar contato a cada salvamento e a timeline acusaria "o contato"
+      // alterado em edições que não tocaram nele.
+      if (e164 !== atual) patch.contact_phone = e164;
+    } else if (atual) {
+      // Campo esvaziado = desligar este contato do negócio. O contato e a
+      // conversa continuam existindo — o que se desfaz é o vínculo, e digitar o
+      // número de volta o refaz.
+      patch.contact_id = null;
+    }
+
+    const links = patchDosLinks(lead.custom_fields, {
+      site: values.site,
+      instagram: values.instagram,
+    });
+    if (Object.keys(links).length > 0) patch.custom_fields = links;
+
     const parsed = updateLeadSchema.safeParse(patch);
     if (!parsed.success) {
       const first = parsed.error.issues[0];
@@ -136,6 +201,16 @@ export function LeadFieldsForm({ lead, pipelineId, phoneNumber, onSaved, onCance
     }
   }
 
+  async function confirmarExclusao() {
+    try {
+      await apagar.mutateAsync({ leadId: lead.id });
+      setConfirmando(false);
+      toast.success("Negócio apagado");
+      onDeleted?.();
+    } catch {
+      // toast already shown
+    }
+  }
 
   return (
     <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-4">
@@ -150,6 +225,71 @@ export function LeadFieldsForm({ lead, pipelineId, phoneNumber, onSaved, onCance
         <div className="space-y-2">
           <Label htmlFor="description">Descrição</Label>
           <Textarea id="description" rows={3} {...form.register("description")} />
+        </div>
+
+        {/* O TELEFONE É DO CONTATO, não do negócio — e continua sendo: o que se
+            edita aqui é QUAL contato o negócio aponta. O servidor acha-ou-cria
+            pela identidade do WhatsApp (lib/contacts/contato-por-telefone), a
+            mesma regra da importação de lista, para o número achado no Maps não
+            virar um segundo cadastro do contato que o CRM já tem.
+
+            Ligar importa mais que o WhatsApp para boa parte desta base: 27 dos
+            leads importados só têm fixo, e fixo raramente atende no WhatsApp.
+            Por isso o `tel:` aceita central 0800/4003, que o link de WhatsApp
+            recusa — lá seria um botão quebrado, aqui é uma ligação que completa. */}
+        <div className="space-y-2">
+          <div className="flex items-center justify-between gap-2">
+            <Label htmlFor="whatsapp">WhatsApp</Label>
+            {discar && (
+              <Button asChild type="button" variant="secondary" size="sm" className="h-7 gap-2">
+                <a href={discar}>
+                  <Phone size={14} weight="fill" />
+                  Ligar
+                </a>
+              </Button>
+            )}
+          </div>
+          <Input
+            id="whatsapp"
+            type="tel"
+            inputMode="tel"
+            placeholder="(73) 99134-6237"
+            {...form.register("whatsapp")}
+          />
+          {form.formState.errors.whatsapp && (
+            <p className="text-xs text-error-fg">{form.formState.errors.whatsapp.message}</p>
+          )}
+          {/* Trocar o número aponta o negócio para OUTRO contato, e a conversa
+              que já existe fica com o antigo. Dizer isso antes de salvar é o que
+              separa "eu quis trocar" de "a conversa sumiu" — o segundo é o
+              relato que chega depois, quando ninguém mais liga uma coisa à outra. */}
+          {trocandoNumero && !form.formState.errors.whatsapp && (
+            <p className="text-xs leading-snug text-warning-fg">
+              {digitado
+                ? "Ao salvar, o negócio passa a apontar para este número. A conversa que já existe fica com o número antigo."
+                : "Ao salvar, o negócio fica sem contato. A conversa não é apagada — digitar o número de volta refaz o vínculo."}
+            </p>
+          )}
+          {!atual && !digitado && (
+            <p className="text-xs leading-snug text-text-muted">
+              Sem número não dá para mandar mensagem por aqui — é este campo que libera o envio.
+            </p>
+          )}
+        </div>
+
+        {/* Site e Instagram vêm da lista de prospecção e ENVELHECEM: a varredura
+            grava "não tem (conferido nos resultados da web)" e o negócio publica
+            o site no mês seguinte. Editáveis aqui pelo mesmo motivo do telefone
+            — quem descobre o dado é quem está com a gaveta aberta. A chave de
+            gravação é a que o lead já usa (ver lib/leads/campos-editaveis). */}
+        <div className="space-y-2">
+          <Label htmlFor="site">Site</Label>
+          <Input id="site" placeholder="https://…" {...form.register("site")} />
+        </div>
+
+        <div className="space-y-2">
+          <Label htmlFor="instagram">Instagram</Label>
+          <Input id="instagram" placeholder="@perfil ou link" {...form.register("instagram")} />
         </div>
 
         <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
@@ -183,32 +323,22 @@ export function LeadFieldsForm({ lead, pipelineId, phoneNumber, onSaved, onCance
           <Input id="tagsRaw" placeholder="vip, recompra" {...form.register("tagsRaw")} />
         </div>
 
-        {/* O telefone é do CONTATO, não do negócio: mostrado, nunca editável
-            aqui — editar por dentro do lead criaria dois lugares para o mesmo
-            dado e eles divergiriam na primeira correção.
-
-            Ligar importa mais que o WhatsApp para boa parte desta base: 27 dos
-            leads importados só têm fixo, e fixo raramente atende no WhatsApp.
-            Por isso o `tel:` aceita central 0800/4003, que o link de WhatsApp
-            recusa — lá seria um botão quebrado, aqui é uma ligação que completa. */}
-        {telefoneLegivel && (
-          <div className="space-y-2">
-            <Label>Telefone</Label>
-            <div className="flex items-center gap-2">
-              <span className="flex-1 text-sm tabular-nums text-text">{telefoneLegivel}</span>
-              {discar && (
-                <Button asChild type="button" variant="secondary" size="sm" className="gap-2">
-                  <a href={discar}>
-                    <Phone size={14} weight="fill" />
-                    Ligar
-                  </a>
-                </Button>
-              )}
-            </div>
-          </div>
+      <div className="flex items-center justify-end gap-2">
+        {/* Apagar fica LONGE do Salvar (à esquerda, discreto, com confirmação):
+            é a única ação desta gaveta que não se desfaz. */}
+        {onDeleted && (
+          <Button
+            type="button"
+            variant="ghost"
+            size="sm"
+            className="mr-auto gap-2 text-text-muted hover:text-error-fg"
+            disabled={apagar.isPending || edit.isPending}
+            onClick={() => setConfirmando(true)}
+          >
+            <Trash size={14} weight="regular" aria-hidden />
+            Excluir negócio
+          </Button>
         )}
-
-      <div className="flex justify-end gap-2">
         {onCancel && (
           <Button type="button" variant="ghost" onClick={onCancel} disabled={edit.isPending}>
             Cancelar
@@ -218,6 +348,29 @@ export function LeadFieldsForm({ lead, pipelineId, phoneNumber, onSaved, onCance
           {edit.isPending ? "Salvando…" : "Salvar"}
         </Button>
       </div>
+
+      <AlertDialog open={confirmando} onOpenChange={setConfirmando}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Excluir “{lead.title}”?</AlertDialogTitle>
+            <AlertDialogDescription>
+              O card sai do quadro junto com a linha do tempo dele. Não dá para desfazer. O
+              contato e a conversa no inbox continuam onde estão.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={apagar.isPending}>Cancelar</AlertDialogCancel>
+            <Button
+              type="button"
+              variant="destructive"
+              onClick={confirmarExclusao}
+              disabled={apagar.isPending}
+            >
+              {apagar.isPending ? "Excluindo…" : "Excluir"}
+            </Button>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </form>
   );
 }

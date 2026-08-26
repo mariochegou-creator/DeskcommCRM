@@ -371,6 +371,30 @@ export async function updateLeadHandler(
     patch.expected_close_date = input.expected_close_date;
   }
   if (input.tags !== undefined) patch.tags = input.tags;
+  // MERGE, nunca substituição. O que chega é o punhado de chaves que o
+  // formulário conhece (Site, Instagram); o que já está lá é o dossiê inteiro
+  // da lista enriquecida. Trocar o objeto apagaria Dores, Entregáveis, Google
+  // Maps e os ganchos — silenciosamente, e só quem abrisse o lead depois veria.
+  if (input.custom_fields !== undefined) {
+    const atuais =
+      existing.custom_fields &&
+      typeof existing.custom_fields === "object" &&
+      !Array.isArray(existing.custom_fields)
+        ? { ...(existing.custom_fields as Record<string, unknown>) }
+        : {};
+    for (const [chave, valor] of Object.entries(input.custom_fields)) {
+      // Vazio APAGA a chave em vez de gravar "". Chave presente com valor vazio
+      // é pior que chave ausente: `extractExtras` a esconde da tela mas
+      // `camposFaltantes` (reimportação) a considera preenchida — o campo ficaria
+      // invisível e blindado contra a próxima lista que trouxesse o dado certo.
+      if (valor === null || (typeof valor === "string" && valor.trim() === "")) {
+        delete atuais[chave];
+      } else {
+        atuais[chave] = typeof valor === "string" ? valor.trim() : valor;
+      }
+    }
+    patch.custom_fields = atuais;
+  }
 
   const { data: updated, error: updErr } = await supabase
     .from("crm_leads")
