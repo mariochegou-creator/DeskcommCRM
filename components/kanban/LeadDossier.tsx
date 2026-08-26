@@ -8,6 +8,8 @@ import Link from "next/link";
 import { Button } from "@/components/ui/button";
 import { ChatCircle, MapPin } from "@/lib/ui/icons";
 import { extractExtras, extractGoogleMapsUrl, listarGanchos } from "@/lib/leads/ganchos";
+import { extractFatos } from "@/lib/leads/fatos-do-cliente";
+import { DecisorDoCliente, FatosDoCliente } from "@/components/leads/FatosDoCliente";
 import { LeadExtrasList } from "@/components/leads/LeadExtrasList";
 import { useLeadTimeline } from "@/hooks/leads/useLeadTimeline";
 import { useContact } from "@/hooks/contacts/useContact";
@@ -106,6 +108,8 @@ export function LeadDossier({
   // mostrava); quem operava pelo kanban abria conversa sem ver o gancho.
   const ganchos = listarGanchos(lead.custom_fields);
   const extras = extractExtras(lead.custom_fields);
+  // O que a IA colheu da conversa — decisor e fatos que valem para sempre.
+  const fatos = extractFatos(lead.custom_fields);
 
   return (
     <Sheet open={open} onOpenChange={onOpenChange}>
@@ -122,6 +126,10 @@ export function LeadDossier({
       >
         <SheetHeader className="pb-3">
           <SheetTitle className="text-base leading-6">{lead.title}</SheetTitle>
+          {/* Quem decide, colado no nome do negócio — mesma decisão do painel do
+              inbox: o título é a empresa, e quem atende o WhatsApp dela quase
+              nunca é quem assina. */}
+          <DecisorDoCliente fatos={fatos} className="pt-1" />
         </SheetHeader>
 
         {/* Conversar vem ANTES do resto: quem abre um lead de prospecção fria
@@ -281,6 +289,19 @@ export function LeadDossier({
             isError={timeline.isError}
           />
         </section>
+
+        {/* ②¼ o que o cliente contou — vem ANTES do dossiê de prospecção de
+            propósito: aquele é o que a lista comprada sabia sobre o negócio,
+            este é o que o dono falou por conta própria. Na hora de preparar a
+            reunião, o segundo vale mais. */}
+        {/* A borda vai na condição junto com a peça: a seção some quando não há
+            fato guardado NEM conversa para reler, e um `<div>` com borda solta
+            desenharia uma linha anunciando uma seção que não existe. */}
+        {(fatos.fatos.length > 0 || conversa.data) && (
+          <div className="border-t border-border py-3">
+            <FatosDoCliente fatos={fatos} conversationId={conversa.data?.id ?? null} />
+          </div>
+        )}
 
         {/* ②½ dossiê de prospecção — o que a lista enriquecida gravou além dos
             ganchos (Dores, Score, Nota Google…). Leitura, não edição: por isso

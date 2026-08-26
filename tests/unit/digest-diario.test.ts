@@ -111,3 +111,87 @@ describe("montarPromptDigest", () => {
     expect(p).toContain("Cliente: oi");
   });
 });
+
+/**
+ * O ÁUDIO. Medido no banco em 26/08/2026: 53 de 57 mensagens transcritas não
+ * tinham nada no `body`. Ler só o body apagava a mensagem de voz inteira do
+ * prompt — e é no áudio que o dono desabafa.
+ */
+describe("montarTranscript — mensagem de voz", () => {
+  it("usa a transcrição quando o body é vazio, marcando que é áudio", () => {
+    const t = montarTranscript([
+      {
+        direction: "inbound",
+        body: null,
+        sent_at: null,
+        media_derived_text: "não gosto de conversar por telefone, gosto de olho no olho",
+      },
+    ]);
+    expect(t).toBe("Cliente (áudio): não gosto de conversar por telefone, gosto de olho no olho");
+  });
+
+  it("com body escrito, o texto digitado ganha e a linha não é marcada", () => {
+    const t = montarTranscript([
+      { direction: "inbound", body: "quanto custa?", sent_at: null, media_derived_text: "ruído" },
+    ]);
+    expect(t).toBe("Cliente: quanto custa?");
+  });
+
+  it("sem body e sem transcrição continua pulando — nada de linha vazia", () => {
+    expect(
+      montarTranscript([{ direction: "inbound", body: null, sent_at: null, media_derived_text: "" }]),
+    ).toBe("");
+  });
+});
+
+describe("parseDigest — decisor e fatos", () => {
+  const RESPOSTA = [
+    "TAG: Interessado",
+    "DECISOR: Sérgio Martins — dono",
+    "FALA_COM_DECISOR: sim",
+    "FATOS:",
+    "- Não fecha por telefone, só olho no olho.",
+    "- Está há 40 anos no ramo.",
+    "RESUMO:",
+    "- Pediu para marcar na empresa.",
+  ].join("\n");
+
+  it("separa os quatro blocos sem um invadir o outro", () => {
+    const d = parseDigest(RESPOSTA, CATALOGO);
+    expect(d.tag).toBe("Interessado");
+    expect(d.decisor).toBe("Sérgio Martins — dono");
+    expect(d.falaComDecisor).toBe(true);
+    expect(d.fatos).toEqual([
+      "Não fecha por telefone, só olho no olho.",
+      "Está há 40 anos no ramo.",
+    ]);
+    expect(d.resumo).toBe("- Pediu para marcar na empresa.");
+  });
+
+  it("«nao sei» vira null — a IA nunca chuta quem é o dono", () => {
+    const d = parseDigest("TAG: nenhuma\nDECISOR: nao sei\nFALA_COM_DECISOR: nao sei\nRESUMO:\n- ok", CATALOGO);
+    expect(d.decisor).toBeNull();
+    expect(d.falaComDecisor).toBeNull();
+  });
+
+  it("«nao» em FALA_COM_DECISOR é false, e não se confunde com «nao sei»", () => {
+    expect(parseDigest("FALA_COM_DECISOR: nao\nRESUMO:\n- x", CATALOGO).falaComDecisor).toBe(false);
+    expect(parseDigest("FALA_COM_DECISOR: não\nRESUMO:\n- x", CATALOGO).falaComDecisor).toBe(false);
+  });
+
+  it("FATOS: nenhum vira lista vazia, não um fato escrito «nenhum»", () => {
+    expect(parseDigest("TAG: nenhuma\nFATOS:\nnenhum\nRESUMO:\n- ok", CATALOGO).fatos).toEqual([]);
+  });
+
+  it("resposta velha (só TAG e RESUMO) continua funcionando, sem decisor nem fatos", () => {
+    const d = parseDigest("TAG: Interessado\nRESUMO:\n- pediu preço", CATALOGO);
+    expect(d.resumo).toBe("- pediu preço");
+    expect(d.decisor).toBeNull();
+    expect(d.fatos).toEqual([]);
+  });
+
+  it("os fatos NUNCA vazam para o resumo quando o RESUMO vem depois", () => {
+    const d = parseDigest(RESPOSTA, CATALOGO);
+    expect(d.resumo).not.toContain("40 anos");
+  });
+});

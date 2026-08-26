@@ -14,6 +14,8 @@
  * notas) precisam da mesma extração; duas cópias divergiriam.
  */
 
+import { FATOS_KEY } from "@/lib/leads/fatos-do-cliente";
+
 export const GANCHO_KEY_RE = /gancho|hook|icebreaker|abertura/i;
 
 const MAPS_KEY_RE = /google.?maps|^maps$|place_?url/i;
@@ -118,6 +120,11 @@ export function extractExtras(customFields: unknown): Array<[string, string]> {
   for (const [key, value] of Object.entries(customFields as Record<string, unknown>)) {
     if (GANCHO_KEY_RE.test(key)) continue;
     if (MAPS_KEY_RE.test(key)) continue;
+    // "O que o cliente contou" tem seção própria (lib/leads/fatos-do-cliente).
+    // Hoje ele é objeto e cairia no `continue` de estrutura logo abaixo — a
+    // pulada explícita é para o dia em que um webhook gravar uma string nesta
+    // chave e o dossiê ganhar uma linha ilegível sem ninguém ter pedido.
+    if (key === FATOS_KEY) continue;
     let v: string;
     if (typeof value === "string") v = value.trim();
     else if (typeof value === "number" || typeof value === "boolean") v = String(value);

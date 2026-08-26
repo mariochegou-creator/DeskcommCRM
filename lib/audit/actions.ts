@@ -215,6 +215,11 @@ export type AuditAction =
   // O grupo do WhatsApp da reunião: rastro de quando um grupo com o CLIENTE
   // dentro passou a existir. `ja_existia` distingue criação de reaproveitamento.
   | "lead.meeting_group_created"
+  // "O que o cliente contou" varrido sob demanda (botão do painel), não pelo
+  // cron das 7h. Fica no rastro porque é o único jeito de saber que a lista do
+  // dossiê mudou por um clique de alguém, e de quem foi o clique — o campo vive
+  // em jsonb (custom_fields.fatos_do_cliente) e não tem timeline própria.
+  | "lead.fatos_atualizados"
   | "meetings.reminders_run"
   // Sala de Reuniões (0098) — o copiloto do Meet
   | "meeting.started"

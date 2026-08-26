@@ -14,6 +14,8 @@ import { useCrmSummary } from "@/hooks/inbox/useCrmSummary";
 import type { ConversationWithContact } from "@/hooks/inbox/useConversationsRealtime";
 import { activityLabel, actorLabel, actorShape } from "@/lib/leads/activity-vocabulary";
 import { extractExtras, extractGanchos } from "@/lib/leads/ganchos";
+import { extractFatos } from "@/lib/leads/fatos-do-cliente";
+import { DecisorDoCliente, FatosDoCliente } from "@/components/leads/FatosDoCliente";
 import { LeadExtrasList } from "@/components/leads/LeadExtrasList";
 import { ContatosDoNegocio } from "@/components/leads/ContatosDoNegocio";
 import { ConversationTagsEditor } from "./ConversationTagsEditor";
@@ -111,6 +113,9 @@ export function CRMSidePanel({ conversation }: Props) {
   // juntar os de vários leads misturaria a abertura de negócios distintos.
   const ganchos = useMemo(() => extractGanchos(lead?.custom_fields ?? null), [lead]);
   const extras = useMemo(() => extractExtras(lead?.custom_fields ?? null), [lead]);
+  // O que a IA colheu da CONVERSA (decisor + fatos), no mesmo negócio de onde
+  // saem os ganchos — dossiê de negócios distintos não se mistura.
+  const fatos = useMemo(() => extractFatos(lead?.custom_fields ?? null), [lead]);
 
   const tags = contact?.tags ?? [];
   // Marcar o cliente é escrita em `contacts` — o mesmo piso do PATCH da rota
@@ -141,6 +146,10 @@ export function CRMSidePanel({ conversation }: Props) {
           {contact?.phone_number && (
             <div className="text-xs text-muted-foreground">{contact.phone_number}</div>
           )}
+          {/* QUEM DECIDE vem antes de qualquer outra coisa do cartão. O nome do
+              topo é de quem responde o WhatsApp, e em empresa com atendente
+              essa pessoa não decide nada — confundir as duas custa a semana. */}
+          <DecisorDoCliente fatos={fatos} />
           {/* As tags do CLIENTE (0105) — as mesmas que colorem a lista à
               esquerda e o card do Kanban. Ficam no cartão do Contato, e não
               numa seção própria lá embaixo junto das outras duas listas, porque
@@ -166,6 +175,15 @@ export function CRMSidePanel({ conversation }: Props) {
           )}
         </Card>
       </section>
+
+      <Separator />
+
+      {/* O que o cliente contou, logo abaixo de quem decide — as duas peças
+          respondem a mesma pergunta ("com quem eu estou falando e o que já sei
+          dele?") e é isso que se lê antes de digitar. Fica ACIMA do negócio de
+          propósito: etapa e valor a pessoa já sabe; o que o dono falou no áudio
+          de terça, não. */}
+      <FatosDoCliente fatos={fatos} conversationId={conversation.id} podeAtualizar={!!lead} />
 
       <Separator />
 

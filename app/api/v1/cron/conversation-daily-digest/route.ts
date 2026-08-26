@@ -31,6 +31,7 @@ import {
   TAGS_GERIDAS_PELA_IA,
   type MensagemDaJanela,
 } from "@/lib/conversations/digest-diario";
+import { gravarFatosDoContato, lerFatosDoContato } from "@/lib/leads/fatos-gravar";
 import { env } from "@/lib/env";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { chaveDaTag } from "@/lib/tags/cores";
@@ -91,6 +92,8 @@ export async function GET(req: NextRequest): Promise<Response> {
   let jaResumidas = 0;
   let semMensagem = 0;
   let orgsNoTeto = 0;
+  let fatosGravados = 0;
+  let fatosSemNegocio = 0;
   const falhas: string[] = [];
 
   for (const [orgId, conversas] of porOrg) {
@@ -119,9 +122,12 @@ export async function GET(req: NextRequest): Promise<Response> {
           continue;
         }
 
+        // `media_derived_text` é a transcrição do áudio. Sem ela no SELECT, a
+        // mensagem de voz chega ao prompt como linha vazia e some — e é no
+        // áudio que o dono conta o que interessa (ver montarTranscript).
         const { data: msgs } = await admin
           .from("messages")
-          .select("direction, body, sent_at")
+          .select("direction, body, sent_at, media_derived_text")
           .eq("organization_id", orgId)
           .eq("conversation_id", conversa.id)
           .gte("sent_at", cutoffIso)
@@ -152,10 +158,17 @@ export async function GET(req: NextRequest): Promise<Response> {
         }
         if (contato?.is_anonymized) continue;
 
+        // O que já se sabia deste cliente entra no prompt para o modelo não
+        // devolver o mesmo fato com outras palavras todo dia.
+        const jaSabido = conversa.contact_id
+          ? await lerFatosDoContato(admin, orgId, conversa.contact_id)
+          : null;
+
         const prompt = montarPromptDigest({
           transcript,
           tagsPermitidas,
           nomeContato: contato?.display_name ?? contato?.name ?? null,
+          fatosConhecidos: jaSabido?.fatos.fatos ?? [],
         });
         const call = await runModelCall(pool, llmCfg, {
           tenantId: orgId,
@@ -175,6 +188,34 @@ export async function GET(req: NextRequest): Promise<Response> {
         });
         if (notaErr) throw new Error(`nota: ${notaErr.message}`);
         notas++;
+
+        // "O que o cliente contou" — o que vale para SEMPRE vai para o negócio
+        // do funil, não para a nota do dia. A nota é trocada amanhã; o dossiê
+        // acumula, que é o que se lê antes da reunião.
+        //
+        // Falha aqui NÃO derruba a conversa: a nota e a tag já foram gravadas,
+        // e perder o dossiê de uma conversa é muito menos grave do que a
+        // varredura inteira parar por causa de um negócio arquivado.
+        if (conversa.contact_id && (digest.decisor || digest.fatos.length > 0 || digest.falaComDecisor !== null)) {
+          try {
+            const r = await gravarFatosDoContato(
+              admin,
+              orgId,
+              conversa.contact_id,
+              {
+                decisor: digest.decisor,
+                falaComDecisor: digest.falaComDecisor,
+                fatos: digest.fatos,
+              },
+              agora,
+            );
+            if (r.status === "gravado") fatosGravados++;
+            else if (r.status === "sem_negocio") fatosSemNegocio++;
+          } catch (err) {
+            const detail = err instanceof Error ? err.message : String(err);
+            console.error("[conversation-daily-digest] fatos falharam", conversa.id, detail);
+          }
+        }
 
         if (digest.tag && contato && !contato.is_blocked) {
           const novas = aplicarTagDaIa(contato.tags ?? [], digest.tag);
@@ -210,6 +251,8 @@ export async function GET(req: NextRequest): Promise<Response> {
       ja_resumidas: jaResumidas,
       sem_mensagem: semMensagem,
       orgs_no_teto: orgsNoTeto,
+      fatos_gravados: fatosGravados,
+      fatos_sem_negocio: fatosSemNegocio,
       falhas: falhas.length,
       since_ts: cutoffIso,
     },
@@ -224,6 +267,8 @@ export async function GET(req: NextRequest): Promise<Response> {
       ja_resumidas: jaResumidas,
       sem_mensagem: semMensagem,
       orgs_no_teto: orgsNoTeto,
+      fatos_gravados: fatosGravados,
+      fatos_sem_negocio: fatosSemNegocio,
       falhas,
     },
     { requestId },
