@@ -11,6 +11,7 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 import { ApiError } from "@/lib/api/types";
 import type { Actor, HandlerCtx } from "@/lib/api/handlers/types";
 import { audit } from "@/lib/audit";
+import { padraoBusca, telefonesBusca } from "@/lib/busca/termo";
 import { hashCpf, encryptCpfSql } from "@/lib/contacts/cpf";
 import type { Contact } from "@/lib/types/contacts";
 import type {
@@ -95,17 +96,33 @@ export async function listContactsHandler(
     .limit(q.limit + 1);
 
   if (q.search) {
-    const s = q.search.trim();
-    const digits = s.replace(/\D/g, "");
-    const orParts = [
-      `name.ilike.%${s}%`,
-      `email.ilike.%${s}%`,
-      `phone_number.ilike.%${s}%`,
-    ];
-    if (digits.length === 11) {
-      orParts.push(`cpf_hash.eq.${hashCpf(digits)}`);
+    // Três defeitos moravam aqui e os três apareciam no mesmo caso real:
+    // o contato "Sérgio Martins" da Contraste Móveis não era achado por
+    // "sergio" nem pelo telefone dele.
+    //
+    //  1. `display_name` ficava de fora — e é ali que o WhatsApp grava quem
+    //     atende, enquanto `name` fica com o nome da empresa;
+    //  2. `ilike` ignora maiúscula, nunca acento — `imatch` com as famílias
+    //     de lib/busca/termo.ts resolve;
+    //  3. o telefone só casava por texto: quem digita "(71) 9105-4071" nunca
+    //     achava `+557191054071`, e o nono dígito partia o resto.
+    const padrao = padraoBusca(q.search);
+    if (padrao) {
+      const orParts = [
+        `name.imatch.${padrao}`,
+        `display_name.imatch.${padrao}`,
+        `email.imatch.${padrao}`,
+      ];
+      for (const digitos of telefonesBusca(q.search)) {
+        orParts.push(`phone_number.ilike.%${digitos}%`);
+      }
+      // CPF é igualdade sobre o hash: 11 dígitos exatos ou nada.
+      const digits = q.search.replace(/[^0-9]/g, "");
+      if (digits.length === 11) {
+        orParts.push(`cpf_hash.eq.${hashCpf(digits)}`);
+      }
+      query = query.or(orParts.join(","));
     }
-    query = query.or(orParts.join(","));
   }
   if (q.tag) query = query.contains("tags", [q.tag]);
   if (q.source) query = query.eq("source", q.source);

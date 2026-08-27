@@ -92,6 +92,23 @@ export interface Lead {
    * migration 0105.
    */
   client_tags?: string[];
+  /**
+   * Derivado (não é coluna): como o CLIENTE se chama e o telefone dele,
+   * lidos de `contacts` pelo `contact_id` — mesma viagem das `client_tags`.
+   *
+   * Existe pela BUSCA. O título do negócio é o nome da empresa
+   * ("Contraste Móveis e Decorações") e o nome de quem atende mora só no
+   * contato ("Sérgio Martins"): procurar pelo dono no quadro não achava
+   * nada, porque o quadro filtra na tela e a tela não tinha o dado.
+   *
+   * São dois campos e não um porque são duas coisas: `client_name` é o nome
+   * comercial (o que a importação do Maps gravou) e `client_display_name` é
+   * quem atende no WhatsApp. Em 170 dos 1140 contatos desta base eles
+   * diferem, e quem busca pode ter qualquer um dos dois na cabeça.
+   */
+  client_name?: string | null;
+  client_display_name?: string | null;
+  client_phone?: string | null;
   created_at: string;
   updated_at: string;
   created_by_user_id: string | null;

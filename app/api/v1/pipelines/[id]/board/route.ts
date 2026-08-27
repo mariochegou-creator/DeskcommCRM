@@ -18,7 +18,7 @@ import { type NextRequest } from "next/server";
 import { fail, ok } from "@/lib/api/wrappers";
 import {
   emLotes,
-  withClientTags,
+  withCliente,
   withOwnerAgents,
   withScores,
 } from "@/lib/leads/enriquecimento";
@@ -232,7 +232,7 @@ export async function GET(_req: NextRequest, ctx: RouteCtx): Promise<Response> {
     return fail("internal_error", leadsComScore.error, 500, { requestId });
   }
 
-  const leadsComTags = await withClientTags(
+  const leadsComTags = await withCliente(
     supabase,
     (pipeline as Pipeline).organization_id,
     leadsComScore.leads,

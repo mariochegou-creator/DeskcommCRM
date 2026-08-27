@@ -5,6 +5,7 @@ import Link from "next/link";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Robot, Plus } from "@/lib/ui/icons";
+import { contemBusca } from "@/lib/busca/termo";
 import { useAgentsList } from "@/hooks/ai/useAgents";
 import type { AgentRow } from "@/hooks/ai/useAgent";
 import { AgentCard } from "./AgentCard";
@@ -25,12 +26,12 @@ export function AgentsList({ initialData, canWrite }: Props) {
   const agents = data ?? [];
 
   const filtered = useMemo(() => {
-    const q = query.trim().toLowerCase();
+    const q = query.trim();
     return agents.filter((a) => {
       const s = deriveAgentStatus(a);
       if (!showArchived && s === "archived") return false;
       if (status !== "all" && s !== status) return false;
-      if (q && !a.name.toLowerCase().includes(q)) return false;
+      if (q && !contemBusca(q, a.name)) return false;
       return true;
     });
   }, [agents, status, query, showArchived]);

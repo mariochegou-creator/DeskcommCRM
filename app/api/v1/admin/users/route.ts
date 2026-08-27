@@ -3,6 +3,7 @@ import { z } from "zod";
 import { requirePlatformAdmin } from "@/lib/auth/requirePlatformAdmin";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { ok, fail } from "@/lib/api/wrappers";
+import { contemBusca } from "@/lib/busca/termo";
 import { audit } from "@/lib/audit";
 import { randomUUID } from "node:crypto";
 
@@ -216,14 +217,13 @@ export async function GET(req: NextRequest) {
     ];
   });
 
-  // Step 5: apply q filter (email or full_name ilike)
+  // Step 5: apply q filter (email or full_name)
+  //
+  // `contemBusca` e não `toLowerCase().includes`: minúscula sozinha não
+  // ignora acento, e nome de gente brasileira tem acento — "joao" nunca
+  // achava "João". Mesma regra das outras caixas (lib/busca/termo.ts).
   if (q) {
-    const lq = q.toLowerCase();
-    joined = joined.filter(
-      (r) =>
-        r.email?.toLowerCase().includes(lq) ||
-        r.full_name?.toLowerCase().includes(lq),
-    );
+    joined = joined.filter((r) => contemBusca(q, r.email, r.full_name));
   }
 
   // Step 6: sort by last_sign_in_at desc nulls last, then user_id+org_id

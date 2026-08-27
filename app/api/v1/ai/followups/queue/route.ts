@@ -25,6 +25,7 @@ import { randomUUID } from "node:crypto";
 import type { NextRequest } from "next/server";
 
 import { ok, fail } from "@/lib/api/wrappers";
+import { contatosQueCasam } from "@/lib/busca/contatos";
 import { requireRole } from "@/lib/auth/require-role";
 import { createClient } from "@/lib/supabase/server";
 
@@ -157,20 +158,18 @@ export async function GET(req: NextRequest): Promise<Response> {
   // filtragem aplicada às duas fontes). Sem match → resultado vazio direto.
   let contactIds: string[] | null = null;
   if (q) {
-    // Mesmo escape de %/_ de conversations/_handler.ts (LIKE wildcards literais).
-    // Diferente de lá (um `.ilike()` fluente só), aqui os 3 termos vão dentro de
-    // um `.or()` cru — vírgula/parêntese são delimitadores do PRÓPRIO DSL do
-    // `.or()`, então também são removidos (não só escapados) pra um termo de
-    // busca nunca injetar uma condição extra na string do filtro.
-    const safeQ = q.replace(/[%_]/g, (m) => `\\${m}`).replace(/[,()]/g, " ");
-    const { data: matches, error: cErr } = await supabase
-      .from("contacts")
-      .select("id")
-      .eq("organization_id", activeOrg.orgId)
-      .or(`name.ilike.%${safeQ}%,display_name.ilike.%${safeQ}%,phone_number.ilike.%${safeQ}%`)
-      .limit(500); // ponytail: fila é escala MVP; sobe se virar hot path
-    if (cErr) return fail("internal_error", cErr.message, 500, { requestId });
-    contactIds = (matches ?? []).map((m) => m.id);
+    // Quem casa com o termo é decidido no MESMO lugar que decide isso no
+    // inbox e na lista de contatos — lib/busca/contatos.ts. Aqui era `ilike`
+    // à mão, que ignora maiúscula mas nunca acento: "sergio" não achava
+    // "Sérgio", e o telefone só casava digitado exatamente como foi gravado.
+    const casaram = await contatosQueCasam(
+      supabase,
+      activeOrg.orgId,
+      q,
+      500, // ponytail: fila é escala MVP; sobe se virar hot path
+    );
+    if (casaram.error) return fail("internal_error", casaram.error, 500, { requestId });
+    contactIds = casaram.ids;
     if (contactIds.length === 0) {
       return ok<QueueRow[]>([], { requestId, meta: { cursor: null, has_more: false } });
     }

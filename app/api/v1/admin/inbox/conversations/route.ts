@@ -3,6 +3,9 @@ import { z } from "zod";
 import { requirePlatformAdmin } from "@/lib/auth/requirePlatformAdmin";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { ok, fail } from "@/lib/api/wrappers";
+import { contatosQueCasam } from "@/lib/busca/contatos";
+import { conversasComMensagem } from "@/lib/busca/conversas";
+import { padraoBusca } from "@/lib/busca/termo";
 import { audit } from "@/lib/audit";
 import { randomUUID } from "node:crypto";
 
@@ -102,8 +105,43 @@ export async function GET(req: NextRequest) {
   }
 
   if (q) {
-    // search by last_message_preview or contact phone (best-effort, no FTS needed)
-    query = query.ilike("last_message_preview", `%${q}%`);
+    // A busca do inbox responde "onde está o Sérgio?" e "onde falamos de
+    // orçamento?" — não só "qual foi a última linha?".
+    //
+    // Antes olhava SÓ `last_message_preview`, e isso errava de duas formas:
+    // o nome da pessoa mora em `contacts.display_name` ("Sérgio Martins",
+    // nunca na mensagem), e a coluna guarda apenas a ÚLTIMA linha — uma
+    // palavra dita cinco mensagens atrás não existia para a busca.
+    //
+    // Agora são três caminhos num OU: a última mensagem (de graça, coluna da
+    // própria linha) OU o CONTATO OU qualquer mensagem do HISTÓRICO. Os dois
+    // últimos são resolvidos em ids ANTES porque o `or` do PostgREST não
+    // atravessa tabela embutida — ver lib/busca/contatos.ts e conversas.ts.
+    //
+    // `imatch` (`~*`) no lugar de `ilike`: o padrão já chega com as famílias
+    // de acento, então "sergio" acha "Sérgio" — ver lib/busca/termo.ts.
+    //
+    // `tenant_id` entra quando existe: sem ele o inbox de suporte atravessa
+    // tenants de propósito, e a chave de admin é quem decide o alcance.
+    const padrao = padraoBusca(q);
+    if (padrao) {
+      const [contatos, mensagens] = await Promise.all([
+        contatosQueCasam(admin, tenant_id ?? null, q),
+        conversasComMensagem(admin, tenant_id ?? null, q),
+      ]);
+      const falha = contatos.error ?? mensagens.error;
+      if (falha) {
+        return fail("internal_error", "Query failed", 500, { requestId, details: falha });
+      }
+      const alvos = [`last_message_preview.imatch.${padrao}`];
+      if (contatos.ids.length > 0) {
+        alvos.push(`contact_id.in.(${contatos.ids.join(",")})`);
+      }
+      if (mensagens.ids.length > 0) {
+        alvos.push(`id.in.(${mensagens.ids.join(",")})`);
+      }
+      query = query.or(alvos.join(","));
+    }
   }
 
   if (cursorPayload) {

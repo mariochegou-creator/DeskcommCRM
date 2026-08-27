@@ -115,7 +115,7 @@ export function InboxList() {
           <Input
             value={rawSearch}
             onChange={(e) => setRawSearch(e.target.value)}
-            placeholder="Buscar mensagem..."
+            placeholder="Buscar por nome, telefone ou mensagem..."
             className="h-8 pl-8 text-xs"
           />
         </div>

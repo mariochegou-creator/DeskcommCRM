@@ -6,6 +6,9 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 
 import { ApiError } from "@/lib/api/types";
+import { contatosQueCasam } from "@/lib/busca/contatos";
+import { conversasComMensagem } from "@/lib/busca/conversas";
+import { padraoBusca } from "@/lib/busca/termo";
 import type { Actor, HandlerCtx } from "@/lib/api/handlers/types";
 import { audit } from "@/lib/audit";
 import type {
@@ -145,8 +148,40 @@ export async function listConversationsHandler(
   }
 
   if (q.search) {
-    const s = q.search.trim().replace(/[%_]/g, (m) => `\\${m}`);
-    query = query.ilike("last_message_preview", `%${s}%`);
+    // A busca do inbox responde "onde está o Sérgio?" e "onde falamos de
+    // orçamento?" — não só "qual foi a última linha?".
+    //
+    // Antes olhava SÓ `last_message_preview`, e isso errava de duas formas:
+    // o nome da pessoa mora em `contacts.display_name` ("Sérgio Martins",
+    // nunca na mensagem), e a coluna guarda apenas a ÚLTIMA linha — uma
+    // palavra dita cinco mensagens atrás não existia para a busca.
+    //
+    // Agora são três caminhos num OU: a última mensagem (de graça, coluna da
+    // própria linha) OU o CONTATO OU qualquer mensagem do HISTÓRICO. Os dois
+    // últimos são resolvidos em ids ANTES porque o `or` do PostgREST não
+    // atravessa tabela embutida — ver lib/busca/contatos.ts e conversas.ts.
+    //
+    // `imatch` (`~*`) no lugar de `ilike`: o padrão já chega com as famílias
+    // de acento, então "sergio" acha "Sérgio" — ver lib/busca/termo.ts.
+    const padrao = padraoBusca(q.search);
+    if (padrao) {
+      const [contatos, mensagens] = await Promise.all([
+        contatosQueCasam(supabase, ctx.organization_id, q.search),
+        conversasComMensagem(supabase, ctx.organization_id, q.search),
+      ]);
+      const falha = contatos.error ?? mensagens.error;
+      if (falha) {
+        throw new ApiError(500, "internal_error", undefined, ctx.requestId, falha);
+      }
+      const alvos = [`last_message_preview.imatch.${padrao}`];
+      if (contatos.ids.length > 0) {
+        alvos.push(`contact_id.in.(${contatos.ids.join(",")})`);
+      }
+      if (mensagens.ids.length > 0) {
+        alvos.push(`id.in.(${mensagens.ids.join(",")})`);
+      }
+      query = query.or(alvos.join(","));
+    }
   }
 
   if (q.cursor) {

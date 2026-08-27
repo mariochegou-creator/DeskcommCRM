@@ -1,4 +1,5 @@
 import type { Lead } from "@/lib/types/leads";
+import { contemBusca } from "@/lib/busca/termo";
 
 /**
  * Prefixo que marca um dono AGENTE no filtro (0070). O param de URL continua
@@ -73,9 +74,21 @@ export function filtersToParams(f: LeadFilters): string {
   return p.toString();
 }
 
+/**
+ * O que a caixa de busca do quadro compara.
+ *
+ * Título e descrição são do NEGÓCIO; nome, nome de exibição e telefone são do
+ * CLIENTE. Antes só o título entrava, e como a importação grava a empresa no
+ * título ("Contraste Móveis e Decorações") e a pessoa no contato ("Sérgio
+ * Martins"), procurar pelo dono não achava o card dele.
+ */
+function camposDeBusca(l: Lead): Array<string | null | undefined> {
+  return [l.title, l.description, l.client_name, l.client_display_name, l.client_phone];
+}
+
 export function applyFilters(leads: Lead[], f: LeadFilters): Lead[] {
   const today = new Date().toISOString().slice(0, 10);
-  const search = f.search?.trim().toLowerCase() ?? "";
+  const search = f.search?.trim() ?? "";
 
   return leads.filter((l) => {
     // "Sem responsável" é sem dono NENHUM — lead de dono agente tem dono.
@@ -99,11 +112,7 @@ export function applyFilters(leads: Lead[], f: LeadFilters): Lead[] {
       if (new Date(l.created_at).getTime() < corte) return false;
     } else if (f.status && f.status !== "all" && l.status !== f.status) return false;
     if (f.tag && !l.tags.includes(f.tag)) return false;
-    if (
-      search &&
-      !`${l.title} ${l.description ?? ""}`.toLowerCase().includes(search)
-    )
-      return false;
+    if (search && !contemBusca(search, ...camposDeBusca(l))) return false;
     if (typeof f.valueCentsMin === "number" && (l.value_cents ?? 0) < f.valueCentsMin)
       return false;
     if (typeof f.valueCentsMax === "number" && (l.value_cents ?? 0) > f.valueCentsMax)

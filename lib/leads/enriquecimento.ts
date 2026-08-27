@@ -186,7 +186,8 @@ export async function withScores(
 }
 
 /**
- * Anexa as tags do CLIENTE (0105) aos leads, lidas de `contacts.tags`.
+ * Anexa o que é do CLIENTE aos leads, lido de `contacts`: as tags (0105) e a
+ * identidade — nome, nome de exibição e telefone.
  *
  * Enriquecimento e não join no SELECT do board pelo mesmo motivo dos outros
  * dois deste arquivo: a rota do board lê `crm_leads` com `select("*")` e o
@@ -199,8 +200,13 @@ export async function withScores(
  * Lead sem `contact_id` sai como está — negócio criado à mão sem contato existe,
  * e forçar `client_tags: []` nele diria "este cliente não tem tag" sobre um
  * cliente que não existe.
+ *
+ * A identidade viaja junto com as tags, na MESMA leitura, porque é a mesma
+ * linha de `contacts`: a busca do quadro e da lista de negócios precisa dela
+ * para achar o card pelo nome do dono, e uma segunda viagem só para isso
+ * dobraria o custo do board sem trazer nenhum dado novo.
  */
-export async function withClientTags(
+export async function withCliente(
   supabase: Supabase,
   organizationId: string,
   leads: Lead[],
@@ -213,21 +219,36 @@ export async function withClientTags(
   const { data, error } = await emLotes(contactIds, (lote) =>
     supabase
       .from("contacts")
-      .select("id, tags")
+      .select("id, tags, name, display_name, phone_number")
       .eq("organization_id", organizationId)
       .in("id", lote),
   );
   if (error) return { leads, error };
 
-  const porContato = new Map<string, string[]>();
-  for (const row of (data ?? []) as Array<{ id: string; tags: string[] | null }>) {
-    porContato.set(row.id, row.tags ?? []);
+  type LinhaContato = {
+    id: string;
+    tags: string[] | null;
+    name: string | null;
+    display_name: string | null;
+    phone_number: string | null;
+  };
+  const porContato = new Map<string, LinhaContato>();
+  for (const row of (data ?? []) as LinhaContato[]) {
+    porContato.set(row.id, row);
   }
 
   return {
     leads: leads.map((lead) => {
-      const tags = lead.contact_id ? porContato.get(lead.contact_id) : undefined;
-      return tags ? { ...lead, client_tags: tags } : lead;
+      const contato = lead.contact_id ? porContato.get(lead.contact_id) : undefined;
+      return contato
+        ? {
+            ...lead,
+            client_tags: contato.tags ?? [],
+            client_name: contato.name,
+            client_display_name: contato.display_name,
+            client_phone: contato.phone_number,
+          }
+        : lead;
     }),
     error: null,
   };

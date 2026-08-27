@@ -3,6 +3,7 @@ import { z } from "zod";
 import { requirePlatformAdmin } from "@/lib/auth/requirePlatformAdmin";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { ok, fail } from "@/lib/api/wrappers";
+import { padraoBusca } from "@/lib/busca/termo";
 import { audit } from "@/lib/audit";
 import { randomUUID } from "node:crypto";
 
@@ -108,8 +109,10 @@ export async function GET(req: NextRequest) {
   }
 
   if (q) {
+    // `imatch` e não `ilike`: acento. Ver lib/busca/termo.ts.
+    const padrao = padraoBusca(q) ?? q;
     query = query.or(
-      `display_name.ilike.%${q}%,slug::text.ilike.%${q}%,cnpj.ilike.%${q}%`,
+      `display_name.imatch.${padrao},slug::text.imatch.${padrao},cnpj.imatch.${padrao}`,
     );
   }
 

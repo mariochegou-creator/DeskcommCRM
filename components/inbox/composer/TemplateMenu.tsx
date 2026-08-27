@@ -1,5 +1,6 @@
 "use client";
 import type { MessageTemplate } from "@/hooks/inbox/useMessageTemplates";
+import { contemBusca } from "@/lib/busca/termo";
 
 /** Estado do slash-menu a partir do texto do composer. Puro (testável). */
 export function resolveSlash(text: string): { open: boolean; query: string } {
@@ -21,7 +22,7 @@ export function TemplateMenu({ open, query, templates, onPick, onClose: _onClose
   if (!open) return null;
   const q = query.toLowerCase();
   const filtered = templates.filter(
-    (t) => t.title.toLowerCase().includes(q) || (t.shortcut ?? "").toLowerCase().includes(q),
+    (t) => contemBusca(q, t.title, t.shortcut),
   );
   return (
     <div

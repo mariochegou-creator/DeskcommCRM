@@ -46,6 +46,7 @@ import { FunnelSummaryCards } from "@/components/kanban/FunnelSummaryCards";
 import { NewLeadDialog } from "@/components/kanban/NewLeadDialog";
 import { ImportKaptarDialog } from "@/components/kanban/ImportKaptarDialog";
 import { FilterChips, type ActiveFilter } from "./FilterChips";
+import { contemBusca } from "@/lib/busca/termo";
 import { periodRange } from "@/lib/dashboard/period";
 import { formatBRL, pickFunnelStages } from "@/lib/dashboard/metrics";
 import type { Lead } from "@/lib/types/leads";
@@ -189,11 +190,25 @@ export function LeadsClient({
 
   const filtered = useMemo(() => {
     const all = board.data?.leads ?? [];
-    const term = search.trim().toLowerCase();
+    const term = search.trim();
     const result = all.filter((l) => {
       if (statusFilter && l.status !== statusFilter) return false;
       if (stageFilter && l.stage_id !== stageFilter) return false;
-      if (term && !l.title.toLowerCase().includes(term)) return false;
+      // Mesmos campos do quadro (lib/kanban/filters.ts): o negócio E o
+      // cliente. Só o título deixava invisível quem procura pelo nome do
+      // dono, que é o que está gravado no contato — não no card.
+      if (
+        term &&
+        !contemBusca(
+          term,
+          l.title,
+          l.description,
+          l.client_name,
+          l.client_display_name,
+          l.client_phone,
+        )
+      )
+        return false;
       return true;
     });
 
@@ -352,8 +367,8 @@ export function LeadsClient({
                       type="search"
                       value={searchInput}
                       onChange={(e) => { setSearchInput(e.target.value); setPage(0); }}
-                      placeholder="Buscar negócio…"
-                      aria-label="Buscar negócio"
+                      placeholder="Buscar por negócio, cliente ou telefone…"
+                      aria-label="Buscar por negócio, cliente ou telefone"
                       className="h-9 w-full rounded-control border border-border bg-surface pl-9 pr-3 text-sm text-text placeholder:text-text-subtle focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent-500 focus-visible:ring-offset-2 focus-visible:ring-offset-surface"
                     />
                   </div>
