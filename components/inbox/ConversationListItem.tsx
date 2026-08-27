@@ -16,13 +16,27 @@ interface Props {
   queuePosition?: number;
 }
 
-const STATUS_DOT: Record<string, string> = {
-  open: "bg-muted-foreground/60",
-  claimed: "bg-blue-500",
-  ai_handling: "bg-purple-500",
-  closed: "bg-muted-foreground/30",
-  archived: "bg-muted-foreground/20",
-};
+/**
+ * A bolinha no avatar quer dizer UMA coisa: "este lead falou e ninguém viu".
+ *
+ * Era colorida por STATUS da conversa (azul = `claimed`, roxo = `ai_handling`,
+ * cinza = `open`), e isso mentia justamente na leitura de relance, que é como
+ * a lista é usada: das 8 conversas `claimed` desta base, 7 não tinham UMA
+ * mensagem por ler e mesmo assim apareciam marcadas de azul — enquanto 49
+ * conversas `open` com mensagem do cliente esperando ficavam com o cinza
+ * apagado. Marca no avatar é lida como "tem coisa nova aqui", e ela dizia
+ * outra coisa.
+ *
+ * O status não some da tela: as abas (Fila / Minhas / Fechadas) recortam por
+ * ele, e o robô ao lado do texto marca a conversa que a IA está tocando. O que
+ * some é a legenda de cores que ninguém tinha para decorar.
+ *
+ * `unread_count_for_assignee` é o contador certo e se apaga sozinho:
+ * `fn_mark_conversation_message` (migration 0099) soma no inbound e ZERA em
+ * qualquer resposta — inclusive a digitada no celular do operador — e abrir a
+ * conversa zera pelo handler de mensagens.
+ */
+const BOLINHA_NAO_LIDA = "bg-accent-500";
 
 function initials(name: string | null | undefined, fallback: string): string {
   const v = (name ?? "").trim();
@@ -82,8 +96,10 @@ export function ConversationListItem({
   const truncated = preview.length > 60 ? `${preview.slice(0, 60)}…` : preview;
   const time = relativeTime(conversation.last_message_at);
   const unread = conversation.unread_count_for_assignee ?? 0;
-  const dot = STATUS_DOT[conversation.status] ?? STATUS_DOT.open;
   const isAi = conversation.status === "ai_handling";
+  // Conversa aberta na tela já está lida — o servidor zera no fetch, mas
+  // esconder aqui evita a bolinha fantasma até o refetch chegar.
+  const temNaoLida = unread > 0 && !isSelected;
 
   return (
     <button
@@ -105,13 +121,15 @@ export function ConversationListItem({
             {initials(displayName, phoneFallback)}
           </AvatarFallback>
         </Avatar>
-        <span
-          className={cn(
-            "absolute -right-0.5 -top-0.5 h-2.5 w-2.5 rounded-full border border-background",
-            dot,
-          )}
-          aria-hidden
-        />
+        {temNaoLida && (
+          <span
+            className={cn(
+              "absolute -right-0.5 -top-0.5 h-2.5 w-2.5 rounded-full border border-background",
+              BOLINHA_NAO_LIDA,
+            )}
+            aria-hidden
+          />
+        )}
       </div>
 
       <div className="min-w-0 flex-1">
@@ -164,9 +182,7 @@ export function ConversationListItem({
               Anonimizado
             </Badge>
           )}
-          {/* Conversa aberta na tela já está lida — o servidor zera no fetch,
-              mas esconder aqui evita o badge fantasma até o refetch chegar. */}
-          {unread > 0 && !isSelected && (
+          {temNaoLida && (
             <Badge className="ml-auto h-4 min-w-4 px-1.5 text-[10px]">{unread}</Badge>
           )}
         </div>
