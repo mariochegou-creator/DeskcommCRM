@@ -2027,6 +2027,7 @@ export type Database = {
           created_by_name: string | null
           created_by_user_id: string | null
           id: string
+          mentions: string[]
           organization_id: string
         }
         Insert: {
@@ -2036,6 +2037,7 @@ export type Database = {
           created_by_name?: string | null
           created_by_user_id?: string | null
           id?: string
+          mentions?: string[]
           organization_id: string
         }
         Update: {
@@ -2045,6 +2047,7 @@ export type Database = {
           created_by_name?: string | null
           created_by_user_id?: string | null
           id?: string
+          mentions?: string[]
           organization_id?: string
         }
         Relationships: [

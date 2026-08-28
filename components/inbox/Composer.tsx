@@ -8,12 +8,15 @@ import { AudioRecorder } from "@/components/inbox/composer/AudioRecorder";
 import { DraftReplyButton } from "@/components/inbox/composer/DraftReplyButton";
 import { EmojiButton } from "@/components/inbox/composer/EmojiButton";
 import { SavedAudioMenu } from "@/components/inbox/composer/SavedAudioMenu";
+import { filtrarMembros, MencaoMenu } from "@/components/inbox/composer/MencaoMenu";
 import { resolveSlash, TemplateMenu } from "@/components/inbox/composer/TemplateMenu";
+import { useAssignableMembers, type AssignableMember } from "@/hooks/inbox/useAssignableMembers";
 import { useCreateNote } from "@/hooks/inbox/useCreateNote";
 import { useMessageTemplates, type MessageTemplate } from "@/hooks/inbox/useMessageTemplates";
 import { useSendMessage } from "@/hooks/inbox/useSendMessage";
 import { useUploadMedia } from "@/hooks/inbox/useUploadMedia";
 import { interpolateTemplate } from "@/lib/inbox/template-vars";
+import { acharMencionados, resolveArroba } from "@/lib/notes/mencoes";
 import { cn } from "@/lib/utils";
 
 export interface ComposerHandle {
@@ -51,6 +54,13 @@ export const Composer = forwardRef<ComposerHandle, Props>(function Composer(
   const slash = resolveSlash(text);
   const menuOpen = mode === "reply" && slash.open && !menuDismissed;
 
+  // 0110 — o menu de @. Só em nota, e a lista só é buscada nesse modo: quem
+  // nunca abre nota não paga a consulta.
+  const [arroba, setArroba] = useState({ open: false, query: "", inicio: -1 });
+  const membros = useAssignableMembers(mode === "note");
+  const arrobaOpen = mode === "note" && arroba.open;
+  const membrosFiltrados = filtrarMembros(membros.data ?? [], arroba.query);
+
   useImperativeHandle(ref, () => ({
     focus: () => taRef.current?.focus(),
   }));
@@ -69,11 +79,19 @@ export const Composer = forwardRef<ComposerHandle, Props>(function Composer(
     const body = text.trim();
     if (!body || isDisabled) return;
     if (mode === "note") {
+      // O nome é resolvido para id AQUI porque a tela é quem tem a lista aberta.
+      // Vale tanto pro que foi escolhido no menu quanto pro que foi digitado à
+      // mão — "@david" batido direto marca o David do mesmo jeito.
       createNote.mutate(
-        { conversation_id: conversationId, body },
+        {
+          conversation_id: conversationId,
+          body,
+          mentions: acharMencionados(body, membros.data ?? []),
+        },
         {
           onSuccess: () => {
             setText("");
+            setArroba({ open: false, query: "", inicio: -1 });
             requestAnimationFrame(() => autoresize());
           },
         },
@@ -104,6 +122,24 @@ export const Composer = forwardRef<ComposerHandle, Props>(function Composer(
     });
   }
 
+  /** Troca o `@dav` que estava sendo digitado pelo nome inteiro + espaço. */
+  function aplicarMencao(m: AssignableMember) {
+    const ta = taRef.current;
+    const cursor = ta?.selectionStart ?? text.length;
+    const inicio = arroba.inicio;
+    if (inicio < 0 || !m.full_name) return;
+    const inserido = `@${m.full_name} `;
+    const next = text.slice(0, inicio) + inserido + text.slice(cursor);
+    setText(next);
+    setArroba({ open: false, query: "", inicio: -1 });
+    requestAnimationFrame(() => {
+      if (!ta) return;
+      ta.focus();
+      ta.selectionStart = ta.selectionEnd = inicio + inserido.length;
+      autoresize();
+    });
+  }
+
   function applyDraft(draft: string) {
     // O rascunho é uma resposta COMPLETA sugerida — substitui o conteúdo, nunca
     // concatena (inserir no cursor grudaria dois textos completos, gerando uma
@@ -120,8 +156,21 @@ export const Composer = forwardRef<ComposerHandle, Props>(function Composer(
       setMenuDismissed(true);
       return;
     }
+    if (e.key === "Escape" && arrobaOpen) {
+      setArroba({ open: false, query: "", inicio: -1 });
+      return;
+    }
     if (e.key === "Enter" && !e.shiftKey) {
       e.preventDefault();
+      // Com o menu de @ aberto, Enter ESCOLHE o primeiro da lista em vez de
+      // enviar. Sem isso a nota sairia com "@dav" pela metade — e o `/` pode se
+      // dar ao luxo de só ignorar o Enter porque um comando ocupa o texto
+      // inteiro; o `@` fica no meio de uma frase que a pessoa quer terminar.
+      if (arrobaOpen) {
+        const primeiro = membrosFiltrados[0];
+        if (primeiro) aplicarMencao(primeiro);
+        return;
+      }
       if (menuOpen) return; // deixa o Enter pro menu; não envia /query como mensagem
       handleSubmit();
     }
@@ -143,6 +192,12 @@ export const Composer = forwardRef<ComposerHandle, Props>(function Composer(
           mode === "note" && "border-warning/40 bg-warning-bg",
         )}
       >
+        <MencaoMenu
+          open={arrobaOpen}
+          query={arroba.query}
+          membros={membros.data ?? []}
+          onPick={aplicarMencao}
+        />
         <TemplateMenu
           open={menuOpen}
           query={slash.query}
@@ -217,6 +272,9 @@ export const Composer = forwardRef<ComposerHandle, Props>(function Composer(
             onChange={(e) => {
               setText(e.target.value);
               if (!resolveSlash(e.target.value).open) setMenuDismissed(false);
+              // O `@` vale em qualquer ponto do texto, então o estado do menu
+              // sai da POSIÇÃO DO CURSOR, não do começo da string.
+              setArroba(resolveArroba(e.target.value, e.target.selectionStart ?? 0));
               autoresize();
             }}
             onKeyDown={onKeyDown}

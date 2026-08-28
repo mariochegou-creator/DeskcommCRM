@@ -14,9 +14,12 @@ import { requireRole } from "@/lib/auth/require-role";
 import { extractGanchos, formatGanchoNote, GANCHO_NOTE_AUTHOR } from "@/lib/leads/ganchos";
 import { createNoteSchema } from "@/lib/schemas/notes";
 import { createClient } from "@/lib/supabase/server";
+import { createAdminClient } from "@/lib/supabase/admin";
+import { isServiceRoleConfigured } from "@/lib/audit";
 
 export const dynamic = "force-dynamic";
-const COLS = "id, conversation_id, body, created_by_user_id, created_by_name, created_at";
+const COLS =
+  "id, conversation_id, body, created_by_user_id, created_by_name, created_at, mentions";
 
 interface RouteParams {
   params: Promise<{ id: string }>;
@@ -112,6 +115,29 @@ export async function POST(req: NextRequest, { params }: RouteParams): Promise<R
     });
   }
 
+  // 0110 — quem foi citado com @. A tela manda ids; aqui se confere que cada um
+  // é MEMBRO ATIVO da org ativa antes de gravar: id vindo do navegador é entrada
+  // de fora, e sem a conferência qualquer uuid entraria na coluna que decide o
+  // sino de outra pessoa. O próprio autor sai da lista — marcar a si mesmo
+  // acenderia um aviso que já se sabe.
+  //
+  // A leitura usa service role + filtro explícito de org (mesma doutrina de
+  // /api/v1/team/assignable): a RLS de `user_organizations` só mostra o PRÓPRIO
+  // vínculo a um agent, então sem ela a conferência reprovaria todo mundo.
+  const pedidas = (parsed.data.mentions ?? []).filter((uid) => uid !== user.id);
+  let mentions: string[] = [];
+  if (pedidas.length > 0) {
+    const membrosClient = isServiceRoleConfigured() ? createAdminClient() : supabase;
+    const { data: membros } = await membrosClient
+      .from("user_organizations")
+      .select("user_id")
+      .eq("organization_id", org.orgId)
+      .is("revoked_at", null)
+      .neq("role", "viewer")
+      .in("user_id", pedidas);
+    mentions = (membros ?? []).map((m) => m.user_id as string);
+  }
+
   const { data, error } = await supabase
     .from("conversation_notes")
     .insert({
@@ -120,6 +146,7 @@ export async function POST(req: NextRequest, { params }: RouteParams): Promise<R
       body: parsed.data.body,
       created_by_user_id: user.id,
       created_by_name: user.full_name ?? null,
+      mentions,
     })
     .select(COLS)
     .single();
@@ -132,7 +159,7 @@ export async function POST(req: NextRequest, { params }: RouteParams): Promise<R
     resourceType: "conversation_note",
     resourceId: data.id,
     requestId,
-    metadata: { conversation_id: id },
+    metadata: { conversation_id: id, mentions: mentions.length },
   });
   return ok(data, { requestId, status: 201 });
 }

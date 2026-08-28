@@ -3,6 +3,7 @@ import Link from "next/link";
 import { Gear } from "@/lib/ui/icons";
 
 import { AlertsBell } from "./AlertsBell";
+import { MencoesBell } from "./MencoesBell";
 import { TenantSwitcher } from "./TenantSwitcher";
 import { UserMenu } from "./UserMenu";
 import { SearchTrigger } from "./SearchTrigger";
@@ -35,6 +36,7 @@ export function TopBar() {
         >
           <Gear size={18} aria-hidden />
         </Link>
+        <MencoesBell />
         <AlertsBell />
         <UserMenu />
       </div>

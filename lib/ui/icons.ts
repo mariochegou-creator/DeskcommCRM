@@ -39,6 +39,8 @@ export {
   Dot,
   // actions
   Bell,
+  // 0110: o sino de @menção na nota interna
+  At,
   PaperPlaneTilt,
   Smiley,
   Check,

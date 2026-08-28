@@ -75,6 +75,8 @@ export interface Note {
   created_by_user_id: string | null;
   created_by_name: string | null;
   created_at: string;
+  /** 0110: quem foi citado com @ e AINDA não viu. Some da lista ao ver. */
+  mentions?: string[];
 }
 
 /**
