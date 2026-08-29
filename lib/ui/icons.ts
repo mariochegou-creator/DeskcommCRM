@@ -133,4 +133,9 @@ export {
   // guias in-app (Configurações › Guias)
   BookOpen,
   ListBullets,
+  // guia da reunião + quadro branco (Sala de Reuniões)
+  Eraser,
+  TextT,
+  ArrowCounterClockwise,
+  CornersOut,
 } from "@phosphor-icons/react/dist/ssr";

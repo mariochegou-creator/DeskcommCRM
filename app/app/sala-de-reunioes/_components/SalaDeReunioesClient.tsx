@@ -21,18 +21,26 @@ import { MonoLabel } from "@/components/ui/mono-label";
 import { Skeleton } from "@/components/ui/skeleton";
 import { useProximasReunioes } from "@/hooks/sala-reunioes/usePreparo";
 import { useCreateMeeting, useMeetings } from "@/hooks/sala-reunioes/useMeetings";
-import { VideoCamera } from "@/lib/ui/icons";
+import { PencilSimple, Signpost, VideoCamera } from "@/lib/ui/icons";
 
+import { GuiaDaReuniao } from "./GuiaDaReuniao";
 import { MeetingDetailPanel } from "./MeetingDetailPanel";
 import { MeetingMetrics } from "./MeetingMetrics";
 import { MeetingsList } from "./MeetingsList";
 import { PreparoPanel } from "./PreparoPanel";
 import { ProximasReunioes } from "./ProximasReunioes";
+import { QuadroBranco } from "./QuadroBranco";
 
-/** O que está aberto à direita. Uma coisa só de cada vez, por construção. */
+/**
+ * O que está aberto. Uma coisa só de cada vez, por construção. "guia" e
+ * "quadro" tomam a tela inteira — são ferramentas DE DENTRO da call, não
+ * painéis de leitura, e dividir a tela com listas na hora H só atrapalha.
+ */
 type Selecao =
   | { tipo: "proxima"; leadId: string }
   | { tipo: "reuniao"; id: string }
+  | { tipo: "guia" }
+  | { tipo: "quadro" }
   | null;
 
 /** De quanto em quanto tempo o relógio da tela anda ("sai hoje às 18h" → "saiu"). */
@@ -72,7 +80,25 @@ export function SalaDeReunioesClient() {
         </div>
         {/* Reunião de teste direto da aba — serve para o Mario ver a tela viva
             antes de a extensão existir, e para depurar sem abrir o Meet. */}
-        <div className="flex gap-2">
+        <div className="flex flex-wrap gap-2">
+          <Button
+            variant="secondary"
+            size="sm"
+            className="gap-1.5"
+            onClick={() => setSelecao({ tipo: "guia" })}
+          >
+            <Signpost size={16} />
+            Guia da reunião
+          </Button>
+          <Button
+            variant="secondary"
+            size="sm"
+            className="gap-1.5"
+            onClick={() => setSelecao({ tipo: "quadro" })}
+          >
+            <PencilSimple size={16} />
+            Quadro branco
+          </Button>
           <Button
             variant="secondary"
             size="sm"
@@ -102,6 +128,20 @@ export function SalaDeReunioesClient() {
         </div>
       </header>
 
+      {selecao?.tipo === "guia" ? (
+        <GuiaDaReuniao
+          aoVivo={meetings?.find((m) => m.status === "ao_vivo") ?? null}
+          proximas={proximas}
+          onVoltar={() => setSelecao(null)}
+        />
+      ) : selecao?.tipo === "quadro" ? (
+        <QuadroBranco
+          aoVivo={meetings?.find((m) => m.status === "ao_vivo") ?? null}
+          proximas={proximas}
+          onVoltar={() => setSelecao(null)}
+        />
+      ) : (
+        <>
       <MeetingMetrics />
 
       {carregando ? (
@@ -182,10 +222,12 @@ export function SalaDeReunioesClient() {
             </Card>
           ) : selecao.tipo === "proxima" ? (
             <PreparoPanel leadId={selecao.leadId} agora={agora} />
-          ) : (
+          ) : selecao.tipo === "reuniao" ? (
             <MeetingDetailPanel meetingId={selecao.id} />
-          )}
+          ) : null}
         </div>
+      )}
+        </>
       )}
     </div>
   );

@@ -76,6 +76,23 @@ export const toggleItemPreparoSchema = z.object({
 });
 export type ToggleItemPreparoInput = z.infer<typeof toggleItemPreparoSchema>;
 
+/**
+ * Salvar o resultado do Guia da Reunião (ou do Quadro Branco) no card do lead.
+ * Aceita reunião OU negócio: durante uma call ao vivo se tem o meeting_id;
+ * numa reunião marcada que ainda não começou, só o lead_id.
+ */
+export const salvarGuiaSchema = z
+  .object({
+    meeting_id: z.string().uuid().optional(),
+    lead_id: z.string().uuid().optional(),
+    headline: z.string().trim().min(1).max(300),
+    body: z.string().trim().min(1).max(4_000),
+  })
+  .refine((v) => v.meeting_id || v.lead_id, {
+    message: "Informe a reunião ou o negócio.",
+  });
+export type SalvarGuiaInput = z.infer<typeof salvarGuiaSchema>;
+
 export const listMeetingsQuerySchema = z.object({
   limit: z.coerce.number().int().min(1).max(100).default(50),
   status: z.string().optional(),

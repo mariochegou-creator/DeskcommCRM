@@ -125,6 +125,28 @@ export function useFinishMeeting() {
   });
 }
 
+/**
+ * Salvar o resultado do Guia da Reunião / Quadro Branco no card do lead (e na
+ * reunião, quando houver). Invalida "meetings" inteiro: a nota aparece no
+ * preparo da próxima reunião e no dossiê — as duas pontas leem daqui.
+ */
+export function useSalvarGuia() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (input: {
+      meeting_id?: string;
+      lead_id?: string;
+      headline: string;
+      body: string;
+    }) =>
+      apiClient.post<{ data: { salvo_no_lead: boolean; salvo_na_reuniao: boolean } }>(
+        "/api/v1/meetings/guia",
+        input,
+      ),
+    onSettled: () => qc.invalidateQueries({ queryKey: ["meetings"] }),
+  });
+}
+
 export interface MeetingMetrics {
   days: number;
   total_reunioes: number;
