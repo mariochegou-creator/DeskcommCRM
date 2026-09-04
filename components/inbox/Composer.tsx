@@ -43,6 +43,8 @@ export const Composer = forwardRef<ComposerHandle, Props>(function Composer(
   ref,
 ) {
   const [text, setText] = useState("");
+  /** O que estava escrito antes de uma sugestão substituir. `null` = nada a desfazer. */
+  const [textoAnterior, setTextoAnterior] = useState<string | null>(null);
   const [pendingFile, setPendingFile] = useState<File | null>(null);
   const [menuDismissed, setMenuDismissed] = useState(false);
   const [mode, setMode] = useState<"reply" | "note">("reply");
@@ -144,7 +146,23 @@ export const Composer = forwardRef<ComposerHandle, Props>(function Composer(
     // O rascunho é uma resposta COMPLETA sugerida — substitui o conteúdo, nunca
     // concatena (inserir no cursor grudaria dois textos completos, gerando uma
     // mensagem sem sentido). O vendedor edita/envia a partir daqui.
+    //
+    // ⚠️ O QUE ESTAVA ESCRITO FICA RECUPERÁVEL. Substituir era irreversível: quem
+    // tinha começado a redigir e clicou na estrela perdia o texto, e a única
+    // saída era reescrever de memória. Pedir ajuda não pode custar o trabalho
+    // já feito — daí o "Desfazer" logo acima do campo.
+    setTextoAnterior(text.trim() === "" ? null : text);
     setText(draft);
+    requestAnimationFrame(() => {
+      taRef.current?.focus();
+      autoresize();
+    });
+  }
+
+  function desfazerRascunho() {
+    if (textoAnterior === null) return;
+    setText(textoAnterior);
+    setTextoAnterior(null);
     requestAnimationFrame(() => {
       taRef.current?.focus();
       autoresize();
@@ -205,6 +223,18 @@ export const Composer = forwardRef<ComposerHandle, Props>(function Composer(
           onPick={applyTemplate}
           onClose={() => setMenuDismissed(true)}
         />
+        {textoAnterior !== null && (
+          <div className="mb-1.5 flex items-center gap-2 rounded-md bg-muted px-2.5 py-1.5 text-[11px] text-muted-foreground">
+            <span className="flex-1">A sugestão substituiu o que você tinha escrito.</span>
+            <button
+              type="button"
+              onClick={desfazerRascunho}
+              className="font-medium text-accent-foreground underline underline-offset-2"
+            >
+              Desfazer
+            </button>
+          </div>
+        )}
         <div className="mb-1.5 flex gap-1">
           <button
             type="button"
@@ -234,7 +264,12 @@ export const Composer = forwardRef<ComposerHandle, Props>(function Composer(
         <div className="flex items-end gap-2">
           {mode === "reply" && <AttachMenu disabled={isDisabled} onPick={setPendingFile} />}
           {mode === "reply" && (
-            <DraftReplyButton conversationId={conversationId} disabled={isDisabled} onDraft={applyDraft} />
+            <DraftReplyButton
+              conversationId={conversationId}
+              disabled={isDisabled}
+              campoOcupado={text.trim() !== ""}
+              onDraft={applyDraft}
+            />
           )}
           {mode === "reply" && (
             <SavedAudioMenu

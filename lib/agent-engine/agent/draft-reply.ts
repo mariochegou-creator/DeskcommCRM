@@ -21,9 +21,44 @@ export interface DraftReplyInput {
   channelSessionId: string;
 }
 
+/** Uma das opções que o vendedor recebe. O `angulo` é o rótulo curto que diz por onde ela ataca. */
+export interface Sugestao {
+  angulo: string;
+  texto: string;
+}
+
 export type DraftReplyResult =
-  | { ok: true; draft: string }
+  | { ok: true; sugestoes: Sugestao[]; fontes: string[] }
   | { ok: false; reason: 'no_agent' | 'blocked' | 'empty' | 'error' };
+
+/**
+ * Quebra a resposta do modelo nas opções.
+ *
+ * ⚠️ TOLERANTE DE PROPÓSITO. O modelo às vezes devolve dois separadores, às
+ * vezes põe a mensagem entre aspas, às vezes negrita o rótulo. Nada disso
+ * justifica devolver erro ao vendedor que clicou pedindo ajuda: o que não casa
+ * com o formato vira uma opção só, com o texto inteiro. Perder o rótulo é
+ * aceitável; perder a sugestão não.
+ */
+export function separarSugestoes(bruto: string): Sugestao[] {
+  const blocos = bruto
+    .split(/^[\s*_]*-{3,}[\s*_]*$/m)
+    .map((b) => b.trim())
+    .filter(Boolean);
+
+  const out: Sugestao[] = [];
+  for (const bloco of blocos) {
+    const marca = bloco.match(/^[\s*_#]*[ÂA]NGULO[\s*_]*:[\s*_]*(.+?)[\s*_]*$/im);
+    const angulo = marca
+      ? marca[1]!.replace(/[*_#"]/g, '').trim().slice(0, 28)
+      : '';
+    const corpo = marca ? bloco.slice(bloco.indexOf(marca[0]) + marca[0].length) : bloco;
+    const texto = corpo.trim().replace(/^["“”']+|["“”']+$/g, '').trim();
+    if (texto) out.push({ angulo: angulo || 'sugestão', texto });
+  }
+  // Três é o teto: quatro opções param de ser escolha e viram leitura.
+  return out.slice(0, 3);
+}
 
 export async function generateDraftReply(
   db: pg.Pool,
@@ -115,11 +150,31 @@ export async function generateDraftReply(
         `Use UM fato ou UM número daqui para dar peso à resposta. ` +
         `Se nada aqui servir para o que ele falou, ignore o bloco — não force.\n${cola}`;
 
+  // TRÊS OPÇÕES, UMA CHAMADA SÓ.
+  //
+  // Uma sugestão obriga a aceitar ou recomeçar; três deixam escolher o ângulo,
+  // que é onde o vendedor tem opinião e o modelo não — ele não sabe se este dono
+  // responde melhor a pergunta ou a prova. Quatro param de ser escolha e viram
+  // leitura, por isso o teto é três.
+  //
+  // ⚠️ E É UMA CHAMADA, NÃO TRÊS. Pedir três vezes triplicaria o custo do botão
+  // e ainda voltaria com variantes parecidas, porque cada chamada não sabe o que
+  // a outra escreveu. No mesmo turno o modelo VÊ as duas anteriores e é obrigado
+  // a mudar de ângulo — sai mais barato e sai mais diferente.
   const system =
     `${agent.systemPrompt}\n\n` +
-    `[MODO RASCUNHO] Gere UMA resposta pronta para o vendedor humano enviar ao cliente. ` +
-    `Escreva como o vendedor (NÃO se identifique como assistente/IA, NÃO use disclosure de bot). ` +
-    `Responda só com o texto da mensagem, sem aspas nem comentários.\n\n` +
+    `[MODO RASCUNHO] Gere TRÊS respostas prontas para o vendedor humano escolher e enviar. ` +
+    `Escreva como o vendedor (NÃO se identifique como assistente/IA, NÃO use disclosure de bot).\n` +
+    `Cada uma tem que atacar por um ÂNGULO DIFERENTE — se as três disserem a mesma coisa com ` +
+    `outras palavras, você falhou. Formato exato, e nada além dele:\n` +
+    `ANGULO: <2 a 4 palavras, minúsculas>\n` +
+    `<a mensagem, sem aspas>\n` +
+    `---\n` +
+    `ANGULO: ...\n` +
+    `<a mensagem>\n` +
+    `---\n` +
+    `ANGULO: ...\n` +
+    `<a mensagem>\n\n` +
     `[COMO RESPONDER] Antes de escrever, leia a ÚLTIMA mensagem do cliente e ` +
     `identifique o que ela é: uma objeção (não tenho interesse, tá caro, já tenho ` +
     `quem faça), um sinal de rotina (só atendo em horário comercial, me manda por ` +
@@ -152,7 +207,22 @@ export async function generateDraftReply(
     // result.text vem pronto, sem risco do modelo tentar chamar send_message.
   });
 
-  const draft = (result.text ?? '').trim();
-  if (!draft) return { ok: false, reason: 'empty' };
-  return { ok: true, draft };
+  const sugestoes = separarSugestoes((result.text ?? '').trim());
+  if (sugestoes.length === 0) return { ok: false, reason: 'empty' };
+
+  // O QUE O MODELO LEU, escrito para quem vai enviar a mensagem.
+  //
+  // Sem isto o vendedor tem duas opções ruins: confiar sem conferir, ou reler a
+  // conversa inteira — e reler a conversa inteira é justamente o trabalho que o
+  // botão prometia poupar. Zendesk e Intercom mostram a fonte pelo mesmo motivo.
+  // Não é telemetria: é o que torna a sugestão auditável em dois segundos.
+  const fontes = [
+    messages.length === 1
+      ? 'a única mensagem desta conversa'
+      : `as últimas ${messages.length} mensagens desta conversa`,
+    ...(cola === '' ? [] : ['a cola do mercado (Configurações → Organização)']),
+    ...(decisao ? ['a sua decisão sobre a última sugestão'] : []),
+  ];
+
+  return { ok: true, sugestoes, fontes };
 }

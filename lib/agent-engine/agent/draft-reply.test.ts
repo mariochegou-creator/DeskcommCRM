@@ -1,6 +1,6 @@
 import { describe, expect, it, vi, beforeEach } from "vitest";
 
-import { generateDraftReply } from "./draft-reply";
+import { generateDraftReply, separarSugestoes } from "./draft-reply";
 import { loadPublishedAgentConfig, type PublishedAgentConfig } from "./agent-config";
 import { getLeadContext, type LeadContextResult } from "../edge/crm/get-lead-context";
 import { runModelCall } from "../edge/llm/run-model-call";
@@ -95,7 +95,13 @@ describe("generateDraftReply", () => {
 
     const result = await generateDraftReply(db, llmCfg, crmCfg, input);
 
-    expect(result).toEqual({ ok: true, draft: "Olá! O produto X custa R$ 99,90." });
+    // Resposta sem separador vira UMA opção com o texto inteiro — o formato é
+    // pedido, não garantido, e falhar aqui seria negar ajuda a quem clicou.
+    expect(result).toEqual({
+      ok: true,
+      sugestoes: [{ angulo: "sugestão", texto: "Olá! O produto X custa R$ 99,90." }],
+      fontes: ["a única mensagem desta conversa"],
+    });
     expect(mockRunModelCall).toHaveBeenCalledTimes(1);
     const call = mockRunModelCall.mock.calls[0]!;
     const runInput = call[2];
@@ -309,5 +315,71 @@ Não fale de presença digital no primeiro toque.`;
     const system = await systemComCola(null);
     expect(system).toContain("[COMO RESPONDER]");
     expect(system).toMatch(/última mensagem/i);
+  });
+});
+
+/**
+ * O parser das três opções.
+ *
+ * ⚠️ Testado sozinho, e com entrada torta de propósito: o formato é PEDIDO ao
+ * modelo, não garantido por ele. Todo caso aqui é coisa que modelo faz de
+ * verdade — negritar o rótulo, pôr a mensagem entre aspas, mandar separador a
+ * mais, esquecer o rótulo. Em nenhum deles o vendedor pode ficar sem resposta:
+ * ele clicou pedindo ajuda.
+ */
+describe("separarSugestoes", () => {
+  it("três blocos no formato pedido viram três opções", () => {
+    const bruto = [
+      "ANGULO: pergunta direta",
+      "Quem responde o WhatsApp aí hoje?",
+      "---",
+      "ANGULO: prova",
+      "Fiz a busca e tirei um print.",
+      "---",
+      "ANGULO: convite",
+      "Fica melhor segunda ou terça?",
+    ].join("\n");
+
+    expect(separarSugestoes(bruto)).toEqual([
+      { angulo: "pergunta direta", texto: "Quem responde o WhatsApp aí hoje?" },
+      { angulo: "prova", texto: "Fiz a busca e tirei um print." },
+      { angulo: "convite", texto: "Fica melhor segunda ou terça?" },
+    ]);
+  });
+
+  it("texto sem separador nenhum ainda entrega uma opção", () => {
+    expect(separarSugestoes("Bom dia, tudo certo?")).toEqual([
+      { angulo: "sugestão", texto: "Bom dia, tudo certo?" },
+    ]);
+  });
+
+  it("rótulo negritado e mensagem entre aspas são limpos", () => {
+    const bruto = '**ANGULO:** *prova social*\n"Fiz a busca hoje de manhã."';
+    expect(separarSugestoes(bruto)).toEqual([
+      { angulo: "prova social", texto: "Fiz a busca hoje de manhã." },
+    ]);
+  });
+
+  it("separador com traços a mais e espaços em volta continua separando", () => {
+    const r = separarSugestoes("ANGULO: a\nprimeira\n  -----  \nANGULO: b\nsegunda");
+    expect(r).toHaveLength(2);
+    expect(r[1]).toEqual({ angulo: "b", texto: "segunda" });
+  });
+
+  it("corta em três mesmo se o modelo mandar mais", () => {
+    const bruto = ["um", "dois", "três", "quatro", "cinco"]
+      .map((n) => `ANGULO: ${n}\nmensagem ${n}`)
+      .join("\n---\n");
+    expect(separarSugestoes(bruto)).toHaveLength(3);
+  });
+
+  it("bloco sem texto é descartado, não vira opção vazia", () => {
+    const r = separarSugestoes("ANGULO: vazio\n\n---\nANGULO: cheio\ntem texto");
+    expect(r).toEqual([{ angulo: "cheio", texto: "tem texto" }]);
+  });
+
+  it("resposta vazia devolve lista vazia — quem chama trata como 'empty'", () => {
+    expect(separarSugestoes("")).toEqual([]);
+    expect(separarSugestoes("   \n  ---  \n ")).toEqual([]);
   });
 });
