@@ -1,6 +1,7 @@
 "use client";
 import type { ReactNode } from "react";
 import { LigacoesEmVooProvider } from "@/components/calls/LigacoesEmVoo";
+import { RoboCopiloto } from "@/components/copiloto/RoboCopiloto";
 import { Sidebar } from "@/components/shell/Sidebar";
 import { MobileNav } from "@/components/shell/MobileNav";
 import { TopBar } from "@/components/shell/TopBar";
@@ -45,6 +46,10 @@ export function AppShell({ sidebarCollapsed, children }: AppShellProps) {
             {children}
           </main>
         </div>
+        {/* Mora no shell, e não em cada página, porque o ponto é justamente
+            estar em toda tela — quem decide se tem algo a dizer é ele, pela
+            rota. Fora das telas com regra, não renderiza nada. */}
+        <RoboCopiloto />
       </div>
     </LigacoesEmVooProvider>
   );
