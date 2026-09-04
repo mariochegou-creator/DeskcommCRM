@@ -22,6 +22,23 @@ export const dynamic = "force-dynamic";
 export const CHANNEL_COLUMNS =
   "id, waha_session_name, display_name, phone_number, status, status_reason, last_health_check_at, last_status_change_at, daily_message_limit, is_warmup_complete, created_at";
 
+/**
+ * O modo da IA vive em `metadata->>'ai_mode'` (ver `modo-do-numero.ts`), e sai
+ * daqui como campo próprio — só a chave, nunca o `metadata` inteiro, que é jsonb
+ * de operação e não tem por que atravessar a API.
+ */
+const COLUNA_AI_MODE = "ai_mode:metadata->>ai_mode";
+
+/**
+ * ⚠️ Na dúvida responde `atendente`, igual ao `lerModoDoNumero` do motor.
+ * Os dois lados têm que errar para o MESMO lado: se a tela dissesse "copiloto"
+ * enquanto o motor entrega `send_message`, o número responderia sozinho com a
+ * tela jurando que não. Errar para o lado visível é o certo aqui também.
+ */
+function comAiMode<T extends { ai_mode?: string | null }>(c: T) {
+  return { ...c, ai_mode: c.ai_mode === "copiloto" ? "copiloto" : "atendente" };
+}
+
 export async function GET(): Promise<Response> {
   const requestId = randomUUID();
   const user = await loadAuthUser();
@@ -33,7 +50,7 @@ export async function GET(): Promise<Response> {
   const [{ data, error }, { data: atividade }] = await Promise.all([
     supabase
       .from("channel_sessions")
-      .select(CHANNEL_COLUMNS)
+      .select(`${CHANNEL_COLUMNS}, ${COLUNA_AI_MODE}`)
       .eq("organization_id", activeOrg.orgId)
       // Número removido pelo usuário (0096) sai daqui — e com isso do seletor do
       // inbox, do sinal da sidebar e da Central. O histórico dele fica no banco.
@@ -54,12 +71,12 @@ export async function GET(): Promise<Response> {
 
   const comAtividade = (data ?? []).map((c) => {
     const a = porSessao.get(c.id as string);
-    return {
+    return comAiMode({
       ...c,
       ultima_mensagem_em: (a?.ultima_mensagem_em as string | null) ?? null,
       conversas_7d: (a?.conversas_7d as number | undefined) ?? 0,
       conversas_total: (a?.conversas_total as number | undefined) ?? 0,
-    };
+    });
   });
 
   return ok(comAtividade, { requestId });
@@ -118,7 +135,7 @@ export async function POST(req: NextRequest): Promise<Response> {
       daily_message_limit: 250,
       metadata: {},
     })
-    .select(CHANNEL_COLUMNS)
+    .select(`${CHANNEL_COLUMNS}, ${COLUNA_AI_MODE}`)
     .single();
   if (insErr || !created) {
     return fail("internal_error", insErr?.message ?? "channel_session_insert_failed", 500, { requestId });
@@ -147,5 +164,8 @@ export async function POST(req: NextRequest): Promise<Response> {
     metadata: { waha_session_name: sessionName },
   });
 
-  return ok(created, { requestId, status: 201 });
+  // Canal novo nasce com `metadata: {}` — sem a chave, e portanto `atendente`,
+  // que é como todo número sempre se comportou. A tela precisa do campo mesmo
+  // assim, senão o cartão recém-criado aparece sem modo até o próximo refetch.
+  return ok(comAiMode(created), { requestId, status: 201 });
 }

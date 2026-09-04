@@ -7,6 +7,7 @@ import { apiClient } from "@/lib/api/client";
 import { ApiError } from "@/lib/api/types";
 import {
   useChannelSessions,
+  type AiMode,
   type ChannelSession,
 } from "@/hooks/channels/useChannelSessions";
 import { usePacingKnobs } from "@/hooks/channels/usePacingKnobs";
@@ -33,13 +34,16 @@ import {
   DialogTitle,
   DialogDescription,
 } from "@/components/ui/dialog";
+import { Switch } from "@/components/ui/switch";
 import {
   ArrowsClockwise,
   CheckCircle,
   CircleNotch,
   Phone,
   Plus,
+  Robot,
   ShieldCheck,
+  Sparkle,
   Trash,
 } from "@/lib/ui/icons";
 
@@ -97,6 +101,9 @@ export function ConnectionsClient({ wahaConfigured }: { wahaConfigured: boolean 
   const [antiBanId, setAntiBanId] = useState<string | null>(null);
   const [removing, setRemoving] = useState<ChannelSession | null>(null);
   const [confirmandoNovo, setConfirmandoNovo] = useState(false);
+  // Só o caminho copiloto → atendente pede confirmação. O contrário (calar a
+  // IA) é sempre seguro e não deve ter atrito.
+  const [liberandoIa, setLiberandoIa] = useState<ChannelSession | null>(null);
   const [telefoneVivo, setTelefoneVivo] = useState<Record<string, string>>({});
   const pacingItems = usePacingKnobs().data?.items ?? [];
 
@@ -217,6 +224,33 @@ export function ConnectionsClient({ wahaConfigured }: { wahaConfigured: boolean 
     [invalidate],
   );
 
+  /**
+   * Troca o modo da IA neste número. O freio real é a AUSÊNCIA da ferramenta
+   * `send_message` no turno (ver `modo-do-numero.ts`) — aqui só se grava a
+   * chave que o motor lê. O toast diz o efeito, não o nome do campo: quem opera
+   * quer saber quem vai responder o cliente, não o que mudou no banco.
+   */
+  const handleAiMode = useCallback(
+    async (c: ChannelSession, novo: AiMode) => {
+      setBusyId(c.id);
+      try {
+        await apiClient.patch(`/api/v1/channel-sessions/${c.id}/ai-mode`, { ai_mode: novo });
+        setLiberandoIa(null);
+        toast.success(
+          novo === "copiloto"
+            ? `${channelLabel(c)}: a IA não responde mais o cliente. Ela continua lendo e organizando o CRM.`
+            : `${channelLabel(c)}: a IA volta a responder o cliente sozinha.`,
+        );
+        invalidate();
+      } catch (err) {
+        toast.error(errMsg(err, "Não foi possível mudar o modo da IA."));
+      } finally {
+        setBusyId(null);
+      }
+    },
+    [invalidate],
+  );
+
   const handleConnected = useCallback(() => {
     toast.success("WhatsApp conectado!");
     setQr(null);
@@ -320,6 +354,41 @@ export function ConnectionsClient({ wahaConfigured }: { wahaConfigured: boolean 
                   </p>
                 </div>
 
+                {/* Quem responde o cliente neste número. Antes disto a chave só
+                    existia no banco: não dava para conferir nem inverter sem
+                    SQL, e um freio que ninguém vê é um freio em que ninguém
+                    confia. O estado vem escrito por extenso de propósito — o
+                    switch sozinho não diz o que "ligado" significa. */}
+                <div className="rounded-md border px-2.5 py-2">
+                  <div className="flex items-start justify-between gap-3">
+                    <div className="min-w-0">
+                      <p className="flex items-center gap-1.5 text-xs font-medium">
+                        {c.ai_mode === "copiloto" ? (
+                          <Sparkle size={13} aria-hidden />
+                        ) : (
+                          <Robot size={13} aria-hidden />
+                        )}
+                        {c.ai_mode === "copiloto" ? "Copiloto" : "Atendente"}
+                      </p>
+                      <p className="mt-0.5 text-[11px] text-muted-foreground">
+                        {c.ai_mode === "copiloto"
+                          ? "A IA lê e organiza o CRM. Quem responde o cliente é você."
+                          : "A IA responde o cliente sozinha neste número."}
+                      </p>
+                    </div>
+                    <Switch
+                      checked={c.ai_mode === "copiloto"}
+                      disabled={busyId === c.id}
+                      aria-label={`Modo copiloto em ${channelLabel(c)}`}
+                      onCheckedChange={(ligado) => {
+                        // Calar a IA é imediato; soltá-la passa pelo aviso.
+                        if (ligado) void handleAiMode(c, "copiloto");
+                        else setLiberandoIa(c);
+                      }}
+                    />
+                  </div>
+                </div>
+
                 <p className="text-[11px] text-muted-foreground">
                   {c.last_health_check_at
                     ? `Verificado ${new Date(c.last_health_check_at).toLocaleString("pt-BR")}`
@@ -384,6 +453,41 @@ export function ConnectionsClient({ wahaConfigured }: { wahaConfigured: boolean 
             <AlertDialogCancel>Cancelar</AlertDialogCancel>
             <AlertDialogAction onClick={() => void handleConnectNew()}>
               É um número novo
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
+      {/* Sair do copiloto é a única direção que merece atrito: a partir do
+          "Liberar" o modelo passa a falar com cliente de verdade, e ninguém
+          revisa antes. Calar tem botão direto; soltar tem esta tela. */}
+      <AlertDialog open={!!liberandoIa} onOpenChange={(o) => !o && setLiberandoIa(null)}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>
+              Deixar a IA responder o cliente em{" "}
+              {liberandoIa ? channelLabel(liberandoIa) : "este número"}?
+            </AlertDialogTitle>
+            <AlertDialogDescription>
+              A partir daqui as mensagens que chegarem neste número são respondidas
+              pela IA, sem ninguém revisar antes de enviar. Ela responde de madrugada,
+              no fim de semana e enquanto você estiver em reunião.
+              <br />
+              <br />
+              No modo copiloto ela continua lendo a conversa, movendo o card e
+              guardando o que o cliente contou — só não fala com ele.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Manter em copiloto</AlertDialogCancel>
+            <AlertDialogAction
+              disabled={!!liberandoIa && busyId === liberandoIa.id}
+              onClick={(e) => {
+                e.preventDefault(); // fecha só depois que o servidor confirmar
+                if (liberandoIa) void handleAiMode(liberandoIa, "atendente");
+              }}
+            >
+              Deixar a IA responder
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>

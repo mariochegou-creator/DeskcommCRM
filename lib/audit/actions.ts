@@ -136,6 +136,10 @@ export type AuditAction =
   // tinha caído voltou no cartão de sempre, em vez de nascer um cartão novo.
   | "channel.duplicado_removido"
   | "channel.reassumido"
+  // Trocou quem responde o cliente neste número (metadata.ai_mode).
+  // `de`/`para` guardam 'atendente' | 'copiloto'. É a resposta para "por que
+  // este número passou a responder sozinho?" — que só se pergunta depois.
+  | "channel.ai_mode_changed"
   | "authz.denied"
   | "team.role_changed"
   | "leads.bulk_assigned"

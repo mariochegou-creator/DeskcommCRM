@@ -23,7 +23,16 @@ export interface ChannelSession {
   ultima_mensagem_em: string | null;
   conversas_7d: number;
   conversas_total: number;
+  /**
+   * Em que modo a IA trabalha NESTE número (`metadata->>'ai_mode'`, ver
+   * `lib/agent-engine/edge/crm/modo-do-numero.ts`). `copiloto` = a IA lê a
+   * conversa e mexe no CRM, mas não tem a ferramenta de enviar mensagem;
+   * `atendente` = ela responde o cliente. A API normaliza: nunca vem nulo.
+   */
+  ai_mode: AiMode;
 }
+
+export type AiMode = "atendente" | "copiloto";
 
 export type ConnectionHealth = "connected" | "connecting" | "down" | "none";
 
