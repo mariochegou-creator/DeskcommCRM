@@ -554,3 +554,46 @@
     opacity: 0.5;
   }
 }
+
+/* ─────────────────────────── redesign 2026-09 ───────────────────────────
+   Camada por cima dos tokens acima: o que está aqui VENCE o que está em cima
+   para o mesmo nome. Três decisões que se veem no primeiro segundo:
+
+   1. MENU LATERAL GRAFITE nos dois temas. É um painel invertido de propósito,
+      então todo valor dele é LITERAL — nunca o par var(--color-*) que inverte
+      junto com o tema (ver a regra do painel escuro que some no tema escuro).
+   2. Página um tom mais tingida e CARD SEM BORDA, com sombra difusa, no claro.
+      No escuro a sombra não lê; o card volta a ter borda cinza.
+   3. Raio do card 12px.
+   ──────────────────────────────────────────────────────────────────────── */
+:root {
+  --color-bg: #f3f4f6;
+  --radius-card: 12px;
+  --card-border: transparent;
+  --shadow-card: 0 1px 2px rgba(15, 16, 18, 0.04), 0 8px 24px -8px rgba(15, 16, 18, 0.12);
+
+  --sidebar-bg: #1b1d21;
+  --sidebar-fg: #f2f3f4;
+  --sidebar-muted: #a5a8ad;
+  --sidebar-subtle: #6f7278;
+  --sidebar-hover: rgba(255, 255, 255, 0.06);
+  --sidebar-active: rgba(61, 154, 255, 0.18);
+  --sidebar-active-fg: #8cc6ff;
+  --sidebar-border: rgba(255, 255, 255, 0.08);
+}
+
+[data-theme="dark"] {
+  --color-bg: #17181a;
+  --radius-card: 12px;
+  --card-border: #2e3033;
+  --shadow-card: none;
+
+  --sidebar-bg: #101113;
+  --sidebar-fg: #f2f3f4;
+  --sidebar-muted: #a5a8ad;
+  --sidebar-subtle: #6f7278;
+  --sidebar-hover: rgba(255, 255, 255, 0.06);
+  --sidebar-active: rgba(61, 154, 255, 0.2);
+  --sidebar-active-fg: #8cc6ff;
+  --sidebar-border: #232427;
+}

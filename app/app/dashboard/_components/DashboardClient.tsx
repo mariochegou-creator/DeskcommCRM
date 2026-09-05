@@ -9,7 +9,7 @@ import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { StatCard } from "@/components/ui/stat-card";
 import { BarChart } from "@/components/charts/BarChart";
-import { DonutChart } from "@/components/charts/DonutChart";
+import { SegmentedBar } from "@/components/charts/SegmentedBar";
 import { EmptyPipeline } from "@/components/empty";
 import { TodayDate } from "@/components/shell/TodayDate";
 import { ProspectingSection } from "./ProspectingSection";
@@ -45,17 +45,17 @@ interface Props {
 }
 
 /**
- * Painel (redesign 2026-09).
+ * Painel (redesign 2026-09) — o mosaico.
  *
- * A página lê de cima para baixo na ordem das perguntas do dia: que dia é e
- * como está a semana (saudação + filtros), o que eu faço hoje (plano + tarefas),
- * como está o funil (o herói + três números + dois gráficos) e como está a
- * prospecção. Cada seção abre com um `SectionHeading` — título de verdade, não
- * rótulo em mono — e as métricas de uma mesma seção dividem a MESMA janela de
- * período, escolhida na régua do topo.
+ * A primeira dobra é UMA peça: o card-herói (valor do pipeline, com a barra
+ * "abertos por etapa" no pé) à esquerda e o gráfico grande de negócios por
+ * semana ocupando dois terços à direita; embaixo, três números do período.
+ * Depois vêm as tarefas do dia, o plano de 60 dias e a prospecção. A ordem
+ * mudou de propósito: a tela existe para mostrar o funil, então o funil abre.
  *
- * `max-w-[1400px]`: acima disso quatro cards de 25% viram quatro placas com
- * um número perdido no meio, e o gráfico de oito barras vira oito palitos.
+ * As métricas de uma mesma seção dividem a MESMA janela de período, escolhida
+ * na régua do topo. `max-w-[1400px]`: acima disso o gráfico de oito barras
+ * vira oito palitos.
  */
 export function DashboardClient({
   pipelineId,
@@ -129,13 +129,17 @@ export function DashboardClient({
     );
   }
 
+  const abertosLabel = `${metrics?.openCount.toLocaleString("pt-BR") ?? "0"} ${
+    metrics?.openCount === 1 ? "negócio aberto" : "negócios abertos"
+  }`;
+
   return (
     <div className="mx-auto flex w-full max-w-[1400px] flex-col gap-8">
       <header className="flex flex-wrap items-end justify-between gap-4">
-        <div className="flex flex-col gap-1">
-          <TodayDate className="text-xs font-medium text-text-subtle" />
+        <div className="flex flex-col gap-1.5">
+          <TodayDate className="text-[13px] font-medium text-text-muted" />
           {/* Emoji SÓ na saudação — é a única licença do sistema. */}
-          <h1 className="text-2xl font-semibold leading-tight tracking-[-0.02em] text-text">
+          <h1 className="text-[28px] font-semibold leading-none tracking-[-0.03em] text-text sm:text-[32px]">
             {firstName ? `Olá, ${firstName}` : "Olá"} 👋
           </h1>
           <p className="text-sm text-text-muted">
@@ -161,17 +165,6 @@ export function DashboardClient({
           <PeriodSegmented value={period} onChange={setPeriod} />
         </div>
       </header>
-
-      {/* O plano de 60 dias abre o Painel: é a resposta de "o que eu faço
-          hoje?", antes do "como está o funil?". Fora do ternário do board
-          (dados próprios) e fora do regime do seletor de período — as janelas
-          do plano são fixas (hoje/semana/60 dias), a régua não as governa. */}
-      <SixtyDayPlanSection prospectingPipelineId={prospectingPipelineId} now={now} />
-
-      {/* Logo abaixo do plano, e antes do funil, pela mesma lógica: o combinado
-          com hora marcada é mais urgente que a fotografia do funil. Some sozinha
-          nos dias em que não há nada vencendo. */}
-      <TarefasDeHojeSection now={now} />
 
       <section className="flex flex-col gap-4">
         <SectionHeading
@@ -200,24 +193,48 @@ export function DashboardClient({
           </Card>
         ) : (
           <>
-            {/* O herói ocupa 1,4 coluna no desktop e a linha inteira no
-                tablet: é a métrica que a tela existe para mostrar. */}
-            <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-[1.4fr_repeat(3,minmax(0,1fr))]">
+            {/* A peça central: herói (4/12) + gráfico grande (8/12). */}
+            <div className="grid grid-cols-1 gap-4 xl:grid-cols-12">
               {/* O ÚNICO card-herói da tela. É a métrica principal — o valor
                   parado no funil — e por isso não carrega pill de variação: ela
                   é ESTOQUE (quanto há agora), e comparar estoque com o "criado
                   no período" ao lado do mesmo número diria uma coisa mostrando
-                  outra. */}
+                  outra. A barra por etapa no pé é a distribuição desse mesmo
+                  estoque. */}
               <StatCard
                 featured
                 label="Valor do pipeline"
                 value={formatCompactBRL(metrics.pipelineValueCents)}
-                hint={`em ${metrics.openCount.toLocaleString("pt-BR")} ${
-                  metrics.openCount === 1 ? "negócio aberto" : "negócios abertos"
-                }`}
+                hint={`em ${abertosLabel}`}
                 href={`/app/pipelines/${pipelineId}`}
-                className="md:col-span-2 xl:col-span-1"
+                className="xl:col-span-4"
+                footer={
+                  <div className="flex flex-col gap-2.5">
+                    <span className="text-xs font-medium text-text-muted">
+                      Abertos por etapa
+                    </span>
+                    <SegmentedBar
+                      data={metrics.byStage}
+                      caption="Negócios abertos por etapa do funil"
+                    />
+                  </div>
+                }
               />
+
+              <Card className="flex flex-col gap-5 p-5 sm:p-6 xl:col-span-8">
+                <CardHeading
+                  title="Negócios criados por semana"
+                  subtitle="últimas 8 semanas · a semana começa na segunda"
+                />
+                <BarChart
+                  data={activity}
+                  height={236}
+                  caption="Negócios criados por semana nas últimas 8 semanas"
+                />
+              </Card>
+            </div>
+
+            <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
               <StatCard
                 label="Novos negócios"
                 value={metrics.createdInPeriod.toLocaleString("pt-BR")}
@@ -248,46 +265,17 @@ export function DashboardClient({
                 href="/app/metrics"
               />
             </div>
-
-            <div className="grid grid-cols-1 gap-4 xl:grid-cols-3">
-              <Card className="flex flex-col gap-5 p-5 xl:col-span-2">
-                <CardHeading
-                  title="Negócios criados por semana"
-                  subtitle="últimas 8 semanas · a semana começa na segunda"
-                />
-                <BarChart
-                  data={activity}
-                  caption="Negócios criados por semana nas últimas 8 semanas"
-                />
-              </Card>
-
-              <Card className="flex flex-col gap-5 p-5">
-                <CardHeading
-                  title="Abertos por etapa"
-                  subtitle={`${metrics.openCount.toLocaleString("pt-BR")} ${
-                    metrics.openCount === 1 ? "negócio aberto" : "negócios abertos"
-                  } agora`}
-                  action={
-                    <Link
-                      href="/app/leads"
-                      className="text-xs font-medium text-accent hover:underline"
-                    >
-                      Ver todos
-                    </Link>
-                  }
-                />
-                <DonutChart
-                  data={metrics.byStage}
-                  caption="Negócios abertos por etapa do funil"
-                  centerValue={metrics.openCount.toLocaleString("pt-BR")}
-                  centerLabel="abertos"
-                  className="my-auto"
-                />
-              </Card>
-            </div>
           </>
         )}
       </section>
+
+      {/* O combinado com hora marcada vem logo depois do funil. Some sozinho
+          nos dias em que não há nada vencendo. */}
+      <TarefasDeHojeSection now={now} />
+
+      {/* Fora do regime da régua de período: as janelas do plano são fixas
+          (hoje/semana/60 dias). Dados próprios, queda própria. */}
+      <SixtyDayPlanSection prospectingPipelineId={prospectingPipelineId} now={now} />
 
       {/* O seletor de número NÃO governa a seção de baixo: ela agrega no banco
           (fn_prospecting_metrics) e recebe o funil, não a lista de leads. Dizer
@@ -319,15 +307,14 @@ export function DashboardClient({
 function DashboardSkeleton() {
   return (
     <div className="flex flex-col gap-4">
-      <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-[1.4fr_repeat(3,minmax(0,1fr))]">
-        <Skeleton className="h-[164px] rounded-card md:col-span-2 xl:col-span-1" />
-        {[0, 1, 2].map((i) => (
-          <Skeleton key={i} className="h-[164px] rounded-card" />
-        ))}
+      <div className="grid grid-cols-1 gap-4 xl:grid-cols-12">
+        <Skeleton className="h-[372px] rounded-card xl:col-span-4" />
+        <Skeleton className="h-[372px] rounded-card xl:col-span-8" />
       </div>
-      <div className="grid grid-cols-1 gap-4 xl:grid-cols-3">
-        <Skeleton className="h-[332px] rounded-card xl:col-span-2" />
-        <Skeleton className="h-[332px] rounded-card" />
+      <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
+        {[0, 1, 2].map((i) => (
+          <Skeleton key={i} className="h-[156px] rounded-card" />
+        ))}
       </div>
     </div>
   );

@@ -133,6 +133,21 @@ const config: Config = {
           grid: "var(--chart-grid)",
         },
 
+        // Redesign 2026-09 — menu lateral grafite (painel invertido: literais
+        // nos dois temas) e a borda do card (transparente no claro, cinza no
+        // escuro). Valores no bloco "redesign 2026-09" de app/globals.css.
+        sidebar: {
+          DEFAULT: "var(--sidebar-bg)",
+          fg: "var(--sidebar-fg)",
+          muted: "var(--sidebar-muted)",
+          subtle: "var(--sidebar-subtle)",
+          hover: "var(--sidebar-hover)",
+          active: "var(--sidebar-active)",
+          "active-fg": "var(--sidebar-active-fg)",
+          border: "var(--sidebar-border)",
+        },
+        "card-border": "var(--card-border)",
+
         // Etapas do funil — pill da tabela e header do card de resumo leem
         // daqui, então a cor de uma etapa é uma decisão só.
         stage: {
@@ -228,6 +243,7 @@ const config: Config = {
         md: "var(--shadow-md)",
         lg: "var(--shadow-lg)",
         xl: "var(--shadow-xl)",
+        card: "var(--shadow-card)",
         // Glow ciano/laranja do guia da Nexo IA — para botão primário e métrica
         // de alerta. Atenuado no tema claro (ver app/globals.css).
         glow: "var(--shadow-glow)",

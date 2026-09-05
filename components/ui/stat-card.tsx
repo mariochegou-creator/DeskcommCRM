@@ -9,7 +9,7 @@ import { Sparkline } from "@/components/charts/Sparkline";
 /**
  * StatCard — o card de métrica do painel (redesign 2026-09).
  *
- * A hierarquia é por TAMANHO, não por cor: rótulo 13px secundário → valor 28px
+ * A hierarquia é por TAMANHO, não por cor: rótulo 13px secundário → valor 32px
  * primário → apoio 12px terciário. O valor usa algarismos PROPORCIONAIS (sem
  * `tabular`): em tamanho de display os dígitos de largura fixa deixam "121"
  * frouxo. Largura fixa é para coluna de tabela, não para número solto.
@@ -19,17 +19,20 @@ import { Sparkline } from "@/components/charts/Sparkline";
  * confirmação. Card sem `href` é só leitura e não sugere clique.
  *
  * ── `featured` — o card-herói
- * Um por tela. Valor a 40-44px e uma mancha de accent desfocada no canto —
+ * Um por tela. Valor a 48-56px e uma mancha de accent desfocada no canto —
  * a única cor grande da tela, e por isso ela destaca. Fundo continua branco:
  * um bloco azul sólido gritava mais que o número que devia carregar.
  *
  * ── `trend` — sparkline
  * Série curta (8-12 pontos) ao lado do valor. Diz só a direção; o gráfico
- * grande de baixo diz o valor de cada ponto.
+ * grande ao lado diz o valor de cada ponto.
+ *
+ * ── `footer`
+ * Bloco livre no pé do card (o herói usa para a barra "abertos por etapa").
  *
  * ── `variant="flat"`
- * Sem borda, sem fundo, sem sombra — para quando o card de FORA emoldura uma
- * grade de métricas com divisórias de 1px (o Plano 60 dias faz isso).
+ * Sem borda, sem sombra — para quando o card de FORA emoldura uma grade de
+ * métricas com divisórias de 1px (o Plano 60 dias faz isso).
  */
 export interface StatCardProps {
   /** Rótulo curto: "Valor do pipeline". */
@@ -48,6 +51,8 @@ export interface StatCardProps {
   featured?: boolean;
   /** Série curta para a sparkline ao lado do valor. */
   trend?: number[];
+  /** Bloco livre no pé do card. */
+  footer?: React.ReactNode;
   variant?: "card" | "flat";
   className?: string;
 }
@@ -61,6 +66,7 @@ export function StatCard({
   href,
   featured = false,
   trend,
+  footer,
   variant = "card",
   className,
 }: StatCardProps) {
@@ -69,11 +75,11 @@ export function StatCard({
   const classes = cn(
     "group relative flex flex-col justify-between gap-5 overflow-hidden text-text",
     variant === "card"
-      ? "rounded-card border border-border bg-surface p-5 shadow-xs"
+      ? "rounded-card border border-card-border bg-surface p-5 shadow-card sm:p-6"
       : "justify-start gap-4 bg-surface p-5",
     interactive &&
       variant === "card" &&
-      "transition-[border-color,box-shadow] duration-fast ease-out hover:border-border-strong hover:shadow-md",
+      "transition-shadow duration-fast ease-out hover:shadow-lg",
     interactive &&
       "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent-500 focus-visible:ring-offset-2 focus-visible:ring-offset-bg",
     className,
@@ -87,7 +93,7 @@ export function StatCard({
         // viraria um farol no grafite.
         <span
           aria-hidden
-          className="pointer-events-none absolute -right-14 -top-14 h-48 w-48 rounded-full bg-accent-soft blur-3xl"
+          className="pointer-events-none absolute -right-20 -top-20 h-64 w-64 rounded-full bg-accent-soft blur-3xl"
         />
       )}
 
@@ -112,8 +118,10 @@ export function StatCard({
           <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
             <span
               className={cn(
-                "font-semibold leading-none tracking-[-0.02em]",
-                featured ? "text-[40px] sm:text-[44px]" : "text-[28px]",
+                "font-semibold leading-none",
+                featured
+                  ? "text-[48px] tracking-[-0.03em] sm:text-[56px]"
+                  : "text-[32px] tracking-[-0.02em]",
               )}
             >
               {value}
@@ -122,8 +130,12 @@ export function StatCard({
           </div>
           {hint && <span className="text-xs text-text-subtle">{hint}</span>}
         </div>
-        {trend && trend.length > 1 && <Sparkline data={trend} width={80} height={30} className="mb-0.5" />}
+        {trend && trend.length > 1 && (
+          <Sparkline data={trend} width={80} height={30} className="mb-0.5" />
+        )}
       </div>
+
+      {footer && <div className="relative">{footer}</div>}
     </>
   );
 

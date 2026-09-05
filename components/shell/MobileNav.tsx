@@ -18,15 +18,15 @@ import { useVisibleNavItems, isNavItemActive } from "./Sidebar";
  * MobileNav — no celular o rail vira barra INFERIOR, na faixa que o polegar
  * alcança. Só aparece abaixo de `md`; acima disso quem navega é a Sidebar.
  *
+ * Grafite como o rail (tokens `sidebar-*`, literais nos dois temas): a
+ * navegação é a mesma peça nos dois tamanhos de tela, só muda de lugar.
+ *
  * A barra mostra QUATRO destinos, não os dezoito. Dezoito ícones de 20px numa
  * tela de 360px dariam alvos de toque menores que o mínimo acessível (44px), e
  * cortar a lista em "os quatro primeiros do array" faria a navegação do celular
  * mudar toda vez que alguém reordenasse o menu do desktop. Por isso os quatro
  * são declarados aqui por href: são as telas de trabalho diário. O resto — e a
  * lista é sempre a lista INTEIRA, já filtrada por permissão — sai no "Mais".
- *
- * O item ativo repete a pastilha `accent-soft` do rail, para o "você está
- * aqui" ser o mesmo desenho nos dois tamanhos de tela.
  */
 // Tarefas (0101) entrou no lugar de Contatos: no celular o que se faz é
 // executar o combinado do dia — a busca de um contato específico continua a um
@@ -50,7 +50,7 @@ export function MobileNav() {
   return (
     <nav
       className={cn(
-        "fixed inset-x-0 bottom-0 z-30 flex items-stretch border-t border-border bg-surface/95 backdrop-blur-md md:hidden",
+        "fixed inset-x-0 bottom-0 z-30 flex items-stretch border-t border-sidebar-border bg-sidebar md:hidden",
         // `pb-[env(safe-area-inset-bottom)]`: no iPhone a barra de gestos come
         // a faixa de baixo. Sem isto o último ícone fica sob a barra do sistema
         // e vira um alvo que não dá para tocar.
@@ -71,12 +71,12 @@ export function MobileNav() {
             <span
               className={cn(
                 "flex h-8 w-12 items-center justify-center rounded-pill transition-colors duration-fast",
-                isActive ? "bg-accent-soft text-accent" : "text-text-muted",
+                isActive ? "bg-sidebar-active text-sidebar-active-fg" : "text-sidebar-muted",
               )}
             >
               <Icon size={20} weight={isActive ? "fill" : "regular"} aria-hidden />
             </span>
-            <span className={isActive ? "text-text" : "text-text-muted"}>
+            <span className={isActive ? "text-sidebar-fg" : "text-sidebar-muted"}>
               {item.label}
             </span>
           </Link>
@@ -87,7 +87,7 @@ export function MobileNav() {
         <SheetTrigger asChild>
           <button
             type="button"
-            className="flex flex-1 flex-col items-center justify-center gap-1 py-2 text-[10px] font-medium text-text-muted"
+            className="flex flex-1 flex-col items-center justify-center gap-1 py-2 text-[10px] font-medium text-sidebar-muted"
           >
             <span className="flex h-8 w-12 items-center justify-center rounded-pill">
               <DotsThree size={20} aria-hidden />

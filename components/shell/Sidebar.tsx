@@ -112,17 +112,22 @@ export function isNavItemActive(pathname: string, href: string): boolean {
 }
 
 /**
- * Sidebar — o rail de navegação (redesign 2026-09).
+ * Sidebar — o rail grafite (redesign 2026-09).
+ *
+ * É GRAFITE NOS DOIS TEMAS. Um painel escuro de propósito não pode usar o par
+ * `bg-surface`/`text-text`, que inverte junto com o tema — por isso ele lê os
+ * tokens `sidebar-*` (app/globals.css, bloco "redesign 2026-09"), literais e
+ * afinados por tema (no escuro ele fica um degrau mais fundo que a página,
+ * para continuar sendo "o menu" e não sumir nela).
  *
  * O estado PADRÃO é o rail de 72px só com ícone (ver app/app/layout.tsx: o
  * cookie precisa dizer "0" explicitamente para expandir). No rail cada item
  * ganha um tooltip à direita com o nome — 20 destinos sem rótulo é muita coisa
  * para memorizar por desenho, e o tooltip resolve isso sem obrigar a expandir.
  *
- * Item ativo = fundo `accent-soft` com ícone preenchido em `accent`. É o
- * "você está aqui" em tinta leve: o quadrado azul sólido de antes competia com
- * o card-herói do Painel e com o botão primário de cada tela, e três coisas
- * azuis sólidas na mesma vista fazem nenhuma delas ser a principal.
+ * Item ativo = pastilha azul translúcida com o ícone preenchido em azul-claro.
+ * Sobre o grafite é o único ponto de cor do menu, então ele é o "você está
+ * aqui" sem precisar gritar.
  *
  * No mobile este componente não aparece: quem navega lá é a MobileNav (barra
  * inferior). Ver components/shell/MobileNav.tsx.
@@ -176,7 +181,7 @@ export function Sidebar({ collapsed }: { collapsed: boolean }) {
   return (
     <aside
       className={cn(
-        "fixed inset-y-0 left-0 z-30 hidden flex-col border-r border-border bg-surface md:flex",
+        "fixed inset-y-0 left-0 z-30 hidden flex-col border-r border-sidebar-border bg-sidebar text-sidebar-fg md:flex",
         "transition-[width] duration-200",
         collapsed ? "w-[72px]" : "w-60",
       )}
@@ -204,12 +209,12 @@ export function Sidebar({ collapsed }: { collapsed: boolean }) {
           <>
             <span
               aria-hidden
-              className="flex h-8 w-8 shrink-0 items-center justify-center rounded-[8px] bg-accent text-sm font-bold text-accent-foreground shadow-sm"
+              className="flex h-8 w-8 shrink-0 items-center justify-center rounded-[8px] bg-accent text-sm font-bold text-accent-foreground"
             >
               {brand.initial}
             </span>
             {!collapsed && (
-              <span className="truncate text-[15px] font-semibold tracking-tight text-text">
+              <span className="truncate text-[15px] font-semibold tracking-tight text-sidebar-fg">
                 {brand.name}
               </span>
             )}
@@ -247,10 +252,10 @@ export function Sidebar({ collapsed }: { collapsed: boolean }) {
                   aria-current={isActive ? "page" : undefined}
                   className={cn(
                     "relative flex items-center rounded-control text-[13px] font-medium transition-colors duration-fast ease-out",
-                    "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent-500 focus-visible:ring-offset-2 focus-visible:ring-offset-surface",
+                    "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent-400 focus-visible:ring-offset-2 focus-visible:ring-offset-sidebar",
                     isActive
-                      ? "bg-accent-soft text-accent"
-                      : "text-text-muted hover:bg-surface-elevated hover:text-text",
+                      ? "bg-sidebar-active text-sidebar-active-fg"
+                      : "text-sidebar-muted hover:bg-sidebar-hover hover:text-sidebar-fg",
                     collapsed ? "mx-auto h-10 w-10 justify-center" : "h-9 gap-2.5 px-2.5",
                   )}
                 >
@@ -295,7 +300,8 @@ export function Sidebar({ collapsed }: { collapsed: boolean }) {
               <div
                 key={group.section ?? `solto-${gi}`}
                 className={cn(
-                  gi > 0 && (collapsed ? "mt-2 border-t border-border pt-2" : "mt-4"),
+                  gi > 0 &&
+                    (collapsed ? "mt-2 border-t border-sidebar-border pt-2" : "mt-4"),
                 )}
               >
                 {group.section && !collapsed && (
@@ -305,9 +311,9 @@ export function Sidebar({ collapsed }: { collapsed: boolean }) {
                     aria-expanded={!isClosed}
                     className={cn(
                       "mb-1 flex h-6 w-full items-center justify-between rounded-control px-2.5",
-                      "text-[11px] font-semibold uppercase tracking-[0.08em] text-text-subtle",
-                      "transition-colors duration-fast hover:text-text-muted",
-                      "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent-500",
+                      "text-[11px] font-semibold uppercase tracking-[0.08em] text-sidebar-subtle",
+                      "transition-colors duration-fast hover:text-sidebar-muted",
+                      "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent-400",
                     )}
                   >
                     {group.section}
@@ -327,15 +333,15 @@ export function Sidebar({ collapsed }: { collapsed: boolean }) {
         </nav>
       </TooltipProvider>
 
-      <div className="shrink-0 border-t border-border p-3">
+      <div className="shrink-0 border-t border-sidebar-border p-3">
         <button
           type="button"
           onClick={() => startTransition(() => toggleSidebar(collapsed))}
           disabled={isPending}
           className={cn(
-            "flex items-center rounded-control text-xs font-medium text-text-muted transition-colors duration-fast",
-            "hover:bg-surface-elevated hover:text-text",
-            "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent-500 focus-visible:ring-offset-2 focus-visible:ring-offset-surface",
+            "flex items-center rounded-control text-xs font-medium text-sidebar-muted transition-colors duration-fast",
+            "hover:bg-sidebar-hover hover:text-sidebar-fg",
+            "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent-400 focus-visible:ring-offset-2 focus-visible:ring-offset-sidebar",
             "disabled:pointer-events-none disabled:opacity-50",
             collapsed ? "mx-auto h-10 w-10 justify-center" : "h-9 w-full gap-2 px-2.5",
           )}
