@@ -4,25 +4,35 @@ import { ArrowUpRight } from "@/lib/ui/icons";
 
 import { cn } from "@/lib/utils";
 import { DeltaPill, type DeltaIntent } from "@/components/ui/delta-pill";
+import { Sparkline } from "@/components/charts/Sparkline";
 
 /**
- * StatCard — o card de métrica do painel, e o molde de que o resto da tela
- * herda a forma: raio 20px, borda de 1px, respiro de 24px, e o botão circular
- * ↗ no canto superior direito.
+ * StatCard — o card de métrica do painel (redesign 2026-09).
  *
- * A hierarquia é por TAMANHO, não por cor: rótulo 12px secundário → valor 32px
- * primário → apoio 12px secundário. Nenhum desses três é ciano. É o salto de
- * 12 para 32 que diz o que importa; se a cor tivesse que dizer, o card
- * pararia de funcionar no dia em que houvesse dois.
+ * A hierarquia é por TAMANHO, não por cor: rótulo 13px secundário → valor 28px
+ * primário → apoio 12px terciário. O valor usa algarismos PROPORCIONAIS (sem
+ * `tabular`): em tamanho de display os dígitos de largura fixa deixam "121"
+ * frouxo. Largura fixa é para coluna de tabela, não para número solto.
  *
- * ── `featured` — o card de destaque
- * Fundo ciano com texto navy. É o único bloco grande de ciano da tela e SÓ UM
- * card por tela pode tê-lo (a métrica principal). Dois cards em destaque não
- * destacam nada — viram um par, e o olho volta a ter que procurar.
- * O glow (`shadow-glow`, 6% de opacidade) só existe nesta variante.
+ * ── `href` — o card inteiro é o link
+ * Sem botão ↗ separado: o card todo vira alvo, a seta aparece no hover como
+ * confirmação. Card sem `href` é só leitura e não sugere clique.
+ *
+ * ── `featured` — o card-herói
+ * Um por tela. Valor a 40-44px e uma mancha de accent desfocada no canto —
+ * a única cor grande da tela, e por isso ela destaca. Fundo continua branco:
+ * um bloco azul sólido gritava mais que o número que devia carregar.
+ *
+ * ── `trend` — sparkline
+ * Série curta (8-12 pontos) ao lado do valor. Diz só a direção; o gráfico
+ * grande de baixo diz o valor de cada ponto.
+ *
+ * ── `variant="flat"`
+ * Sem borda, sem fundo, sem sombra — para quando o card de FORA emoldura uma
+ * grade de métricas com divisórias de 1px (o Plano 60 dias faz isso).
  */
 export interface StatCardProps {
-  /** Rótulo curto: "Valor do pipeline". 12px, secundário. */
+  /** Rótulo curto: "Valor do pipeline". */
   label: string;
   /** Já formatado para pt-BR pelo chamador — o card não sabe se é R$, % ou contagem. */
   value: string;
@@ -32,10 +42,13 @@ export interface StatCardProps {
   deltaIntent?: DeltaIntent;
   /** Linha de apoio: "este mês vs. anterior". */
   hint?: string;
-  /** Destino do botão ↗. Sem href o botão não é renderizado — ver nota abaixo. */
+  /** Destino do card inteiro. Sem href o card não é clicável. */
   href?: string;
-  /** O card de destaque da tela. No máximo um. */
+  /** O card-herói da tela. No máximo um. */
   featured?: boolean;
+  /** Série curta para a sparkline ao lado do valor. */
+  trend?: number[];
+  variant?: "card" | "flat";
   className?: string;
 }
 
@@ -47,76 +60,79 @@ export function StatCard({
   hint,
   href,
   featured = false,
+  trend,
+  variant = "card",
   className,
 }: StatCardProps) {
-  return (
-    <div
-      className={cn(
-        "relative flex flex-col justify-between gap-4 rounded-card border p-5",
-        featured
-          ? "border-transparent bg-accent text-accent-foreground shadow-glow"
-          : "border-border bg-surface text-text",
-        className,
-      )}
-    >
-      <div className="flex items-start justify-between gap-4">
+  const interactive = Boolean(href);
+
+  const classes = cn(
+    "group relative flex flex-col justify-between gap-5 overflow-hidden text-text",
+    variant === "card"
+      ? "rounded-card border border-border bg-surface p-5 shadow-xs"
+      : "justify-start gap-4 bg-surface p-5",
+    interactive &&
+      variant === "card" &&
+      "transition-[border-color,box-shadow] duration-fast ease-out hover:border-border-strong hover:shadow-md",
+    interactive &&
+      "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent-500 focus-visible:ring-offset-2 focus-visible:ring-offset-bg",
+    className,
+  );
+
+  const content = (
+    <>
+      {featured && (
+        // A mancha usa `accent-soft`, que existe nos DOIS temas (hex no claro,
+        // rgba no escuro). `accent-100` não serviria: é claro nos dois temas e
+        // viraria um farol no grafite.
         <span
-          className={cn(
-            "text-xs font-medium",
-            featured ? "text-accent-foreground-muted" : "text-text-muted",
+          aria-hidden
+          className="pointer-events-none absolute -right-14 -top-14 h-48 w-48 rounded-full bg-accent-soft blur-3xl"
+        />
+      )}
+
+      <div className="relative flex items-start justify-between gap-3">
+        <span className="flex items-center gap-2 text-[13px] font-medium text-text-muted">
+          {featured && (
+            <span aria-hidden className="h-2 w-2 shrink-0 rounded-full bg-accent" />
           )}
-        >
           {label}
         </span>
-
-        {/* Botão ↗ — a assinatura do layout. Só aparece quando HÁ para onde ir:
-            um botão presente em todo card mas inerte em metade deles ensina que
-            ele não faz nada, e aí ele para de funcionar nos que fazem. */}
-        {href && (
-          <Link
-            href={href}
-            aria-label={`Abrir ${label}`}
-            className={cn(
-              "flex h-9 w-9 shrink-0 items-center justify-center rounded-pill border",
-              "transition-colors duration-fast ease-out",
-              "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-offset-2",
-              featured
-                ? // Inversão dupla: o fundo do botão é o próprio `accent-fg`
-                  // (navy no escuro, branco no claro) e a seta é o `accent`.
-                  // Escrever #050e1f aqui acertaria o escuro e deixaria o claro
-                  // com um botão navy dentro de um card teal.
-                  "border-transparent bg-accent-foreground text-accent hover:opacity-90 focus-visible:ring-accent-foreground focus-visible:ring-offset-accent"
-                : "border-border text-text-muted hover:border-border-strong hover:text-text focus-visible:ring-accent-500 focus-visible:ring-offset-surface",
-            )}
-          >
-            <ArrowUpRight size={16} aria-hidden />
-          </Link>
+        {interactive && (
+          <ArrowUpRight
+            size={16}
+            aria-hidden
+            className="shrink-0 text-text-subtle opacity-0 transition-opacity duration-fast group-hover:opacity-100 group-focus-visible:opacity-100"
+          />
         )}
       </div>
 
-      <div className="flex flex-col gap-2">
-        <div className="flex flex-wrap items-center gap-3">
-          {/* -0.5px de tracking: em display o Inter abre demais e o número
-              perde a leitura de bloco único. `tabular` trava a largura do
-              dígito para a coluna não dançar a cada refetch. */}
-          <span className="text-[28px] font-bold leading-none tracking-[-0.5px] tabular">
-            {value}
-          </span>
-          {delta !== undefined && (
-            <DeltaPill value={delta} intent={deltaIntent} onAccent={featured} />
-          )}
+      <div className="relative flex items-end justify-between gap-4">
+        <div className="flex min-w-0 flex-col gap-2">
+          <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
+            <span
+              className={cn(
+                "font-semibold leading-none tracking-[-0.02em]",
+                featured ? "text-[40px] sm:text-[44px]" : "text-[28px]",
+              )}
+            >
+              {value}
+            </span>
+            {delta !== undefined && <DeltaPill value={delta} intent={deltaIntent} />}
+          </div>
+          {hint && <span className="text-xs text-text-subtle">{hint}</span>}
         </div>
-        {hint && (
-          <span
-            className={cn(
-              "text-xs",
-              featured ? "text-accent-foreground/70" : "text-text-subtle",
-            )}
-          >
-            {hint}
-          </span>
-        )}
+        {trend && trend.length > 1 && <Sparkline data={trend} width={80} height={30} className="mb-0.5" />}
       </div>
-    </div>
+    </>
   );
+
+  if (href) {
+    return (
+      <Link href={href} className={classes}>
+        {content}
+      </Link>
+    );
+  }
+  return <div className={classes}>{content}</div>;
 }

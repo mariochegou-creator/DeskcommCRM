@@ -42,7 +42,7 @@ export function NumeroFilter({ numeros, semConversa, total, valor, onChange }: P
   return (
     <DropdownMenu>
       <DropdownMenuTrigger asChild>
-        <Button variant="secondary" className="gap-2">
+        <Button variant="secondary" className="h-9 gap-2">
           <WhatsappLogo size={16} aria-hidden />
           <span className="max-w-[220px] truncate">{atual}</span>
           <CaretDown size={14} aria-hidden />

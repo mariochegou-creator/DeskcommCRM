@@ -1,17 +1,18 @@
 "use client";
 import Link from "next/link";
 import { useMemo } from "react";
+import { ArrowRight } from "@/lib/ui/icons";
 
 import { ListaDeTarefas } from "@/components/tarefas/ListaDeTarefas";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
-import { MonoLabel } from "@/components/ui/mono-label";
 import { useAssignableMembers } from "@/hooks/inbox/useAssignableMembers";
 import { useTarefas, type Tarefa } from "@/hooks/tarefas/useTarefas";
 import { estadoDoPrazo, mesmoDia } from "@/lib/tarefas/tarefa";
+import { SectionHeading } from "./primitives";
 
 /**
- * "// tarefas de hoje" no Painel — o resumo, não a tela.
+ * "Tarefas de hoje" no Painel — o resumo, não a tela.
  *
  * Mostra só o que está ATRASADO ou vence hoje, das minhas e das que eu pedi. O
  * resto (próximas, resolvidas, filtros) mora na aba Tarefas: um Painel que
@@ -51,21 +52,24 @@ export function TarefasDeHojeSection({ now }: { now: Date }) {
 
   return (
     <section className="flex flex-col gap-4">
-      <div className="flex flex-wrap items-end justify-between gap-3">
-        <div className="flex flex-col gap-1">
-          <MonoLabel>tarefas de hoje</MonoLabel>
-          <p className="text-xs text-text-subtle">
-            {atrasadas > 0
-              ? `${atrasadas} ${atrasadas === 1 ? "vencida" : "vencidas"} · ${doDia.length} no total de hoje`
-              : `${doDia.length} ${doDia.length === 1 ? "tarefa" : "tarefas"} para hoje`}
-          </p>
-        </div>
-        <Button asChild variant="secondary" size="sm">
-          <Link href="/app/tarefas">Ver todas</Link>
-        </Button>
-      </div>
+      <SectionHeading
+        title="Tarefas de hoje"
+        subtitle={
+          atrasadas > 0
+            ? `${atrasadas} ${atrasadas === 1 ? "vencida" : "vencidas"} · ${doDia.length} no total de hoje`
+            : `${doDia.length} ${doDia.length === 1 ? "tarefa" : "tarefas"} para hoje`
+        }
+        action={
+          <Button asChild variant="secondary" size="sm">
+            <Link href="/app/tarefas">
+              Ver todas
+              <ArrowRight size={14} aria-hidden />
+            </Link>
+          </Button>
+        }
+      />
 
-      <Card className="p-5">
+      <Card className="p-4">
         <ListaDeTarefas
           tarefas={doDia}
           membros={membros.data ?? []}

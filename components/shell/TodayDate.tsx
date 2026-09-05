@@ -1,6 +1,8 @@
 "use client";
 import { useSyncExternalStore } from "react";
 
+import { cn } from "@/lib/utils";
+
 /**
  * `true` durante o SSR e no primeiro render do cliente; `false` depois de
  * hidratar.
@@ -12,7 +14,7 @@ import { useSyncExternalStore } from "react";
  */
 const noopSubscribe = () => () => {};
 
-function useIsServerRender(): boolean {
+export function useIsServerRender(): boolean {
   return useSyncExternalStore(
     noopSubscribe,
     () => false,
@@ -21,27 +23,27 @@ function useIsServerRender(): boolean {
 }
 
 /**
- * A data de hoje, em ciano, no centro da topbar.
+ * A data de hoje, por extenso ("sexta-feira, 5 de setembro").
  *
  * Sai vazia no servidor e só aparece depois de hidratar. Não é preciosismo: o
  * servidor formata no fuso DELE e o navegador no de quem lê, então perto da
  * meia-noite os dois HTML divergem em UM DIA — o React acusa erro de hidratação
  * e, pior, a pessoa vê a data errada piscar. Como este texto é ornamento
- * (nenhuma decisão depende dele) e não entra em SEO, esperar a hidratação sai
- * mais barato que carregar uma biblioteca de fuso.
+ * (nenhuma decisão depende dele), esperar a hidratação sai mais barato que
+ * carregar uma biblioteca de fuso.
  *
- * `min-w` reserva o espaço para a topbar não pular quando o texto chega.
+ * `min-h` reserva a linha para o cabeçalho não pular quando o texto chega.
  */
-export function TodayDate() {
+export function TodayDate({ className }: { className?: string }) {
   const isServer = useIsServerRender();
 
   return (
-    <span className="hidden min-w-[180px] text-center text-xs font-medium capitalize text-accent lg:inline">
+    <span className={cn("block min-h-4 capitalize", className)}>
       {isServer
         ? ""
         : new Date().toLocaleDateString("pt-BR", {
             weekday: "long",
-            day: "2-digit",
+            day: "numeric",
             month: "long",
           })}
     </span>

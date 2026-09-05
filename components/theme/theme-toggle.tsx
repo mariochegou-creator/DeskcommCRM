@@ -3,7 +3,7 @@
 import { useTheme } from "@/lib/theme";
 import { useHotkeys } from "react-hotkeys-hook";
 import { Sun, Moon, MonitorPlay } from "@/lib/ui/icons";
-import { Button } from "@/components/ui/button";
+import { TOPBAR_ICON_BUTTON } from "@/components/shell/icon-button";
 
 export function ThemeToggle() {
   const { theme, setTheme } = useTheme();
@@ -17,13 +17,13 @@ export function ThemeToggle() {
   const Icon = theme === "dark" ? Moon : theme === "system" ? MonitorPlay : Sun;
 
   return (
-    <Button
-      variant="ghost"
-      size="icon"
+    <button
+      type="button"
       onClick={cycle}
+      className={TOPBAR_ICON_BUTTON}
       aria-label={`Tema: ${theme}. Cmd+Shift+L para alternar.`}
     >
-      <Icon size={16} aria-hidden />
-    </Button>
+      <Icon size={18} aria-hidden />
+    </button>
   );
 }

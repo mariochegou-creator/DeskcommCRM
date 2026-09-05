@@ -5,7 +5,6 @@ import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { StatCard } from "@/components/ui/stat-card";
-import { MonoLabel } from "@/components/ui/mono-label";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -31,13 +30,19 @@ import {
   shortDate,
 } from "@/lib/plan/dates";
 import { OWNER_LABEL, SIXTY_DAY_PLAN } from "@/lib/plan/sixty-day-plan";
+import { CardHeading, SectionHeading } from "./primitives";
 
 /**
- * "// plano 60 dias" — o topo do Painel durante o plano comercial.
+ * "Plano 60 dias" — o topo do Painel durante o plano comercial.
  *
- * Deliberadamente FORA do regime do seletor de período: as janelas daqui são
- * as do plano (hoje / semana / 10/08→agora), não as do dropdown — o plano tem
- * calendário próprio e o seletor não deve reescrevê-lo. Também fora do ternário
+ * Redesign 2026-09: UM card em vez de cinco. À esquerda, os quatro números do
+ * ritmo numa grade com divisórias de 1px; à direita, as tarefas do plano. Cinco
+ * cards soltos de mesmo tamanho não diziam qual era o principal — e o Painel
+ * inteiro tinha doze deles.
+ *
+ * Deliberadamente FORA do regime da régua de período: as janelas daqui são
+ * as do plano (hoje / semana / 10/08→agora), não as do seletor — o plano tem
+ * calendário próprio e a régua não deve reescrevê-lo. Também fora do ternário
  * do board, pela mesma razão da ProspectingSection: dados próprios, queda
  * própria.
  *
@@ -72,14 +77,15 @@ export function SixtyDayPlanSection({ prospectingPipelineId, now }: Props) {
       ? `começa segunda ${shortDate(SIXTY_DAY_PLAN.startDate)} · Fase ${phase.n} — ${phase.name}`
       : ended
         ? `encerrado em ${shortDate(SIXTY_DAY_PLAN.endDate)} · Fase ${phase.n} — ${phase.name}`
-        : `${shortDate(SIXTY_DAY_PLAN.startDate)} → ${shortDate(SIXTY_DAY_PLAN.endDate)} · dia ${Math.min(day, 60)} de 60 · Fase ${phase.n} — ${phase.name}`;
+        : `${shortDate(SIXTY_DAY_PLAN.startDate)} → ${shortDate(SIXTY_DAY_PLAN.endDate)} · Fase ${phase.n} — ${phase.name}`;
 
   return (
     <section className="flex flex-col gap-4">
-      <div className="flex flex-col gap-1">
-        <MonoLabel>plano 60 dias</MonoLabel>
-        <p className="text-xs text-text-subtle">{subtitle}</p>
-      </div>
+      <SectionHeading
+        title="Plano 60 dias"
+        subtitle={subtitle}
+        action={day >= 1 && !ended ? <PlanProgress day={Math.min(day, 60)} /> : undefined}
+      />
 
       {tasksQuery.isLoading || paceLoading ? (
         <PlanSkeleton />
@@ -113,6 +119,28 @@ export function SixtyDayPlanSection({ prospectingPipelineId, now }: Props) {
         />
       )}
     </section>
+  );
+}
+
+/** "dia 27 de 60" com uma régua fina — o tempo do plano, de relance. */
+function PlanProgress({ day }: { day: number }) {
+  const pct = Math.max(0, Math.min(100, (day / 60) * 100));
+  return (
+    <div className="flex items-center gap-3 text-xs text-text-muted">
+      <span className="tabular">
+        dia <span className="font-semibold text-text">{day}</span> de 60
+      </span>
+      <div
+        className="h-1.5 w-28 overflow-hidden rounded-pill bg-surface-elevated"
+        role="progressbar"
+        aria-valuemin={0}
+        aria-valuemax={60}
+        aria-valuenow={day}
+        aria-label="Dias do plano"
+      >
+        <div className="h-full rounded-pill bg-accent" style={{ width: `${pct}%` }} />
+      </div>
+    </div>
   );
 }
 
@@ -169,9 +197,12 @@ function PlanContent({
           : `aceites desde ${shortDate(SIXTY_DAY_PLAN.startDate)}`;
 
   return (
-    <>
-      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
+    <Card className="grid grid-cols-1 overflow-hidden xl:grid-cols-[minmax(0,5fr)_minmax(0,7fr)]">
+      {/* `gap-px` sobre `bg-border` desenha as divisórias de 1px entre as
+          células sem nenhuma lógica de "qual borda em qual célula". */}
+      <div className="grid grid-cols-1 gap-px bg-border sm:grid-cols-2">
         <StatCard
+          variant="flat"
           label="Aberturas hoje"
           value={today ? today.openings.toLocaleString("pt-BR") : "—"}
           delta={todayDelta}
@@ -182,6 +213,7 @@ function PlanContent({
           }
         />
         <StatCard
+          variant="flat"
           label="Aberturas na semana"
           value={week ? week.openings.toLocaleString("pt-BR") : "—"}
           delta={weekDelta}
@@ -194,11 +226,13 @@ function PlanContent({
           }
         />
         <StatCard
+          variant="flat"
           label="Raios-x no plano"
           value={plan && plan.xrayStage !== null ? plan.xray.toLocaleString("pt-BR") : "—"}
           hint={xrayHint}
         />
         <StatCard
+          variant="flat"
           label="Próximo checkpoint"
           value={cp ? shortDate(cp.date) : shortDate(SIXTY_DAY_PLAN.endDate)}
           hint={
@@ -209,12 +243,14 @@ function PlanContent({
         />
       </div>
 
-      <TasksCard tasks={tasks} now={now} />
-    </>
+      <div className="flex flex-col gap-5 border-t border-border p-5 xl:border-l xl:border-t-0">
+        <TasksPanel tasks={tasks} now={now} />
+      </div>
+    </Card>
   );
 }
 
-function TasksCard({ tasks, now }: { tasks: PlanTask[]; now: Date }) {
+function TasksPanel({ tasks, now }: { tasks: PlanTask[]; now: Date }) {
   const update = useUpdatePlanTask();
   const todayIso = bahiaCivilDate(now).iso;
 
@@ -234,15 +270,15 @@ function TasksCard({ tasks, now }: { tasks: PlanTask[]; now: Date }) {
   const pending = tasks.filter(isOpen).length;
 
   return (
-    <Card className="flex flex-col gap-6 p-6">
-      <div className="flex flex-wrap items-center justify-between gap-3">
-        <h2 className="text-base font-semibold text-text">Tarefas do plano</h2>
-        <span className="text-xs text-text-subtle">
-          {pending === 0
+    <>
+      <CardHeading
+        title="Tarefas do plano"
+        subtitle={
+          pending === 0
             ? "nenhuma pendente"
-            : `${pending} pendente${pending === 1 ? "" : "s"}`}
-        </span>
-      </div>
+            : `${pending} pendente${pending === 1 ? "" : "s"}`
+        }
+      />
 
       <PhaseProgress tasks={tasks} />
 
@@ -251,14 +287,14 @@ function TasksCard({ tasks, now }: { tasks: PlanTask[]; now: Date }) {
           Sem tarefas ainda — o seed do plano cria as da Fase 0.
         </p>
       ) : (
-        <ul className="flex flex-col gap-1">
+        <ul className="-mx-2 flex flex-col gap-0.5">
           {sorted.map((t) => {
             const done = t.status === "done";
             const resolved = t.status !== "pending";
             return (
               <li
                 key={t.id}
-                className="group flex items-center gap-3 rounded-[10px] px-2 py-2 transition-colors duration-fast hover:bg-surface-elevated"
+                className="group flex items-center gap-3 rounded-control px-2 py-1.5 transition-colors duration-fast hover:bg-surface-elevated"
               >
                 <button
                   type="button"
@@ -268,19 +304,19 @@ function TasksCard({ tasks, now }: { tasks: PlanTask[]; now: Date }) {
                     update.mutate({ id: t.id, status: done ? "pending" : "done" })
                   }
                   className={cn(
-                    "flex h-5 w-5 shrink-0 items-center justify-center rounded-[6px] border transition-colors duration-fast",
+                    "flex h-[18px] w-[18px] shrink-0 items-center justify-center rounded-[5px] border transition-colors duration-fast",
                     "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent-500 focus-visible:ring-offset-2 focus-visible:ring-offset-surface",
                     done
                       ? "border-transparent bg-accent text-accent-foreground"
                       : "border-border-strong bg-transparent text-transparent hover:border-accent-500",
                   )}
                 >
-                  <Check size={12} weight="bold" aria-hidden />
+                  <Check size={11} weight="bold" aria-hidden />
                 </button>
 
                 <span
                   className={cn(
-                    "min-w-0 flex-1 truncate text-sm",
+                    "min-w-0 flex-1 truncate text-[13px]",
                     resolved ? "text-text-subtle line-through" : "text-text",
                   )}
                   title={t.description ?? t.title}
@@ -288,7 +324,7 @@ function TasksCard({ tasks, now }: { tasks: PlanTask[]; now: Date }) {
                   {t.title}
                 </span>
 
-                <span className="shrink-0 rounded-[6px] bg-surface-elevated px-2 py-0.5 text-[11px] font-medium text-text-muted">
+                <span className="shrink-0 rounded-pill bg-surface-elevated px-2 py-0.5 text-[11px] font-medium text-text-muted">
                   {OWNER_LABEL[t.owner] ?? t.owner}
                 </span>
 
@@ -317,7 +353,7 @@ function TasksCard({ tasks, now }: { tasks: PlanTask[]; now: Date }) {
                       variant="ghost"
                       size="icon"
                       aria-label={`Ações de "${t.title}"`}
-                      className="h-8 w-8 shrink-0 opacity-0 transition-opacity duration-fast focus-visible:opacity-100 group-hover:opacity-100"
+                      className="h-7 w-7 shrink-0 opacity-0 transition-opacity duration-fast focus-visible:opacity-100 group-hover:opacity-100"
                     >
                       <DotsThree size={18} weight="bold" aria-hidden />
                     </Button>
@@ -347,7 +383,7 @@ function TasksCard({ tasks, now }: { tasks: PlanTask[]; now: Date }) {
           })}
         </ul>
       )}
-    </Card>
+    </>
   );
 }
 
@@ -368,18 +404,18 @@ function PhaseProgress({ tasks }: { tasks: PlanTask[] }) {
       {rows.map((r) => (
         <div key={r.phase.n} className="flex items-center gap-3">
           <span
-            className="w-32 shrink-0 truncate text-xs text-text-muted"
+            className="w-28 shrink-0 truncate text-xs text-text-muted sm:w-36"
             title={`Fase ${r.phase.n} — ${r.phase.name}`}
           >
             F{r.phase.n} · {r.phase.name}
           </span>
-          <div className="relative h-2 min-w-0 flex-1 overflow-hidden rounded-[6px] bg-surface-elevated">
+          <div className="relative h-1.5 min-w-0 flex-1 overflow-hidden rounded-pill bg-surface-elevated">
             <div
-              className="h-full rounded-[6px] bg-accent"
+              className="h-full rounded-pill bg-accent"
               style={{ width: `${r.total > 0 ? (r.done / r.total) * 100 : 0}%` }}
             />
           </div>
-          <span className="w-12 shrink-0 text-right text-xs font-bold text-text tabular">
+          <span className="w-10 shrink-0 text-right text-xs font-semibold text-text tabular">
             {r.done}/{r.total}
           </span>
         </div>
@@ -389,14 +425,5 @@ function PhaseProgress({ tasks }: { tasks: PlanTask[] }) {
 }
 
 function PlanSkeleton() {
-  return (
-    <div className="flex flex-col gap-4">
-      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
-        {[0, 1, 2, 3].map((i) => (
-          <Skeleton key={i} className="h-[148px] rounded-card" />
-        ))}
-      </div>
-      <Skeleton className="h-[280px] rounded-card" />
-    </div>
-  );
+  return <Skeleton className="h-[320px] rounded-card" />;
 }

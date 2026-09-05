@@ -1,33 +1,28 @@
 "use client";
 import { useMemo, useState } from "react";
 import Link from "next/link";
-import { CaretDown } from "@/lib/ui/icons";
+import { ArrowRight } from "@/lib/ui/icons";
 
 import { useBoard } from "@/hooks/kanban/useBoard";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { StatCard } from "@/components/ui/stat-card";
-import { MonoLabel } from "@/components/ui/mono-label";
 import { BarChart } from "@/components/charts/BarChart";
 import { DonutChart } from "@/components/charts/DonutChart";
 import { EmptyPipeline } from "@/components/empty";
+import { TodayDate } from "@/components/shell/TodayDate";
 import { ProspectingSection } from "./ProspectingSection";
 import { SixtyDayPlanSection } from "./SixtyDayPlanSection";
 import { TarefasDeHojeSection } from "./TarefasDeHojeSection";
 import { NumeroFilter } from "./NumeroFilter";
+import { CardHeading, PeriodSegmented, SectionHeading } from "./primitives";
 import { useLeadChannels } from "@/hooks/metrics/useLeadChannels";
 import {
   SEM_CONVERSA,
   TODOS_OS_NUMEROS,
   filtrarPorNumero,
 } from "@/lib/dashboard/numeros";
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuTrigger,
-} from "@/components/ui/dropdown-menu";
 import {
   PERIOD_COMPARISON_LABEL,
   PERIOD_OPTIONS,
@@ -49,6 +44,19 @@ interface Props {
   firstName: string | null;
 }
 
+/**
+ * Painel (redesign 2026-09).
+ *
+ * A página lê de cima para baixo na ordem das perguntas do dia: que dia é e
+ * como está a semana (saudação + filtros), o que eu faço hoje (plano + tarefas),
+ * como está o funil (o herói + três números + dois gráficos) e como está a
+ * prospecção. Cada seção abre com um `SectionHeading` — título de verdade, não
+ * rótulo em mono — e as métricas de uma mesma seção dividem a MESMA janela de
+ * período, escolhida na régua do topo.
+ *
+ * `max-w-[1400px]`: acima disso quatro cards de 25% viram quatro placas com
+ * um número perdido no meio, e o gráfico de oito barras vira oito palitos.
+ */
 export function DashboardClient({
   pipelineId,
   pipelineName,
@@ -98,6 +106,9 @@ export function DashboardClient({
     () => (boardFiltrado ? weeklyActivity(boardFiltrado.leads, now) : []),
     [boardFiltrado, now],
   );
+  // A mesma série das barras, como sparkline no card de "Novos negócios": o
+  // card diz a direção, o gráfico grande diz o valor de cada semana.
+  const trend = useMemo(() => activity.map((a) => a.value), [activity]);
 
   const periodLabel =
     PERIOD_OPTIONS.find((p) => p.id === period)?.label ?? "Este mês";
@@ -119,11 +130,12 @@ export function DashboardClient({
   }
 
   return (
-    <div className="flex flex-col gap-6">
+    <div className="mx-auto flex w-full max-w-[1400px] flex-col gap-8">
       <header className="flex flex-wrap items-end justify-between gap-4">
         <div className="flex flex-col gap-1">
+          <TodayDate className="text-xs font-medium text-text-subtle" />
           {/* Emoji SÓ na saudação — é a única licença do sistema. */}
-          <h1 className="text-xl font-semibold leading-tight tracking-[-0.2px] text-text">
+          <h1 className="text-2xl font-semibold leading-tight tracking-[-0.02em] text-text">
             {firstName ? `Olá, ${firstName}` : "Olá"} 👋
           </h1>
           <p className="text-sm text-text-muted">
@@ -146,36 +158,14 @@ export function DashboardClient({
               onChange={setNumeroId}
             />
           )}
-
-          <DropdownMenu>
-            <DropdownMenuTrigger asChild>
-              <Button variant="secondary" className="gap-2">
-                <span>{periodLabel}</span>
-                <CaretDown size={14} aria-hidden />
-              </Button>
-            </DropdownMenuTrigger>
-            <DropdownMenuContent align="end" className="min-w-[200px]">
-              {PERIOD_OPTIONS.map((opt) => (
-                <DropdownMenuItem
-                  key={opt.id}
-                  onClick={() => setPeriod(opt.id)}
-                  disabled={opt.id === period}
-                >
-                  {opt.label}
-                  {opt.id === period && (
-                    <span className="ml-auto text-xs text-text-subtle">atual</span>
-                  )}
-                </DropdownMenuItem>
-              ))}
-            </DropdownMenuContent>
-          </DropdownMenu>
+          <PeriodSegmented value={period} onChange={setPeriod} />
         </div>
       </header>
 
       {/* O plano de 60 dias abre o Painel: é a resposta de "o que eu faço
           hoje?", antes do "como está o funil?". Fora do ternário do board
           (dados próprios) e fora do regime do seletor de período — as janelas
-          do plano são fixas (hoje/semana/60 dias), o dropdown não as governa. */}
+          do plano são fixas (hoje/semana/60 dias), a régua não as governa. */}
       <SixtyDayPlanSection prospectingPipelineId={prospectingPipelineId} now={now} />
 
       {/* Logo abaixo do plano, e antes do funil, pela mesma lógica: o combinado
@@ -183,25 +173,41 @@ export function DashboardClient({
           nos dias em que não há nada vencendo. */}
       <TarefasDeHojeSection now={now} />
 
-      {board.isLoading || !metrics ? (
-        <DashboardSkeleton />
-      ) : board.isError ? (
-        <Card className="flex flex-col items-center gap-3 p-10 text-center">
-          <p className="text-sm text-error-fg">Não foi possível carregar o funil.</p>
-          <Button variant="secondary" size="sm" onClick={() => board.refetch()}>
-            Tentar novamente
-          </Button>
-        </Card>
-      ) : (
-        <>
-          <section className="flex flex-col gap-4">
-            <MonoLabel>pipeline</MonoLabel>
-            <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
-              {/* O ÚNICO card de destaque da tela. Ver StatCard: dois destaques
-                  não destacam nada. É a métrica principal — o valor parado no
-                  funil — e por isso não carrega pill de variação: ela é ESTOQUE
-                  (quanto há agora), e comparar estoque com o "criado no período"
-                  ao lado do mesmo número diria uma coisa mostrando outra. */}
+      <section className="flex flex-col gap-4">
+        <SectionHeading
+          title="Funil"
+          subtitle={
+            pipelineName ? `"${pipelineName}" · ${periodLabel}` : periodLabel
+          }
+          action={
+            <Button asChild variant="secondary" size="sm">
+              <Link href={`/app/pipelines/${pipelineId}`}>
+                Abrir funil
+                <ArrowRight size={14} aria-hidden />
+              </Link>
+            </Button>
+          }
+        />
+
+        {board.isLoading || !metrics ? (
+          <DashboardSkeleton />
+        ) : board.isError ? (
+          <Card className="flex flex-col items-center gap-3 p-10 text-center">
+            <p className="text-sm text-error-fg">Não foi possível carregar o funil.</p>
+            <Button variant="secondary" size="sm" onClick={() => board.refetch()}>
+              Tentar novamente
+            </Button>
+          </Card>
+        ) : (
+          <>
+            {/* O herói ocupa 1,4 coluna no desktop e a linha inteira no
+                tablet: é a métrica que a tela existe para mostrar. */}
+            <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-[1.4fr_repeat(3,minmax(0,1fr))]">
+              {/* O ÚNICO card-herói da tela. É a métrica principal — o valor
+                  parado no funil — e por isso não carrega pill de variação: ela
+                  é ESTOQUE (quanto há agora), e comparar estoque com o "criado
+                  no período" ao lado do mesmo número diria uma coisa mostrando
+                  outra. */}
               <StatCard
                 featured
                 label="Valor do pipeline"
@@ -210,12 +216,14 @@ export function DashboardClient({
                   metrics.openCount === 1 ? "negócio aberto" : "negócios abertos"
                 }`}
                 href={`/app/pipelines/${pipelineId}`}
+                className="md:col-span-2 xl:col-span-1"
               />
               <StatCard
                 label="Novos negócios"
                 value={metrics.createdInPeriod.toLocaleString("pt-BR")}
                 delta={metrics.createdDelta}
                 hint={comparison}
+                trend={trend}
                 href="/app/leads"
               />
               <StatCard
@@ -240,62 +248,60 @@ export function DashboardClient({
                 href="/app/metrics"
               />
             </div>
-          </section>
 
-          <section className="grid grid-cols-1 gap-4 xl:grid-cols-3">
-            <Card className="flex flex-col gap-6 p-6 xl:col-span-2">
-              <div className="flex flex-wrap items-center justify-between gap-3">
-                <div className="flex flex-col gap-1">
-                  <MonoLabel>atividade</MonoLabel>
-                  <h2 className="text-base font-semibold text-text">
-                    Negócios criados por semana
-                  </h2>
-                </div>
-                <span className="text-xs text-text-subtle">últimas 8 semanas</span>
-              </div>
-              <BarChart
-                data={activity}
-                caption="Negócios criados por semana nas últimas 8 semanas"
-              />
-            </Card>
+            <div className="grid grid-cols-1 gap-4 xl:grid-cols-3">
+              <Card className="flex flex-col gap-5 p-5 xl:col-span-2">
+                <CardHeading
+                  title="Negócios criados por semana"
+                  subtitle="últimas 8 semanas · a semana começa na segunda"
+                />
+                <BarChart
+                  data={activity}
+                  caption="Negócios criados por semana nas últimas 8 semanas"
+                />
+              </Card>
 
-            <Card className="flex flex-col gap-6 p-6">
-              <div className="flex flex-col gap-1">
-                <MonoLabel>distribuição</MonoLabel>
-                <h2 className="text-base font-semibold text-text">
-                  Abertos por etapa
-                </h2>
-              </div>
-              <DonutChart
-                data={metrics.byStage}
-                caption="Negócios abertos por etapa do funil"
-                centerValue={metrics.openCount.toLocaleString("pt-BR")}
-                centerLabel="abertos"
-              />
-              <Link
-                href="/app/leads"
-                className="text-sm text-accent hover:underline"
-              >
-                Ver todos os negócios
-              </Link>
-            </Card>
-          </section>
-        </>
-      )}
+              <Card className="flex flex-col gap-5 p-5">
+                <CardHeading
+                  title="Abertos por etapa"
+                  subtitle={`${metrics.openCount.toLocaleString("pt-BR")} ${
+                    metrics.openCount === 1 ? "negócio aberto" : "negócios abertos"
+                  } agora`}
+                  action={
+                    <Link
+                      href="/app/leads"
+                      className="text-xs font-medium text-accent hover:underline"
+                    >
+                      Ver todos
+                    </Link>
+                  }
+                />
+                <DonutChart
+                  data={metrics.byStage}
+                  caption="Negócios abertos por etapa do funil"
+                  centerValue={metrics.openCount.toLocaleString("pt-BR")}
+                  centerLabel="abertos"
+                  className="my-auto"
+                />
+              </Card>
+            </div>
+          </>
+        )}
+      </section>
 
       {/* O seletor de número NÃO governa a seção de baixo: ela agrega no banco
           (fn_prospecting_metrics) e recebe o funil, não a lista de leads. Dizer
           isso na tela é o mínimo — número filtrado em cima e número cheio
           embaixo, sem aviso, viraria "o Painel se contradiz". */}
       {filtrando && prospectingPipelineId && (
-        <p className="-mb-2 text-xs text-text-subtle">
+        <p className="-mb-4 text-xs text-text-subtle">
           A prospecção abaixo continua somando todos os números.
         </p>
       )}
 
       {/* Fora do ternário do board de propósito: a seção busca os próprios
           dados e não deve esperar (nem cair junto com) o funil de cima. O
-          `range` congelado é o MESMO — o seletor de período governa as duas
+          `range` congelado é o MESMO — a régua de período governa as duas
           metades atomicamente. */}
       {prospectingPipelineId && prospectingPipelineName && (
         <ProspectingSection
@@ -312,15 +318,16 @@ export function DashboardClient({
 
 function DashboardSkeleton() {
   return (
-    <div className="flex flex-col gap-6">
-      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
-        {[0, 1, 2, 3].map((i) => (
-          <Skeleton key={i} className="h-[148px] rounded-card" />
+    <div className="flex flex-col gap-4">
+      <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-[1.4fr_repeat(3,minmax(0,1fr))]">
+        <Skeleton className="h-[164px] rounded-card md:col-span-2 xl:col-span-1" />
+        {[0, 1, 2].map((i) => (
+          <Skeleton key={i} className="h-[164px] rounded-card" />
         ))}
       </div>
       <div className="grid grid-cols-1 gap-4 xl:grid-cols-3">
-        <Skeleton className="h-[360px] rounded-card xl:col-span-2" />
-        <Skeleton className="h-[360px] rounded-card" />
+        <Skeleton className="h-[332px] rounded-card xl:col-span-2" />
+        <Skeleton className="h-[332px] rounded-card" />
       </div>
     </div>
   );

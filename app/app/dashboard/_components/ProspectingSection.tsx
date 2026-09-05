@@ -1,19 +1,21 @@
 "use client";
+import Link from "next/link";
 import { useId } from "react";
+import { ArrowRight } from "@/lib/ui/icons";
 
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { StatCard } from "@/components/ui/stat-card";
-import { MonoLabel } from "@/components/ui/mono-label";
 import {
   useProspectingMetrics,
   type ProspectingFunnelStage,
 } from "@/hooks/metrics/useProspectingMetrics";
 import { percentChange, type PeriodRange } from "@/lib/dashboard/period";
+import { CardHeading, SectionHeading } from "./primitives";
 
 /**
- * "// prospecção" — a metade de baixo do Painel.
+ * "Prospecção" — a metade de baixo do Painel.
  *
  * Sempre aponta para o funil de PROSPECÇÃO (detectado no servidor), mesmo
  * quando o topo mostra o funil padrão da conta. Busca os próprios dados
@@ -21,10 +23,10 @@ import { percentChange, type PeriodRange } from "@/lib/dashboard/period";
  * cima e esta seção carregam de fontes diferentes, e acorrentar os dois faria
  * o mais lento segurar o mais rápido.
  *
- * Estoque vs. fluxo (mesma regra do card de destaque lá em cima): "Em follow-up
+ * Estoque vs. fluxo (mesma regra do card-herói lá em cima): "Em follow-up
  * agora" e "No vácuo" são ESTOQUE — sem pill de variação, porque comparar o
  * agora com uma janela diria uma coisa mostrando outra. Taxa de resposta e as
- * entradas por etapa são FLUXO da janela e seguem o seletor de período.
+ * entradas por etapa são FLUXO da janela e seguem a régua de período.
  */
 
 interface Props {
@@ -50,12 +52,18 @@ export function ProspectingSection({
 
   return (
     <section className="flex flex-col gap-4">
-      <div className="flex flex-col gap-1">
-        <MonoLabel>prospecção</MonoLabel>
-        <p className="text-xs text-text-subtle">
-          Funil &quot;{pipelineName}&quot; · {periodLabel}
-        </p>
-      </div>
+      <SectionHeading
+        title="Prospecção"
+        subtitle={`Funil "${pipelineName}" · ${periodLabel}`}
+        action={
+          <Button asChild variant="secondary" size="sm">
+            <Link href={`/app/pipelines/${pipelineId}`}>
+              Abrir funil
+              <ArrowRight size={14} aria-hidden />
+            </Link>
+          </Button>
+        }
+      />
 
       {query.isLoading || (!metrics && !query.isError) ? (
         <ProspectingSkeleton />
@@ -172,11 +180,11 @@ function ProspectingContent({
         />
       </div>
 
-      <Card className="flex flex-col gap-6 p-6">
-        <div className="flex flex-wrap items-center justify-between gap-3">
-          <h2 className="text-base font-semibold text-text">Passagem por etapa</h2>
-          <span className="text-xs text-text-subtle">{periodLabel} · entradas</span>
-        </div>
+      <Card className="flex flex-col gap-5 p-5">
+        <CardHeading
+          title="Passagem por etapa"
+          subtitle={`${periodLabel} · quantos entraram em cada etapa, e que fatia da anterior chegou lá`}
+        />
         <FunnelRows stages={flow} />
       </Card>
     </>
@@ -187,6 +195,9 @@ function ProspectingContent({
  * Barras horizontais locais, e não o <BarChart>: ele é vertical, trunca rótulo
  * longo de etapa e não tem onde anotar o "% da anterior" — que é a métrica
  * desta visualização, não um enfeite dela.
+ *
+ * A barra nasce reta na esquerda (a base) e arredonda só na ponta do dado —
+ * o mesmo desenho das colunas do BarChart, deitado.
  */
 function FunnelRows({ stages }: { stages: ProspectingFunnelStage[] }) {
   const tableId = useId();
@@ -202,7 +213,7 @@ function FunnelRows({ stages }: { stages: ProspectingFunnelStage[] }) {
 
   return (
     <div className="flex flex-col gap-3">
-      <div className="flex flex-col gap-2" aria-hidden>
+      <div className="flex flex-col gap-2.5" aria-hidden>
         {stages.map((s, i) => {
           const prev = i > 0 ? stages[i - 1] : null;
           const pass =
@@ -213,27 +224,31 @@ function FunnelRows({ stages }: { stages: ProspectingFunnelStage[] }) {
           return (
             <div key={s.stage_id} className="flex items-center gap-3">
               <span
-                className="w-32 shrink-0 truncate text-xs text-text-muted"
+                className="w-28 shrink-0 truncate text-xs font-medium text-text-muted sm:w-40"
                 title={s.name}
               >
                 {s.name}
               </span>
-              <div className="relative h-6 min-w-0 flex-1 overflow-hidden rounded-[6px] bg-surface-elevated">
+              <div className="relative h-5 min-w-0 flex-1 overflow-hidden rounded-r-[4px] bg-surface-elevated">
                 <div
-                  className="h-full rounded-[6px] bg-accent"
+                  className={s.entered > 0 ? "h-full rounded-r-[4px] bg-accent" : "h-full bg-border-strong"}
                   style={{
                     width: `${width}%`,
                     // 0 não some: barra de largura 0 é indistinguível de
                     // "etapa não medida", e as duas coisas são diferentes.
-                    minWidth: s.entered > 0 ? 4 : 2,
+                    minWidth: s.entered > 0 ? 6 : 2,
                   }}
                 />
               </div>
-              <span className="w-10 shrink-0 text-right text-xs font-bold text-text tabular">
+              <span className="w-10 shrink-0 text-right text-sm font-semibold text-text tabular">
                 {s.entered.toLocaleString("pt-BR")}
               </span>
-              <span className="hidden w-28 shrink-0 text-right text-[11px] text-text-subtle tabular sm:block">
-                {i === 0 ? "" : pass === null ? "—" : `${pass}% da anterior`}
+              <span className="hidden w-14 shrink-0 justify-end sm:flex">
+                {i > 0 && (
+                  <span className="rounded-pill bg-surface-elevated px-2 py-0.5 text-[11px] font-medium text-text-muted tabular">
+                    {pass === null ? "—" : `${pass}%`}
+                  </span>
+                )}
               </span>
             </div>
           );
@@ -269,10 +284,10 @@ function ProspectingSkeleton() {
     <div className="flex flex-col gap-4">
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
         {[0, 1, 2, 3].map((i) => (
-          <Skeleton key={i} className="h-[148px] rounded-card" />
+          <Skeleton key={i} className="h-[140px] rounded-card" />
         ))}
       </div>
-      <Skeleton className="h-[280px] rounded-card" />
+      <Skeleton className="h-[260px] rounded-card" />
     </div>
   );
 }

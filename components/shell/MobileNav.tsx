@@ -25,8 +25,8 @@ import { useVisibleNavItems, isNavItemActive } from "./Sidebar";
  * são declarados aqui por href: são as telas de trabalho diário. O resto — e a
  * lista é sempre a lista INTEIRA, já filtrada por permissão — sai no "Mais".
  *
- * O item ativo repete o quadrado ciano do rail, para o "você está aqui" ser o
- * mesmo desenho nos dois tamanhos de tela.
+ * O item ativo repete a pastilha `accent-soft` do rail, para o "você está
+ * aqui" ser o mesmo desenho nos dois tamanhos de tela.
  */
 // Tarefas (0101) entrou no lugar de Contatos: no celular o que se faz é
 // executar o combinado do dia — a busca de um contato específico continua a um
@@ -50,7 +50,7 @@ export function MobileNav() {
   return (
     <nav
       className={cn(
-        "fixed inset-x-0 bottom-0 z-30 flex items-stretch border-t border-border bg-surface md:hidden",
+        "fixed inset-x-0 bottom-0 z-30 flex items-stretch border-t border-border bg-surface/95 backdrop-blur-md md:hidden",
         // `pb-[env(safe-area-inset-bottom)]`: no iPhone a barra de gestos come
         // a faixa de baixo. Sem isto o último ícone fica sob a barra do sistema
         // e vira um alvo que não dá para tocar.
@@ -70,10 +70,8 @@ export function MobileNav() {
           >
             <span
               className={cn(
-                "flex h-9 w-11 items-center justify-center rounded-control transition-colors duration-fast",
-                isActive
-                  ? "bg-accent text-accent-foreground"
-                  : "text-text-muted",
+                "flex h-8 w-12 items-center justify-center rounded-pill transition-colors duration-fast",
+                isActive ? "bg-accent-soft text-accent" : "text-text-muted",
               )}
             >
               <Icon size={20} weight={isActive ? "fill" : "regular"} aria-hidden />
@@ -91,7 +89,7 @@ export function MobileNav() {
             type="button"
             className="flex flex-1 flex-col items-center justify-center gap-1 py-2 text-[10px] font-medium text-text-muted"
           >
-            <span className="flex h-9 w-11 items-center justify-center rounded-control">
+            <span className="flex h-8 w-12 items-center justify-center rounded-pill">
               <DotsThree size={20} aria-hidden />
             </span>
             <span>Mais</span>
@@ -112,10 +110,10 @@ export function MobileNav() {
                     onClick={() => setMoreOpen(false)}
                     aria-current={isActive ? "page" : undefined}
                     className={cn(
-                      "flex h-[86px] flex-col items-center justify-center gap-2 rounded-control border p-2 text-center text-[11px] font-medium",
+                      "flex h-[86px] flex-col items-center justify-center gap-2 rounded-card border p-2 text-center text-[11px] font-medium transition-colors duration-fast",
                       isActive
-                        ? "border-transparent bg-accent text-accent-foreground"
-                        : "border-border bg-surface-elevated text-text-muted",
+                        ? "border-transparent bg-accent-soft text-accent"
+                        : "border-border bg-surface text-text-muted hover:bg-surface-elevated",
                     )}
                   >
                     <Icon size={20} weight={isActive ? "fill" : "regular"} aria-hidden />

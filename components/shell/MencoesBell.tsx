@@ -7,6 +7,7 @@ import { ptBR } from "date-fns/locale";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { useMarcarMencaoVista, useMencoes, type Mencao } from "@/hooks/inbox/useMencoes";
 import { At } from "@/lib/ui/icons";
+import { TOPBAR_BADGE, TOPBAR_ICON_BUTTON } from "./icon-button";
 
 /**
  * "Olha isso aqui" (0110): o @ do topo acende quando alguém te cita numa nota
@@ -46,13 +47,10 @@ export function MencoesBell() {
       <PopoverTrigger
         aria-label={rotulo}
         data-testid="mencoes-bell"
-        className="relative inline-flex h-9 w-9 items-center justify-center rounded-pill border border-border text-text-muted transition-colors duration-fast hover:border-border-strong hover:text-text"
+        className={TOPBAR_ICON_BUTTON}
       >
         <At size={18} aria-hidden />
-        <span
-          data-testid="mencoes-bell-count"
-          className="absolute -right-0.5 -top-0.5 flex h-4 min-w-4 items-center justify-center rounded-full bg-destructive px-1 text-[10px] font-semibold leading-none text-destructive-foreground"
-        >
+        <span data-testid="mencoes-bell-count" className={TOPBAR_BADGE}>
           {mencoes.length > 99 ? "99+" : mencoes.length}
         </span>
       </PopoverTrigger>
@@ -66,14 +64,14 @@ export function MencoesBell() {
             key={m.id}
             type="button"
             onClick={() => abrir(m)}
-            className="flex w-full flex-col items-start gap-0.5 rounded-md px-3 py-2 text-left hover:bg-muted"
+            className="flex w-full flex-col items-start gap-0.5 rounded-control px-3 py-2 text-left transition-colors duration-fast hover:bg-surface-elevated"
           >
             <span className="text-xs font-medium text-text">
               {m.autor}
               {m.cliente ? ` · ${m.cliente}` : ""}
             </span>
             <span className="line-clamp-2 text-xs text-text-muted">{m.body}</span>
-            <span className="text-[10px] text-text-muted">{quando(m.created_at)}</span>
+            <span className="text-[10px] text-text-subtle">{quando(m.created_at)}</span>
           </button>
         ))}
       </PopoverContent>
