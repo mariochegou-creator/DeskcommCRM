@@ -127,14 +127,19 @@ export function TemplateFormDialog({ open, onOpenChange, canShare, template }: P
               id="tpl-body"
               value={body}
               onChange={(e) => setBody(e.target.value)}
-              placeholder="Oi {{primeiro_nome}}, tudo bem?"
+              placeholder="{{saudacao_maiuscula}}, {{primeiro_nome}}. Tudo bem?"
               minLength={1}
               maxLength={4096}
               required
               rows={5}
             />
+            {/* A saudação é citada primeiro de propósito: quem escreve o texto
+                digita "bom dia" sem pensar, e o atalho passa a mandar "bom dia"
+                às onze da noite. Quem cadastrou nunca vê o erro — só o cliente. */}
             <p className="text-xs text-muted-foreground">
-              Use {"{{primeiro_nome}}"} e {"{{nome}}"} para personalizar.
+              Use {"{{saudacao}}"} ou {"{{saudacao_maiuscula}}"} em vez de escrever
+              &ldquo;bom dia&rdquo;: vira bom dia, boa tarde ou boa noite conforme a hora do envio.
+              E {"{{primeiro_nome}}"} ou {"{{nome}}"} para o nome de quem recebe.
             </p>
           </div>
           <div className="space-y-2">
